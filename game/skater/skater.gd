@@ -39,6 +39,7 @@ const RAIL_GRAVITY := 10.0  ## down rails speed up a little less than free rolli
 const RAIL_FRICTION := 0.5
 const EDGE_GRIP := 2.5  ## how much more than gravity's hold a convex bend may ask before the board leaves it
 const OVERHANG_RADIUS := 3.5  ## assumed curve radius when judging if speed holds the board to an overhang (loop top)
+const GETUP_TIME := 0.6  ## get-up animation after the ragdoll settles
 const KILL_Y := -20.0  ## below the deepest bowl (the dome sinks about 7 m)
 const PUSH_PLANT := 0.18  ## matches SkaterPoser: first push steps off the tail, then each cycle kicks
 const PUSH_CYCLE := 0.6
@@ -55,6 +56,7 @@ var spin := SpinTracker.new()
 
 ## Read by the poser, camera and HUD.
 var anim: String = "idle_ride"
+var ragdoll_active: bool = false  ## true while a bail ragdoll drives the body (the poser stands aside)
 var anim_trick: Dictionary = {}
 var anim_time: float = 0.0
 var crouch: float = 0.0  ## 0..1
@@ -64,6 +66,8 @@ var facing: Vector3 = Vector3.FORWARD  ## horizontal-ish travel direction on the
 var board_up: Vector3 = Vector3.UP
 var speed: float = 0.0
 var vert_air: bool = false
+var _ragdoll: SkaterRagdoll = null
+var _getup_left: float = 0.0
 
 var _t: float = 0.0
 var _seed: int = 1
@@ -723,10 +727,55 @@ func _bail() -> void:
 	vert_air = false
 	state.event("bail")
 	_set_anim("bail_fall")
+	_start_ragdoll()
 	bailed.emit()
 
 
+## Hands the body and board to a physics ragdoll for the slam, when the visual rig is there (not in bare sims).
+func _start_ragdoll() -> void:
+	_end_ragdoll()
+	if _visual == null or not is_inside_tree() or get_parent() == null:
+		return
+	var body: Node3D = _visual.get_node_or_null("SkaterBody") as Node3D
+	var board: Node3D = _visual.get_node_or_null("Skateboard") as Node3D
+	if body == null or board == null:
+		return
+	var spin: Vector3 = facing.cross(Vector3.UP).normalized() * -3.0 if facing.length() > 0.1 else Vector3(-3.0, 0.0, 0.0)
+	_ragdoll = SkaterRagdoll.spawn(body, board, velocity, spin, get_parent())
+	ragdoll_active = true
+	_getup_left = 0.0
+
+
+func _end_ragdoll() -> void:
+	if _ragdoll != null and is_instance_valid(_ragdoll):
+		_ragdoll.finish()
+	_ragdoll = null
+	ragdoll_active = false
+
+
 func _tick_bail(delta: float) -> void:
+	if _ragdoll != null and is_instance_valid(_ragdoll):
+		# The ragdoll owns the slam: the skater just follows the pelvis (for the camera) until it settles,
+		# then stands up where the body came to rest.
+		global_position = _ragdoll.pelvis_transform().origin  # the ground under the pelvis
+		velocity = Vector3.ZERO
+		if _ragdoll.settled():
+			var t: Transform3D = _ragdoll.pelvis_transform()
+			_end_ragdoll()
+			global_position = t.origin
+			facing = -t.basis.z
+			board_up = Vector3.UP
+			_floor_normal = Vector3.UP
+			_getup_left = GETUP_TIME
+			_set_anim("bail_getup")
+		return
+	if _getup_left > 0.0:
+		_getup_left -= delta
+		if _getup_left > 0.0:
+			return
+		if state.time_in_state >= SkateState.BAIL_TIME and state.event("recover"):
+			_set_anim("idle_ride")
+		return
 	velocity += Vector3.DOWN * GRAVITY * delta
 	var h: Vector3 = Vector3(velocity.x, 0.0, velocity.z).move_toward(Vector3.ZERO, 8.0 * delta)
 	velocity = Vector3(h.x, velocity.y, h.z)
@@ -744,6 +793,8 @@ func _tick_bail(delta: float) -> void:
 
 
 func respawn() -> void:
+	_end_ragdoll()
+	_getup_left = 0.0
 	global_transform = _spawn
 	velocity = Vector3.ZERO
 	_snap_offset = Vector3.ZERO

@@ -84,6 +84,8 @@ func _process(delta: float) -> void:
 		return
 	if _nodes.is_empty():
 		_capture_rest()
+	if skater != null and bool(skater.get("ragdoll_active")):
+		return  # a bail ragdoll is driving the joints and the board
 	var anim: String = preview_anim
 	var t: float = 0.0
 	var crouch: float = 0.0
