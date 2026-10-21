@@ -35,3 +35,25 @@ so the crash is harmless. `preview.py` therefore renders one image per process.
 
 Files: `hlib.py` (shared builder, materials, export, preview), one module per asset, `preview.py`, `build_all.py`.
 Previews are in `previews/`, with all of them together in `contact_sheet.png`.
+
+## Base body (KineFX)
+
+`base_body.py` builds the skinned base body for a side-by-side comparison with `tools/blender/base_body.py`:
+
+```
+%HY% tools\houdini\base_body.py both          :: or female / male; also saves tools\houdini\base_body.hip
+```
+
+- Inputs: the joint dump `tools/blender/rig_rest.json` (model pose = the "neutral" transforms, A-pose arms) and the
+  skin section tables in `game/skater/anime_outfit.gd`. The tables are read when the script runs, so table edits flow through.
+- Method: a Python SOP lofts a quad cage from the section rows: one continuous torso (pelvis, waist row, ribcage, neck), and limbs
+  along their bones (y = -t x length), plus mitten hands, feet and a head placeholder (0.15 m wide, 0.225 m tall,
+  crown at 1.61 m). Next, Subdivide (Catmull-Clark x2), the female bust field (`AnimeOutfit.bust_height` apex, radii
+  and height, with softer exponents), then VDB from polygons, smooth SDF and convert to fuse everything into one
+  skin. PolyReduce brings it to about 10k triangles.
+- Rig: the 17 SkaterPoser joints, BustL/BustR on the BodySway pivots (female only), and a non-deforming HeadTop. Joint Capture
+  Biharmonic, then Capture Correct (4 influences, normalized), then ROP glTF Character.
+- Output: `assets/characters/houdini/base_body_<body>.glb` and previews `previews/base_body_<body>.png` (front,
+  three-quarter, side).
+- Not yet matched to the Blender body: region tags (TEXCOORD_1 garment masks), the scripted weight fix-ups, and the
+  byte-identical output guarantee.

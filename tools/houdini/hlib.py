@@ -226,15 +226,16 @@ def report(name, node):
     return total
 
 
-def preview(node, png, overrides=None, res=(800, 500), azimuth=35.0, elevation=20.0):
+def preview(node, png, overrides=None, res=(800, 500), azimuth=35.0, elevation=20.0, radius=None, center=None):
     """OpenGL ROP render of the node's geometry from a three-quarter front view."""
     import math
     os.makedirs(PREVIEWS, exist_ok=True)
     ensure_materials(overrides)
     bb = node.geometry().boundingBox()
-    c = bb.center()
-    radius = bb.sizevec().length() * 0.5
-    dist = radius / math.tan(math.radians(17))
+    c = hou.Vector3(center) if center else bb.center()
+    radius = radius or bb.sizevec().length() * 0.5
+    fov = 2 * math.atan(math.tan(math.radians(22.5)) * min(1.0, res[1] / float(res[0])))  # narrow axis
+    dist = radius / math.tan(fov * 0.5)
     az, el = math.radians(azimuth), math.radians(elevation)
     pos = hou.Vector3(c[0] - dist * math.cos(el) * math.sin(az), c[1] + dist * math.sin(el),
         c[2] - dist * math.cos(el) * math.cos(az))
