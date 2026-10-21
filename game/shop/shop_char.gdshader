@@ -11,6 +11,7 @@ uniform float mid_threshold : hint_range(0.0, 1.0) = 0.3;
 uniform float lit_threshold : hint_range(0.0, 1.0) = 0.7;
 uniform float band_softness : hint_range(0.0, 0.2) = 0.03;
 uniform float light_scale : hint_range(0.1, 1.0) = 0.5;
+uniform float light_cap : hint_range(0.1, 2.0) = 0.62;
 uniform float rim_strength : hint_range(0.0, 1.0) = 0.08;
 uniform float vertex_color_amount : hint_range(0.0, 1.0) = 0.0;
 
@@ -28,7 +29,9 @@ void light() {
 	vec3 base = ALBEDO;
 	vec3 toon_col = mix(base * shadow_tint, base * mid_level, mid_band);
 	toon_col = mix(toon_col, base, top_band);
-	DIFFUSE_LIGHT += toon_col * LIGHT_COLOR * light_scale * (LIGHT_IS_DIRECTIONAL ? 1.0 : 0.6);
+	vec3 lit_col = toon_col * LIGHT_COLOR * light_scale * (LIGHT_IS_DIRECTIONAL ? 1.0 : 0.6);
+	// cap each light so overlapping lamps and the sun can never push a surface past its own colour (flat peach)
+	DIFFUSE_LIGHT += min(lit_col, vec3(light_cap) * max(base, vec3(0.04)) * 1.6);
 	float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0) * rim_strength;
 	DIFFUSE_LIGHT += base * rim * clamp(ATTENUATION, 0.4, 1.0);
 }

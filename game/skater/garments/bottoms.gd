@@ -58,6 +58,9 @@ static func covers(id: String, body_type: String) -> PackedStringArray:
 static func _mats(mats: Dictionary) -> void:
 	Wardrobe.mat(mats, "bottom", BOTTOM_DEFAULT)
 	Wardrobe.mat(mats, "bottom_trim", TRIM_DEFAULT)
+	# A deeper, quieter shade of the fabric for hems, cuffs and seams: reads as folded cloth, not a bright hoop.
+	var base: Color = (mats["bottom"] as StandardMaterial3D).albedo_color
+	Wardrobe.mat(mats, "bottom_dark", Color.from_hsv(base.h, base.s * 0.9, base.v * 0.72))
 
 
 # --- bikini ---------------------------------------------------------------------------------------------------
@@ -232,8 +235,8 @@ static func board_shorts(rig: Dictionary, body_type: String, mats: Dictionary) -
 		hp.append(hem_ring[0])
 		var hr: PackedFloat32Array = PackedFloat32Array()
 		hr.resize(hp.size())
-		hr.fill(0.0055)
-		SkaterParts.part(upper, side + "BoardShortsHemMesh", SkaterParts.tube(hp, hr, 6), Vector3.ZERO, mats, "bottom_trim")
+		hr.fill(0.0042)
+		SkaterParts.part(upper, side + "BoardShortsHemMesh", SkaterParts.tube(hp, hr, 6), Vector3.ZERO, mats, "bottom_dark")
 		# Outer side stripe: a band lying on the leg from the top down to the hem.
 		var i_out: int = 7 if s > 0.0 else 21
 		var left: PackedVector3Array = PackedVector3Array()
@@ -469,9 +472,9 @@ static func cargo_shorts(rig: Dictionary, _body_type: String, mats: Dictionary) 
 			rows.append(_const_y(lerpf(0.2 * ul, y_hem, float(i) / 16.0)))
 		SkaterParts.part(upper, side + "CargoLegMesh", _leg_mesh(secs, true, ul, CARGO_PROF, rows, 32, 0.0), Vector3.ZERO, mats, "bottom")
 		var hem: PackedVector3Array = _leg_line(secs, true, ul, CARGO_PROF, _const_y(y_hem), 0.002)
-		_tube_part(upper, side + "CargoHemMesh", hem, 0.0052, mats, "bottom")
-		_tube_part(upper, side + "CargoHemStitchMesh", _leg_line(secs, true, ul, CARGO_PROF, _const_y(y_hem + 0.017), 0.0016), 0.0017,
-				mats, "bottom_trim")
+		_tube_part(upper, side + "CargoHemMesh", hem, 0.0042, mats, "bottom_dark")
+		_tube_part(upper, side + "CargoHemStitchMesh", _leg_line(secs, true, ul, CARGO_PROF, _const_y(y_hem + 0.017), 0.0016), 0.0013,
+				mats, "bottom_dark")
 		_cargo_pocket(upper, side, s, secs, ul, mats)
 
 
@@ -677,7 +680,7 @@ static func joggers(rig: Dictionary, _body_type: String, mats: Dictionary) -> vo
 				"bottom")
 		for y: float in [-0.257, -0.2655, -0.274]:
 			_tube_part(lower, "%sJoggerCuffRib%dMesh" % [side, int(-y * 1000.0)], _leg_line(calf, false, ul, JOGGER_PROF, _const_y(y), 0.0065),
-					0.0036, mats, "bottom")
+					0.0036, mats, "bottom_dark")
 		# Side stripe: thigh piece down to the knee, then the shin piece to the cuff.
 		_side_stripe(upper, side + "JoggerStripeUpperMesh", _side_line(thigh, true, ul, JOGGER_PROF, s, 0.03, -ul, 16, 0.0016), s, 0.0105, mats,
 				"bottom_trim")

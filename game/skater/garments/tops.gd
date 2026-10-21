@@ -22,7 +22,7 @@ const SKIRT_TEE: float = 0.021  ## loose tee over the waistband zone
 const SKIRT_FLANNEL: float = 0.026
 const FLANNEL_GAP: float = 0.3  ## half-angle of the open front, from the front-centre line
 const PLAID_TILE: float = 0.08  ## metres per texture tile of the plaid
-const TEE_DEFAULT: Color = Color(0.95, 0.93, 0.88)
+const TEE_DEFAULT: Color = Color(0.78, 0.77, 0.88)
 
 
 static func builders() -> Dictionary:

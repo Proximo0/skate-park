@@ -88,7 +88,11 @@ static func body_palette(l: SkaterLoadout) -> Dictionary:
 	p["shirt_dark"] = top.darkened(0.15)
 	var bottom: Color = cat.color_of(l.bottom_id, l.bottom_color)
 	p["bottom"] = bottom
-	p["bottom_trim"] = _contrast(bottom)
+	if l.bottom_id == "bottom_joggers":
+		bottom = Color.from_hsv(bottom.h, bottom.s * 0.7, bottom.v * 0.78)  ## sweats: a deeper, quieter shade
+		p["bottom"] = bottom
+	p["bottom_trim"] = _soft_trim(bottom)
+	p["top_tee"] = Color(0.78, 0.77, 0.88)  ## the tee under the flannel: light grey-lavender, never a white slab
 	p["pants"] = bottom
 	p["pants_trim"] = bottom.lightened(0.35)
 	var sock: Color = cat.color_of(l.socks_id, l.socks_color)
@@ -116,6 +120,12 @@ static func _contrast(c: Color) -> Color:
 	if c.s < 0.15:
 		return Color(1.0, 0.45, 0.36) if c.v > 0.5 else Color(0.3, 0.85, 0.9)
 	return Color.from_hsv(fposmod(c.h + 0.5, 1.0), clampf(c.s, 0.55, 0.85), clampf(c.v, 0.8, 1.0))
+
+
+## A quieter trim for bottoms (stitching, belts, piping): the contrast hue pulled towards the fabric, less saturated.
+static func _soft_trim(c: Color) -> Color:
+	var t: Color = _contrast(c)
+	return Color.from_hsv(t.h, t.s * 0.55, clampf(t.v * 0.78, 0.5, 0.78))
 
 
 ## Palette keys of PlaceholderSkater._board_defaults() set from the loadout.

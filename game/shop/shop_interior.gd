@@ -22,16 +22,17 @@ const COUNTER_TOP: float = 1.0
 const SEAT_X: float = 6.3  ## where a seated hip sits on the couch (x)
 const SEAT_ZS: Array[float] = [1.15, 2.3]
 
-const WALL_PAINT := Color("#EDB48C")
-const WALL_ACCENT := Color("#3FA7A3")
+const WALL_PAINT := Color("#4C9BA3")  ## muted teal: deep enough that lamps never wash it to peach
+const WALL_ACCENT := Color("#7A4A9C")
 const WALL_PINK := Color("#F59AA6")
 const WOOD := Color("#C9874F")
 const WOOD_DARK := Color("#8A5634")
-const WOOD_LIGHT := Color("#D99A62")
-const CEILING := Color("#D9B48E")
+const WOOD_LIGHT := Color("#B87A50")
+const CEILING := Color("#6A4E7C")
+const CEILING_PLANK := Color("#5A4070")
 const INK := Color("#1B1B2F")
 const CREAM := Color("#FFF6E6")
-const METAL := Color("#C9D3DD")
+const METAL := Color("#A3AEC2")
 const NEON_PINK := Color("#FF5FA2")
 const NEON_ORANGE := Color("#FFB04D")
 const NEON_TEAL := Color("#52F0E6")
@@ -103,7 +104,13 @@ func _place(parent: Node3D, mesh: Mesh, center: Vector3, mat: Material, rot_deg:
 func _box(parent: Node3D, center: Vector3, size: Vector3, color: Color, rot_deg: Vector3 = Vector3.ZERO) -> MeshInstance3D:
 	var m: BoxMesh = BoxMesh.new()
 	m.size = size
-	return _place(parent, m, center, Toon.material(color), rot_deg)
+	return _place(parent, m, center, _toon(color), rot_deg)
+
+
+func _box_mesh(size: Vector3) -> BoxMesh:
+	var m: BoxMesh = BoxMesh.new()
+	m.size = size
+	return m
 
 
 func _cyl(parent: Node3D, center: Vector3, r_top: float, r_bottom: float, h: float, color: Color,
@@ -114,7 +121,7 @@ func _cyl(parent: Node3D, center: Vector3, r_top: float, r_bottom: float, h: flo
 	m.height = h
 	m.radial_segments = segments
 	m.rings = 1
-	return _place(parent, m, center, Toon.material(color), rot_deg)
+	return _place(parent, m, center, _toon(color), rot_deg)
 
 
 func _ball(parent: Node3D, center: Vector3, r: float, color: Color, scl: Vector3 = Vector3.ONE) -> MeshInstance3D:
@@ -123,7 +130,7 @@ func _ball(parent: Node3D, center: Vector3, r: float, color: Color, scl: Vector3
 	m.height = r * 2.0
 	m.radial_segments = 16
 	m.rings = 8
-	return _place(parent, m, center, Toon.material(color), Vector3.ZERO, scl)
+	return _place(parent, m, center, _toon(color), Vector3.ZERO, scl)
 
 
 func _capsule(parent: Node3D, center: Vector3, r: float, h: float, color: Color, rot_deg: Vector3 = Vector3.ZERO,
@@ -133,7 +140,7 @@ func _capsule(parent: Node3D, center: Vector3, r: float, h: float, color: Color,
 	m.height = h
 	m.radial_segments = 16
 	m.rings = 6
-	return _place(parent, m, center, Toon.material(color), rot_deg, scl)
+	return _place(parent, m, center, _toon(color), rot_deg, scl)
 
 
 ## An invisible static box collider on the world layer (1), so the walker and the camera bump into furniture.
@@ -152,6 +159,35 @@ func _solid(center: Vector3, size: Vector3, rot_y_deg: float = 0.0) -> StaticBod
 
 
 ## Unshaded bright material for neon tubes, bulbs and screens; `energy` above 1 feeds the glow.
+## Shop-lit toon material (shop_char.gdshader: scaled, capped light) so lamps and sun never blow colours to flat peach.
+## Cached per colour; the room reads a little richer than the characters, so its light_scale is a touch higher.
+static var _toon_cache: Dictionary = {}
+
+
+static func _toon(color: Color) -> ShaderMaterial:
+	var key: String = color.to_html(true)
+	if _toon_cache.has(key):
+		return _toon_cache[key] as ShaderMaterial
+	var m: ShaderMaterial = ShaderMaterial.new()
+	m.shader = load("res://game/shop/shop_char.gdshader") as Shader
+	m.set_shader_parameter("albedo", _clamp_bright(color))
+	m.set_shader_parameter("light_scale", 0.4)
+	m.set_shader_parameter("rim_strength", 0.05)
+	_toon_cache[key] = m
+	return m
+
+
+## Near-white and pale-yellow props (shelf backboards, rack bars, cream boards) would still clip to flat white under
+## the lamps: pull them to a soft lavender-grey ceiling so their form survives.
+static func _clamp_bright(c: Color) -> Color:
+	var lum: float = c.get_luminance()
+	if lum <= 0.62:
+		return c
+	var t: float = clampf((lum - 0.62) / 0.38, 0.0, 1.0)
+	var out: Color = c.lerp(Color(0.74, 0.70, 0.82), 0.3 + 0.3 * t)
+	return Color(minf(out.r, 0.74), minf(out.g, 0.72), minf(out.b, 0.8), c.a)
+
+
 static func glow_material(c: Color, energy: float = 1.6) -> StandardMaterial3D:
 	var m: StandardMaterial3D = StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -275,6 +311,16 @@ func _build_shell() -> void:
 	for i: int in 6:
 		var x: float = -W + 1.2 + float(i) * 2.32
 		_box(g, Vector3(x, H - 0.1, 0), Vector3(0.16, 0.2, D * 2.0), WOOD_DARK)
+	# Plank ceiling: alternating darker boards between the beams, so it reads as wood, not a flat lid.
+	for i: int in 24:
+		if i % 2 == 0:
+			_box(g, Vector3(-W + 0.3 + float(i) * (W * 2.0 - 0.6) / 23.0, H - 0.004, 0), Vector3(0.28, 0.008, D * 2.0), CEILING_PLANK)
+	# Neon cove strip running round the top of the walls (glow only, not lit).
+	var strip_y: float = H - 0.22
+	for sd: Array in [[Vector3(0, strip_y, -D + 0.05), Vector3(W * 2.0, 0.05, 0.05), NEON_PINK],
+			[Vector3(-W + 0.05, strip_y, 0), Vector3(0.05, 0.05, D * 2.0), NEON_TEAL],
+			[Vector3(W - 0.05, strip_y, 0), Vector3(0.05, 0.05, D * 2.0), NEON_ORANGE]]:
+		_place(g, _box_mesh(sd[1] as Vector3), sd[0] as Vector3, glow_material(sd[2] as Color, 1.15))
 	# Back wall (z = -D), side walls.
 	_wall(g, Vector3(0, H * 0.5, -D - WALL_T * 0.5), Vector3(W * 2.0 + WALL_T * 2.0, H, WALL_T), WALL_PAINT)
 	_wall(g, Vector3(-W - WALL_T * 0.5, H * 0.5, 0), Vector3(WALL_T, H, D * 2.0), WALL_PAINT)
@@ -344,7 +390,7 @@ func _build_front_wall(g: Node3D) -> void:
 	# Doormat inside.
 	_box(g, Vector3(0, 0.008, D - 0.75), Vector3(1.9, 0.016, 1.0), Color("#C2553F"))
 	_box(g, Vector3(0, 0.0165, D - 0.75), Vector3(1.78, 0.004, 0.88), Color("#A63F2E"))
-	var mat_text: Label3D = _label(g, "SHRED ON", Vector3(0, 0.03, D - 0.75), 96, CREAM, INK, 0.0, 0.0048)
+	var mat_text: Label3D = _label(g, "SHRED ON", Vector3(0, 0.04, D - 0.75), 96, CREAM, INK, 0.0, 0.0048)
 	mat_text.rotation_degrees = Vector3(-90, 180, 0)
 	mat_text.double_sided = true
 	mat_text.outline_size = 10
@@ -564,9 +610,9 @@ func _tee(parent: Node3D, center: Vector3, color: Color, hoodie: bool, face_out:
 	t.rotation_degrees.y = 0.0 if face_out else 90.0
 	parent.add_child(t)
 	var meshes: Dictionary = _garment_meshes(hoodie)
-	var cloth: Material = Toon.material(color)
-	var cloth2: Material = Toon.material(color.darkened(0.1))
-	var trim: Material = Toon.material(color.darkened(0.25))
+	var cloth: Material = _toon(color)
+	var cloth2: Material = _toon(color.darkened(0.1))
+	var trim: Material = _toon(color.darkened(0.25))
 	_place(t, meshes["body"] as Mesh, Vector3.ZERO, cloth)
 	var sleeve_y: float = -0.115 if not hoodie else -0.13
 	var ang: float = 62.0 if not hoodie else 16.0
@@ -648,7 +694,7 @@ func _build_clothes() -> void:
 	g.add_child(shoes)
 	var z0: float = -0.95
 	var z1: float = 2.65
-	_box(shoes, Vector3(-W + 0.02, 1.55, (z0 + z1) * 0.5), Vector3(0.03, 2.3, z1 - z0 + 0.1), CREAM)
+	_box(shoes, Vector3(-W + 0.02, 1.55, (z0 + z1) * 0.5), Vector3(0.03, 2.3, z1 - z0 + 0.1), Color("#A59DC0"))
 	var shoe_colors: Array[Color] = [Color("#FF5A5F"), CREAM, Color("#1B1B2F"), Color("#4FC3F7"), Color("#FFD84D"),
 			Color("#7C83FD"), Color("#FF9F1C"), Color("#2EC4B6"), Color("#E0455A"), Color("#FF7EB6")]
 	for sh: int in 5:
@@ -1043,6 +1089,23 @@ func _build_decor() -> void:
 	open_sign.outline_size = 18
 	var surf_sign: Label3D = _label(g, "SKATE  •  SURF  •  CHILL", Vector3(0, 2.85, D - 0.06), 72, Color(0.6, 1.9, 1.8), Color(0.15, 0.85, 0.9), 180.0, 0.0035)
 	surf_sign.outline_size = 14
+	surf_sign.no_depth_test = false
+	# Glow: a soft teal halo quad behind the lettering plus a tube light, so it reads as neon, not flat text.
+	var halo: QuadMesh = QuadMesh.new()
+	halo.size = Vector2(3.4, 0.5)
+	var halo_mat: StandardMaterial3D = StandardMaterial3D.new()
+	halo_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	halo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	halo_mat.albedo_color = Color(0.2, 0.95, 0.95, 0.5)
+	halo_mat.albedo_texture = _halo_texture()
+	halo_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_place(g, halo, Vector3(0, 2.85, D - 0.045), halo_mat, Vector3(0, 180, 0))
+	var sign_light: OmniLight3D = OmniLight3D.new()
+	sign_light.position = Vector3(0, 2.8, D - 0.5)
+	sign_light.light_color = Color("#52F0E6")
+	sign_light.light_energy = 0.35
+	sign_light.omni_range = 2.2
+	g.add_child(sign_light)
 	# String lights over the lounge.
 	var bulb: SphereMesh = SphereMesh.new()
 	bulb.radius = 0.04
@@ -1052,6 +1115,20 @@ func _build_decor() -> void:
 		var t: float = float(i) / 21.0
 		var p: Vector3 = Vector3(W - 0.15, 3.05 - 0.35 * sin(t * PI * 2.0) * sin(t * PI * 2.0), lerpf(-0.2, 4.6, t))
 		_place(g, bulb, p, glow_material(colors[i % colors.size()], 1.6))
+
+
+static func _halo_texture() -> Texture2D:
+	var gt: GradientTexture2D = GradientTexture2D.new()
+	var gr: Gradient = Gradient.new()
+	gr.set_color(0, Color(1, 1, 1, 1))
+	gr.set_color(1, Color(1, 1, 1, 0))
+	gt.gradient = gr
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.5)
+	gt.fill_to = Vector2(1.0, 0.5)
+	gt.width = 128
+	gt.height = 32
+	return gt
 
 
 func _build_lights() -> void:
