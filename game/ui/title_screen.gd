@@ -5,6 +5,8 @@ extends Control
 
 const GAME_SCENE: String = "res://game/main.tscn"
 const CONTROLS_SCRIPT: String = "res://game/ui/controls_screen.gd"
+const CREATOR_SCRIPT: String = "res://game/ui/character_creator.gd"
+const SHOP_SCRIPT: String = "res://game/ui/skate_shop.gd"
 const TITLE: String = "SKATE PARK"
 const SUBTITLE: String = "Shred. Grind. Have fun!"
 const TITLE_COLORS: PackedColorArray = [
@@ -29,6 +31,8 @@ const BUTTON_FONT_SIZE: int = 48
 @onready var _subtitle: Label = $Ui/Subtitle
 @onready var _menu: VBoxContainer = $Ui/Menu
 @onready var _play: Button = $Ui/Menu/Play
+@onready var _create: Button = $Ui/Menu/Create
+@onready var _shop: Button = $Ui/Menu/Shop
 @onready var _controls: Button = $Ui/Menu/Controls
 @onready var _quit: Button = $Ui/Menu/Quit
 
@@ -38,6 +42,8 @@ var _time: float = 0.0
 var _letters: Array[Label] = []
 var _letter_base_y: float = 0.0
 var _overlay: Control = null
+var _overlay_button: Button = null
+var _skater_node: Node3D = null
 var _leaving: bool = false
 
 
@@ -48,9 +54,13 @@ func _ready() -> void:
 	_subtitle.label_settings = subtitle_label.label_settings
 	subtitle_label.free()
 	_style_button(_play, UiStyle.LIME)
-	_style_button(_controls, UiStyle.SUNSHINE)
+	_style_button(_create, UiStyle.SKY_BLUE)
+	_style_button(_shop, UiStyle.SUNSHINE)
+	_style_button(_controls, Color("#B79CFF"))
 	_style_button(_quit, UiStyle.BUBBLEGUM)
 	_play.pressed.connect(_on_play)
+	_create.pressed.connect(_open_overlay.bind(CREATOR_SCRIPT, _create))
+	_shop.pressed.connect(_open_overlay.bind(SHOP_SCRIPT, _shop))
 	_controls.pressed.connect(_on_controls)
 	_quit.pressed.connect(_on_quit)
 	_play.grab_focus()
@@ -87,11 +97,31 @@ func _build_world(vp: SubViewport) -> void:
 	ramp.position = Vector3(-4.0, 0.0, -14.0)
 	vp.add_child(ramp)
 
+	_build_skater(vp)
+
+	_camera = Camera3D.new()
+	_camera.fov = 40.0
+	_camera.near = 0.05
+	vp.add_child(_camera)
+	_update_camera()
+
+
+## The player's saved skater (the default look in scripted runs), posed on its board.
+func _build_skater(vp: SubViewport) -> void:
+	if _skater_node != null:
+		_skater_node.queue_free()
 	var skater := Node3D.new()
 	skater.name = "Skater"
-	var board: Node3D = PlaceholderSkater.build_board()
+	var board: Node3D
+	var body: Node3D
+	if Flags.is_scripted_run():
+		board = PlaceholderSkater.build_board()
+		body = PlaceholderSkater.build_body()
+	else:
+		var loadout: SkaterLoadout = SkaterLoadout.load_file()
+		board = SkaterBuilder.build_board(loadout)
+		body = SkaterBuilder.build_body(loadout)
 	skater.add_child(board)
-	var body: Node3D = PlaceholderSkater.build_body()
 	body.position.y = PlaceholderSkater.DECK_TOP_Y
 	skater.add_child(body)
 	Toon.apply_to(skater)
@@ -101,12 +131,7 @@ func _build_world(vp: SubViewport) -> void:
 	poser.preview_anim = "crouch"
 	skater.add_child(poser)
 	vp.add_child(skater)
-
-	_camera = Camera3D.new()
-	_camera.fov = 40.0
-	_camera.near = 0.05
-	vp.add_child(_camera)
-	_update_camera()
+	_skater_node = skater
 
 
 func _update_camera() -> void:
@@ -196,6 +221,32 @@ func _on_controls_closed() -> void:
 		_overlay = null
 	_menu.visible = true
 	_controls.grab_focus()
+
+
+## Opens the character creator or the skate shop over the menu; both emit `closed` when done.
+func _open_overlay(script_path: String, from: Button) -> void:
+	if _overlay != null or not ResourceLoader.exists(script_path):
+		return
+	var script: Script = load(script_path) as Script
+	var screen: Control = script.new() as Control if script != null else null
+	if screen == null:
+		return
+	screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen.connect(&"closed", _on_screen_closed)
+	add_child(screen)
+	_overlay = screen
+	_overlay_button = from
+	_menu.visible = false
+
+
+func _on_screen_closed() -> void:
+	if _overlay != null:
+		_overlay.queue_free()
+		_overlay = null
+	_menu.visible = true
+	_build_skater(_viewport)
+	if _overlay_button != null:
+		_overlay_button.grab_focus()
 
 
 func _on_quit() -> void:

@@ -6,12 +6,18 @@ var park: Node3D
 var skater: Skater
 var hud: Hud
 var goals: Goals
+var wallet: Wallet
+var loadout: SkaterLoadout = null  ## null in scripted runs: they keep the stock placeholder look (goldens, captures)
 var _t: float = 0.0
 var _prev_state: SkateState.State = SkateState.State.ROLLING
 var _hold_time: float = 0.0
 
 
 func _ready() -> void:
+	wallet = Wallet.new() if Flags.is_scripted_run() else Wallet.load_file()
+	if not Flags.is_scripted_run():
+		loadout = SkaterLoadout.load_file()
+		loadout.sanitize(func(id: String) -> bool: return wallet.owns(id))
 	if Flags.args.has("testpark"):
 		park = (load("res://game/park/test_park.tscn") as PackedScene).instantiate()
 		add_child(park)
@@ -64,16 +70,33 @@ func _make_skater(at: Transform3D) -> Skater:
 	s.transform = at
 	var visual := Node3D.new()
 	visual.name = "Visual"
-	var board: Node3D = ArtSlots.instance("skater_board", PlaceholderSkater.build_board)
+	var board: Node3D = ArtSlots.instance("skater_board", _build_board)
 	board.name = "Skateboard"
 	visual.add_child(board)
-	var body: Node3D = ArtSlots.instance("skater_body", PlaceholderSkater.build_body)
+	var body: Node3D = ArtSlots.instance("skater_body", _build_body)
 	body.name = "SkaterBody"
 	body.position = Vector3(0, PlaceholderSkater.DECK_TOP_Y, 0)
 	visual.add_child(body)
 	Toon.apply_to(visual)
 	s.add_child(visual)
 	return s
+
+
+func _build_board() -> Node3D:
+	return PlaceholderSkater.build_board() if loadout == null else SkaterBuilder.build_board(loadout)
+
+
+func _build_body() -> Node3D:
+	return PlaceholderSkater.build_body() if loadout == null else SkaterBuilder.build_body(loadout)
+
+
+## Coins for a landed combo or a finished goal; saved right away (never in scripted runs).
+func _earn(coins: int) -> void:
+	if coins <= 0:
+		return
+	wallet.add(coins)
+	if not Flags.is_scripted_run():
+		wallet.save()
 
 
 func _attach_poser() -> void:
@@ -92,6 +115,7 @@ func _setup_goals() -> void:
 	goals.start_run(_t)
 	goals.goal_completed.connect(_on_goal)
 	skater.combo_landed.connect(func(points: int, _text: String) -> void:
+		_earn(Wallet.coins_for_combo(points))
 		goals.on_combo_landed(points, skater.combo.landed_total, []))
 	skater.trick_started.connect(func(tr: Dictionary) -> void:
 		goals.on_trick(str(tr.get("id", "")), str(tr.get("kind", ""))))
@@ -107,6 +131,7 @@ func _setup_goals() -> void:
 
 
 func _on_goal(goal: Dictionary) -> void:
+	_earn(Wallet.COINS_PER_GOAL)
 	if hud.has_method("_show_banner"):
 		hud.call("_show_banner", "GOAL! " + str(goal.get("title", "")))
 

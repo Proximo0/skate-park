@@ -1,0 +1,1213 @@
+{
+ "version": 1,
+ "slots": [
+  "top",
+  "bottom",
+  "socks",
+  "shoes",
+  "accessory",
+  "hair",
+  "deck",
+  "truck",
+  "wheel",
+  "bearing",
+  "griptape"
+ ],
+ "shop_categories": [
+  {
+   "id": "decks",
+   "name": "Decks",
+   "slots": [
+    "deck"
+   ]
+  },
+  {
+   "id": "trucks",
+   "name": "Trucks",
+   "slots": [
+    "truck"
+   ]
+  },
+  {
+   "id": "wheels",
+   "name": "Wheels",
+   "slots": [
+    "wheel"
+   ]
+  },
+  {
+   "id": "griptape",
+   "name": "Griptape",
+   "slots": [
+    "griptape",
+    "bearing"
+   ]
+  },
+  {
+   "id": "clothing",
+   "name": "Clothing",
+   "slots": [
+    "top",
+    "bottom",
+    "socks",
+    "accessory"
+   ]
+  },
+  {
+   "id": "shoes",
+   "name": "Shoes",
+   "slots": [
+    "shoes"
+   ]
+  }
+ ],
+ "skin_tones": [
+  {
+   "name": "Porcelain",
+   "hex": "#F8D9C4"
+  },
+  {
+   "name": "Peach",
+   "hex": "#F0C09A"
+  },
+  {
+   "name": "Honey",
+   "hex": "#E6B085"
+  },
+  {
+   "name": "Tan",
+   "hex": "#C98E64"
+  },
+  {
+   "name": "Brown",
+   "hex": "#9A6445"
+  },
+  {
+   "name": "Deep",
+   "hex": "#6B4430"
+  }
+ ],
+ "hair_colors": [
+  {
+   "name": "Sunny Blonde",
+   "hex": "#F0C766"
+  },
+  {
+   "name": "Chestnut",
+   "hex": "#7A4A2A"
+  },
+  {
+   "name": "Midnight",
+   "hex": "#1F1F33"
+  },
+  {
+   "name": "Cherry",
+   "hex": "#E0455A"
+  },
+  {
+   "name": "Bubblegum",
+   "hex": "#FF7EB6"
+  },
+  {
+   "name": "Sky Blue",
+   "hex": "#4FC3F7"
+  },
+  {
+   "name": "Grape",
+   "hex": "#8A6BE0"
+  },
+  {
+   "name": "Ginger",
+   "hex": "#D9722B"
+  }
+ ],
+ "eye_colors": [
+  {
+   "name": "Ocean",
+   "hex": "#2F86E0"
+  },
+  {
+   "name": "Hazel",
+   "hex": "#9A6A2F"
+  },
+  {
+   "name": "Chocolate",
+   "hex": "#4A2C1A"
+  },
+  {
+   "name": "Violet",
+   "hex": "#8A5BD8"
+  },
+  {
+   "name": "Jade",
+   "hex": "#3FA37A"
+  },
+  {
+   "name": "Storm",
+   "hex": "#6F7C93"
+  }
+ ],
+ "names": [
+  "Sunny",
+  "Mika",
+  "Kai",
+  "Juno",
+  "Riku",
+  "Pip",
+  "Nori",
+  "Skye"
+ ],
+ "items": [
+  {
+   "id": "top_bikini",
+   "name": "Wave Bikini Top",
+   "slot": "top",
+   "bodies": [
+    "female"
+   ],
+   "price": 20,
+   "colors": [
+    "#FF7EB6",
+    "#4FC3F7",
+    "#FFD84D",
+    "#FFFFFF"
+   ],
+   "color_names": [
+    "Bubblegum",
+    "Sky",
+    "Sunshine",
+    "Cloud"
+   ],
+   "desc": "A bright swim top for sunny sessions.",
+   "mesh_builder": "top_bikini",
+   "starter": false
+  },
+  {
+   "id": "top_crop_tank",
+   "name": "Sunny Crop Tank",
+   "slot": "top",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 25,
+   "colors": [
+    "#FFD84D",
+    "#FF7EB6",
+    "#4FC3F7",
+    "#FFFFFF"
+   ],
+   "color_names": [
+    "Sunshine",
+    "Bubblegum",
+    "Sky",
+    "Cloud"
+   ],
+   "desc": "Short and breezy. Great for tricks.",
+   "mesh_builder": "top_crop_tank",
+   "starter": true
+  },
+  {
+   "id": "top_surf_tee",
+   "name": "Tidal Surf Tee",
+   "slot": "top",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 30,
+   "colors": [
+    "#4FC3F7",
+    "#FF5A5F",
+    "#FFD84D",
+    "#7C83FD"
+   ],
+   "color_names": [
+    "Ocean",
+    "Coral",
+    "Sunshine",
+    "Grape"
+   ],
+   "desc": "Soft cotton tee with a wave print.",
+   "mesh_builder": "top_surf_tee",
+   "starter": true
+  },
+  {
+   "id": "top_hoodie",
+   "name": "Pebble Hoodie",
+   "slot": "top",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 55,
+   "colors": [
+    "#7C83FD",
+    "#FF9F1C",
+    "#FF7EB6",
+    "#4FC3F7"
+   ],
+   "color_names": [
+    "Grape",
+    "Tangerine",
+    "Bubblegum",
+    "Sky"
+   ],
+   "desc": "Cosy hoodie with a big front pocket.",
+   "mesh_builder": "top_hoodie",
+   "starter": false
+  },
+  {
+   "id": "top_rash_guard",
+   "name": "Splash Rash Guard",
+   "slot": "top",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 40,
+   "colors": [
+    "#FF7A4D",
+    "#4FC3F7",
+    "#7C83FD",
+    "#FFD84D"
+   ],
+   "color_names": [
+    "Sunset",
+    "Ocean",
+    "Grape",
+    "Sunshine"
+   ],
+   "desc": "Quick-dry short sleeves with contrast cuffs.",
+   "mesh_builder": "top_rash_guard",
+   "starter": true
+  },
+  {
+   "id": "top_flannel",
+   "name": "Cabin Flannel",
+   "slot": "top",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 45,
+   "colors": [
+    "#FF5A5F",
+    "#4FC3F7",
+    "#FF9F1C",
+    "#7C83FD"
+   ],
+   "color_names": [
+    "Cherry",
+    "Sky",
+    "Tangerine",
+    "Grape"
+   ],
+   "desc": "A checked overshirt, buttoned or not.",
+   "mesh_builder": "top_flannel",
+   "starter": false
+  },
+  {
+   "id": "bottom_bikini",
+   "name": "Wave Bikini Bottoms",
+   "slot": "bottom",
+   "bodies": [
+    "female"
+   ],
+   "price": 20,
+   "colors": [
+    "#FF7EB6",
+    "#4FC3F7",
+    "#FFD84D",
+    "#FFFFFF"
+   ],
+   "color_names": [
+    "Bubblegum",
+    "Sky",
+    "Sunshine",
+    "Cloud"
+   ],
+   "desc": "Matches the Wave top.",
+   "mesh_builder": "bottom_bikini",
+   "starter": false
+  },
+  {
+   "id": "bottom_board_shorts",
+   "name": "Reef Board Shorts",
+   "slot": "bottom",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 30,
+   "colors": [
+    "#1AB7BE",
+    "#FF7A4D",
+    "#7C83FD",
+    "#FFD84D"
+   ],
+   "color_names": [
+    "Lagoon",
+    "Sunset",
+    "Grape",
+    "Sunshine"
+   ],
+   "desc": "Knee-length shorts with a side stripe.",
+   "mesh_builder": "bottom_board_shorts",
+   "starter": true
+  },
+  {
+   "id": "bottom_cargo_shorts",
+   "name": "Trail Cargo Shorts",
+   "slot": "bottom",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 40,
+   "colors": [
+    "#C9A66B",
+    "#4F6D8F",
+    "#7A5C45",
+    "#FF9F1C"
+   ],
+   "color_names": [
+    "Sand",
+    "Denim",
+    "Mocha",
+    "Tangerine"
+   ],
+   "desc": "Big pockets for snacks and stickers.",
+   "mesh_builder": "bottom_cargo_shorts",
+   "starter": true
+  },
+  {
+   "id": "bottom_skate_jeans",
+   "name": "Rollin' Skate Jeans",
+   "slot": "bottom",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 50,
+   "colors": [
+    "#3E6FA8",
+    "#1B1B2F",
+    "#8FB8E8",
+    "#7C83FD"
+   ],
+   "color_names": [
+    "Indigo",
+    "Midnight",
+    "Faded",
+    "Grape"
+   ],
+   "desc": "Tough baggy jeans that take a tumble.",
+   "mesh_builder": "bottom_skate_jeans",
+   "starter": false
+  },
+  {
+   "id": "bottom_joggers",
+   "name": "Cloudy Joggers",
+   "slot": "bottom",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 35,
+   "colors": [
+    "#8A8FA3",
+    "#1B1B2F",
+    "#FF7EB6",
+    "#4FC3F7"
+   ],
+   "color_names": [
+    "Heather",
+    "Midnight",
+    "Bubblegum",
+    "Sky"
+   ],
+   "desc": "Stretchy and super comfy.",
+   "mesh_builder": "bottom_joggers",
+   "starter": false
+  },
+  {
+   "id": "socks_crew",
+   "name": "Crew Socks",
+   "slot": "socks",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 8,
+   "colors": [
+    "#FFFFFF",
+    "#FFD84D",
+    "#FF7EB6",
+    "#4FC3F7"
+   ],
+   "color_names": [
+    "Cloud",
+    "Sunshine",
+    "Bubblegum",
+    "Sky"
+   ],
+   "desc": "Classic mid-length socks.",
+   "mesh_builder": "socks_crew",
+   "starter": true
+  },
+  {
+   "id": "socks_tube",
+   "name": "Tube Socks",
+   "slot": "socks",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 10,
+   "colors": [
+    "#FFFFFF",
+    "#FF5A5F",
+    "#4FC3F7"
+   ],
+   "color_names": [
+    "Cloud",
+    "Cherry",
+    "Sky"
+   ],
+   "desc": "Pulled up high with stripes.",
+   "mesh_builder": "socks_tube",
+   "starter": false
+  },
+  {
+   "id": "socks_ankle",
+   "name": "Ankle Socks",
+   "slot": "socks",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 8,
+   "colors": [
+    "#FFFFFF",
+    "#1B1B2F",
+    "#FF9F1C"
+   ],
+   "color_names": [
+    "Cloud",
+    "Midnight",
+    "Tangerine"
+   ],
+   "desc": "Short and sporty.",
+   "mesh_builder": "socks_ankle",
+   "starter": false
+  },
+  {
+   "id": "socks_striped",
+   "name": "Zig Zag Socks",
+   "slot": "socks",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 12,
+   "colors": [
+    "#FF7EB6",
+    "#7C83FD",
+    "#FFD84D"
+   ],
+   "color_names": [
+    "Bubblegum",
+    "Grape",
+    "Sunshine"
+   ],
+   "desc": "Loud stripes for loud tricks.",
+   "mesh_builder": "socks_striped",
+   "starter": false
+  },
+  {
+   "id": "shoes_low_vulc",
+   "name": "Pebble Classic",
+   "slot": "shoes",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 45,
+   "colors": [
+    "#FF7A4D",
+    "#4FC3F7",
+    "#FFFFFF",
+    "#7C83FD"
+   ],
+   "color_names": [
+    "Sunset",
+    "Sky",
+    "Cloud",
+    "Grape"
+   ],
+   "desc": "Low-top vulcanised shoe with a gum sole.",
+   "mesh_builder": "shoes_low_vulc",
+   "starter": true
+  },
+  {
+   "id": "shoes_cupsole",
+   "name": "Dunkr Cup",
+   "slot": "shoes",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 60,
+   "colors": [
+    "#FFD84D",
+    "#FF5A5F",
+    "#4FC3F7",
+    "#FFFFFF"
+   ],
+   "color_names": [
+    "Sunshine",
+    "Cherry",
+    "Sky",
+    "Cloud"
+   ],
+   "desc": "Chunky cupsole with extra grip and support.",
+   "mesh_builder": "shoes_cupsole",
+   "starter": false
+  },
+  {
+   "id": "shoes_puffy",
+   "name": "Cloud Puff",
+   "slot": "shoes",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 65,
+   "colors": [
+    "#FF7EB6",
+    "#FFFFFF",
+    "#7C83FD"
+   ],
+   "color_names": [
+    "Bubblegum",
+    "Cloud",
+    "Grape"
+   ],
+   "desc": "Puffy padded tongue for soft landings.",
+   "mesh_builder": "shoes_puffy",
+   "starter": false
+  },
+  {
+   "id": "shoes_high_top",
+   "name": "Skyline Hi",
+   "slot": "shoes",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 70,
+   "colors": [
+    "#1B1B2F",
+    "#FF5A5F",
+    "#4FC3F7",
+    "#FFFFFF"
+   ],
+   "color_names": [
+    "Midnight",
+    "Cherry",
+    "Sky",
+    "Cloud"
+   ],
+   "desc": "High-top for extra ankle love.",
+   "mesh_builder": "shoes_high_top",
+   "starter": false
+  },
+  {
+   "id": "deck_popsicle",
+   "name": "Popsicle 8.0",
+   "slot": "deck",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 40,
+   "colors": [
+    "#1AB7BE",
+    "#FF7EB6",
+    "#FFD84D",
+    "#7C83FD"
+   ],
+   "color_names": [
+    "Lagoon",
+    "Bubblegum",
+    "Sunshine",
+    "Grape"
+   ],
+   "desc": "The classic shape. Pops easy, flips easy.",
+   "mesh_builder": "deck_popsicle",
+   "starter": true
+  },
+  {
+   "id": "deck_cruiser",
+   "name": "Wobble Cruiser",
+   "slot": "deck",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 55,
+   "colors": [
+    "#FF9F1C",
+    "#4FC3F7",
+    "#FF5A5F",
+    "#FFFFFF"
+   ],
+   "color_names": [
+    "Tangerine",
+    "Sky",
+    "Cherry",
+    "Cloud"
+   ],
+   "desc": "Wide and stable for cruising the park.",
+   "mesh_builder": "deck_cruiser",
+   "starter": false
+  },
+  {
+   "id": "deck_oldschool",
+   "name": "Retro Wide",
+   "slot": "deck",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 65,
+   "colors": [
+    "#FF5A5F",
+    "#FFD84D",
+    "#7C83FD",
+    "#1AB7BE"
+   ],
+   "color_names": [
+    "Cherry",
+    "Sunshine",
+    "Grape",
+    "Lagoon"
+   ],
+   "desc": "Old-school shape with a big square tail.",
+   "mesh_builder": "deck_oldschool",
+   "starter": false
+  },
+  {
+   "id": "truck_standard",
+   "name": "Steady Trucks",
+   "slot": "truck",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 30,
+   "colors": [
+    "#B8B6CC",
+    "#FFD84D",
+    "#FF7EB6",
+    "#4FC3F7"
+   ],
+   "color_names": [
+    "Silver",
+    "Gold",
+    "Bubblegum",
+    "Sky"
+   ],
+   "desc": "Standard height trucks. Reliable everywhere.",
+   "mesh_builder": "truck_standard",
+   "starter": true
+  },
+  {
+   "id": "truck_low",
+   "name": "Lowdown Trucks",
+   "slot": "truck",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 40,
+   "colors": [
+    "#B8B6CC",
+    "#1B1B2F",
+    "#FF5A5F"
+   ],
+   "color_names": [
+    "Silver",
+    "Midnight",
+    "Cherry"
+   ],
+   "desc": "Low trucks keep the flip tricks snappy.",
+   "mesh_builder": "truck_low",
+   "starter": false
+  },
+  {
+   "id": "truck_hollow",
+   "name": "Feather Trucks",
+   "slot": "truck",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 55,
+   "colors": [
+    "#B8B6CC",
+    "#7C83FD",
+    "#FF9F1C",
+    "#FFFFFF"
+   ],
+   "color_names": [
+    "Silver",
+    "Grape",
+    "Tangerine",
+    "Cloud"
+   ],
+   "desc": "Light hollow axles. Easy on the legs.",
+   "mesh_builder": "truck_hollow",
+   "starter": false
+  },
+  {
+   "id": "wheel_street_52",
+   "name": "Street 52mm",
+   "slot": "wheel",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 25,
+   "colors": [
+    "#FFFFFF",
+    "#FF7EB6",
+    "#FFD84D",
+    "#4FC3F7"
+   ],
+   "color_names": [
+    "Cloud",
+    "Bubblegum",
+    "Sunshine",
+    "Sky"
+   ],
+   "desc": "Small, quick wheels for rails and ledges.",
+   "mesh_builder": "wheel_street_52",
+   "starter": true
+  },
+  {
+   "id": "wheel_park_54",
+   "name": "Park 54mm",
+   "slot": "wheel",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 30,
+   "colors": [
+    "#4FC3F7",
+    "#FF9F1C",
+    "#FF5A5F",
+    "#FFFFFF"
+   ],
+   "color_names": [
+    "Sky",
+    "Tangerine",
+    "Cherry",
+    "Cloud"
+   ],
+   "desc": "All-rounder for bowls and ramps.",
+   "mesh_builder": "wheel_park_54",
+   "starter": false
+  },
+  {
+   "id": "wheel_cruiser_56",
+   "name": "Soft Cruiser 56mm",
+   "slot": "wheel",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 45,
+   "colors": [
+    "#FFD84D",
+    "#7C83FD",
+    "#FF7EB6"
+   ],
+   "color_names": [
+    "Sunshine",
+    "Grape",
+    "Bubblegum"
+   ],
+   "desc": "Big soft wheels roll over anything.",
+   "mesh_builder": "wheel_cruiser_56",
+   "starter": false
+  },
+  {
+   "id": "bearing_standard",
+   "name": "Roller Bearings",
+   "slot": "bearing",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 10,
+   "colors": [
+    "#B8B6CC",
+    "#FFD84D"
+   ],
+   "color_names": [
+    "Silver",
+    "Gold"
+   ],
+   "desc": "Smooth, dependable spinners.",
+   "mesh_builder": "bearing_none",
+   "starter": true
+  },
+  {
+   "id": "bearing_fast",
+   "name": "Zip Bearings",
+   "slot": "bearing",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 25,
+   "colors": [
+    "#4FC3F7",
+    "#FF5A5F"
+   ],
+   "color_names": [
+    "Sky",
+    "Cherry"
+   ],
+   "desc": "Sealed for extra zip.",
+   "mesh_builder": "bearing_none",
+   "starter": false
+  },
+  {
+   "id": "bearing_smooth",
+   "name": "Glide Bearings",
+   "slot": "bearing",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 35,
+   "colors": [
+    "#FF7EB6",
+    "#7C83FD"
+   ],
+   "color_names": [
+    "Bubblegum",
+    "Grape"
+   ],
+   "desc": "Whisper-quiet and super smooth.",
+   "mesh_builder": "bearing_none",
+   "starter": false
+  },
+  {
+   "id": "grip_black",
+   "name": "Classic Grip",
+   "slot": "griptape",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 8,
+   "colors": [
+    "#2B2B33",
+    "#4A4A5A"
+   ],
+   "color_names": [
+    "Black",
+    "Charcoal"
+   ],
+   "desc": "Plain black griptape.",
+   "mesh_builder": "griptape_color",
+   "starter": true
+  },
+  {
+   "id": "grip_clear",
+   "name": "Clear Grip",
+   "slot": "griptape",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 10,
+   "colors": [
+    "#D9C7A0",
+    "#EADFC4"
+   ],
+   "color_names": [
+    "Sand",
+    "Pale"
+   ],
+   "desc": "See your deck art through the grip.",
+   "mesh_builder": "griptape_color",
+   "starter": false
+  },
+  {
+   "id": "grip_fruit",
+   "name": "Fruit Grip",
+   "slot": "griptape",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 15,
+   "colors": [
+    "#FF7EB6",
+    "#FFD84D",
+    "#4FC3F7",
+    "#FF9F1C"
+   ],
+   "color_names": [
+    "Berry",
+    "Lemon",
+    "Blueberry",
+    "Orange"
+   ],
+   "desc": "Bright coloured grip.",
+   "mesh_builder": "griptape_color",
+   "starter": false
+  },
+  {
+   "id": "hair_ponytail",
+   "name": "Ponytail",
+   "slot": "hair",
+   "bodies": [
+    "female"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_ponytail",
+   "starter": true
+  },
+  {
+   "id": "hair_bob",
+   "name": "Bob Cut",
+   "slot": "hair",
+   "bodies": [
+    "female"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_bob",
+   "starter": true
+  },
+  {
+   "id": "hair_long",
+   "name": "Long and Flowy",
+   "slot": "hair",
+   "bodies": [
+    "female"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_long",
+   "starter": true
+  },
+  {
+   "id": "hair_pigtails",
+   "name": "Pigtails",
+   "slot": "hair",
+   "bodies": [
+    "female"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_pigtails",
+   "starter": true
+  },
+  {
+   "id": "hair_bun",
+   "name": "Top Bun",
+   "slot": "hair",
+   "bodies": [
+    "female"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_bun",
+   "starter": true
+  },
+  {
+   "id": "hair_short_spiky",
+   "name": "Spiky Short",
+   "slot": "hair",
+   "bodies": [
+    "male"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_short_spiky",
+   "starter": true
+  },
+  {
+   "id": "hair_undercut",
+   "name": "Undercut",
+   "slot": "hair",
+   "bodies": [
+    "male"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_undercut",
+   "starter": true
+  },
+  {
+   "id": "hair_messy",
+   "name": "Messy Waves",
+   "slot": "hair",
+   "bodies": [
+    "male"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_messy",
+   "starter": true
+  },
+  {
+   "id": "hair_buzz",
+   "name": "Buzz Cut",
+   "slot": "hair",
+   "bodies": [
+    "male"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_buzz",
+   "starter": true
+  },
+  {
+   "id": "hair_shaggy",
+   "name": "Shaggy",
+   "slot": "hair",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 5,
+   "colors": [],
+   "color_names": [],
+   "desc": "A hair style.",
+   "mesh_builder": "hair_shaggy",
+   "starter": true
+  },
+  {
+   "id": "acc_cap",
+   "name": "Rolly Cap",
+   "slot": "accessory",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 20,
+   "colors": [
+    "#FF5A5F",
+    "#4FC3F7",
+    "#FFD84D",
+    "#1B1B2F"
+   ],
+   "color_names": [
+    "Cherry",
+    "Sky",
+    "Sunshine",
+    "Midnight"
+   ],
+   "desc": "A backwards cap for style points.",
+   "mesh_builder": "acc_cap",
+   "starter": false
+  },
+  {
+   "id": "acc_headband",
+   "name": "Sweat Headband",
+   "slot": "accessory",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 12,
+   "colors": [
+    "#FF7EB6",
+    "#FFFFFF",
+    "#FFD84D"
+   ],
+   "color_names": [
+    "Bubblegum",
+    "Cloud",
+    "Sunshine"
+   ],
+   "desc": "Keeps hair out of your eyes.",
+   "mesh_builder": "acc_headband",
+   "starter": false
+  },
+  {
+   "id": "acc_sunnies",
+   "name": "Sunny Shades",
+   "slot": "accessory",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 25,
+   "colors": [
+    "#1B1B2F",
+    "#FF7EB6",
+    "#4FC3F7"
+   ],
+   "color_names": [
+    "Midnight",
+    "Bubblegum",
+    "Sky"
+   ],
+   "desc": "Cool shades for bright days.",
+   "mesh_builder": "acc_sunnies",
+   "starter": false
+  },
+  {
+   "id": "acc_wristbands",
+   "name": "Wrist Bands",
+   "slot": "accessory",
+   "bodies": [
+    "female",
+    "male"
+   ],
+   "price": 10,
+   "colors": [
+    "#FFFFFF",
+    "#FFD84D",
+    "#FF7EB6"
+   ],
+   "color_names": [
+    "Cloud",
+    "Sunshine",
+    "Bubblegum"
+   ],
+   "desc": "Matching bands for both wrists.",
+   "mesh_builder": "acc_wristbands",
+   "starter": false
+  }
+ ]
+}

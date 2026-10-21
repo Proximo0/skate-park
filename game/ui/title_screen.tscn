@@ -60,24 +60,34 @@ anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 80.0
-offset_top = -330.0
-offset_right = 400.0
+offset_top = -520.0
+offset_right = 440.0
 offset_bottom = -40.0
 grow_vertical = 0
 theme_override_constants/separation = 18
 alignment = 2
 
 [node name="Play" type="Button" parent="Ui/Menu"]
-custom_minimum_size = Vector2(320, 80)
+custom_minimum_size = Vector2(360, 80)
 layout_mode = 2
 text = "Play"
 
+[node name="Create" type="Button" parent="Ui/Menu"]
+custom_minimum_size = Vector2(360, 80)
+layout_mode = 2
+text = "Create Skater"
+
+[node name="Shop" type="Button" parent="Ui/Menu"]
+custom_minimum_size = Vector2(360, 80)
+layout_mode = 2
+text = "Skate Shop"
+
 [node name="Controls" type="Button" parent="Ui/Menu"]
-custom_minimum_size = Vector2(320, 80)
+custom_minimum_size = Vector2(360, 80)
 layout_mode = 2
 text = "Controls"
 
 [node name="Quit" type="Button" parent="Ui/Menu"]
-custom_minimum_size = Vector2(320, 80)
+custom_minimum_size = Vector2(360, 80)
 layout_mode = 2
 text = "Quit"
