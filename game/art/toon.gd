@@ -9,6 +9,9 @@ const OUTLINE_SHADER: Shader = preload("res://game/art/toon_outline.gdshader")
 ## Ink from the art palette (#1B1B2F), used for outlines.
 const INK: Color = Color(0.106, 0.106, 0.184, 1.0)
 
+## Strength of the saturation-aware cloth shadow (skater garment meshes, palette keys top*/bottom*/sock*).
+const CLOTH_SHADE: float = 1.0
+
 static var _outline_material: ShaderMaterial = null
 static var _cache: Dictionary = {}
 ## Ink outlines are off by default (the playtest found they made the scene look busier, not better).
@@ -18,10 +21,12 @@ static var outlines_enabled: bool = false
 
 ## Toon material for a flat colour. With outline (and outlines_enabled), the ink outline pass is its next_pass.
 ## Cached per colour: the same colour and outline flag return the same instance.
-static func material(color: Color, outline: bool = true, tex: Texture2D = null) -> ShaderMaterial:
+static func material(color: Color, outline: bool = true, tex: Texture2D = null, cloth: bool = false) -> ShaderMaterial:
 	var key: String = "%s|%s" % [color.to_html(true), str(outline)]
 	if tex != null:
 		key = "%s|t%d|%s" % [color.to_html(true), tex.get_instance_id(), str(outline)]
+	if cloth:
+		key = "%s|cloth|%s" % [color.to_html(true), str(outline)]
 	if _cache.has(key):
 		return _cache[key] as ShaderMaterial
 	var mat: ShaderMaterial = ShaderMaterial.new()
@@ -29,6 +34,8 @@ static func material(color: Color, outline: bool = true, tex: Texture2D = null) 
 	mat.set_shader_parameter("albedo", color)
 	if tex != null:
 		mat.set_shader_parameter("albedo_tex", tex)
+	if cloth:
+		mat.set_shader_parameter("cloth_shade", CLOTH_SHADE)
 	if outline and outlines_enabled:
 		mat.next_pass = _shared_outline()
 	_cache[key] = mat
@@ -140,5 +147,7 @@ static func _apply_one(mi: MeshInstance3D, outline: bool) -> bool:
 	if src is StandardMaterial3D:
 		color = (src as StandardMaterial3D).albedo_color
 		tex = (src as StandardMaterial3D).albedo_texture
-	mi.material_override = material(color, outline, tex)
+	var key: String = str(mi.get_meta("palette", ""))
+	var cloth: bool = key.begins_with("top") or key.begins_with("bottom") or key.begins_with("sock")
+	mi.material_override = material(color, outline, tex, cloth)
 	return true

@@ -60,7 +60,7 @@ static func _mats(mats: Dictionary) -> void:
 	Wardrobe.mat(mats, "bottom_trim", TRIM_DEFAULT)
 	# A deeper, quieter shade of the fabric for hems, cuffs and seams: reads as folded cloth, not a bright hoop.
 	var base: Color = (mats["bottom"] as StandardMaterial3D).albedo_color
-	Wardrobe.mat(mats, "bottom_dark", Color.from_hsv(base.h, base.s * 0.9, base.v * 0.72))
+	Wardrobe.mat(mats, "bottom_dark", Color.from_hsv(base.h, base.s * 0.95, base.v * 0.86))
 
 
 # --- bikini ---------------------------------------------------------------------------------------------------
@@ -231,6 +231,8 @@ static func board_shorts(rig: Dictionary, body_type: String, mats: Dictionary) -
 				hem_ring = ring
 		rows.reverse()
 		SkaterParts.part(upper, side + "BoardShortsLegMesh", SkaterParts.grid(rows, true), Vector3.ZERO, mats, "bottom")
+		# Inside of the hem: the same cloth seen from within (flipped), so an open end reads as cloth, not a see-through hoop.
+		SkaterParts.part(upper, side + "BoardShortsLiningMesh", SkaterParts.grid(rows.slice(0, 8), true, true), Vector3.ZERO, mats, "bottom_dark")
 		var hp: PackedVector3Array = hem_ring.duplicate()
 		hp.append(hem_ring[0])
 		var hr: PackedFloat32Array = PackedFloat32Array()
@@ -312,7 +314,7 @@ static func _leg_pt(secs: Array, thigh: bool, ul: float, prof: Array, y: float, 
 
 
 ## Closed grid of a loose leg piece. Row heights are Callables(a) -> y, listed top to bottom.
-static func _leg_mesh(secs: Array, thigh: bool, ul: float, prof: Array, rows_y: Array, cols: int, extra: float) -> ArrayMesh:
+static func _leg_mesh(secs: Array, thigh: bool, ul: float, prof: Array, rows_y: Array, cols: int, extra: float, flip: bool = false) -> ArrayMesh:
 	var rows: Array = []
 	for fn: Callable in rows_y:
 		var ring: PackedVector3Array = PackedVector3Array()
@@ -321,7 +323,7 @@ static func _leg_mesh(secs: Array, thigh: bool, ul: float, prof: Array, rows_y: 
 			ring.append(_leg_pt(secs, thigh, ul, prof, float(fn.call(a)), a, extra))
 		rows.append(ring)
 	rows.reverse()
-	return SkaterParts.grid(rows, true)
+	return SkaterParts.grid(rows, true, flip)
 
 
 static func _const_y(y: float) -> Callable:
@@ -471,6 +473,8 @@ static func cargo_shorts(rig: Dictionary, _body_type: String, mats: Dictionary) 
 		for i: int in 17:
 			rows.append(_const_y(lerpf(0.2 * ul, y_hem, float(i) / 16.0)))
 		SkaterParts.part(upper, side + "CargoLegMesh", _leg_mesh(secs, true, ul, CARGO_PROF, rows, 32, 0.0), Vector3.ZERO, mats, "bottom")
+		SkaterParts.part(upper, side + "CargoLiningMesh", _leg_mesh(secs, true, ul, CARGO_PROF, rows.slice(rows.size() - 8), 32, 0.0, true),
+				Vector3.ZERO, mats, "bottom_dark")
 		var hem: PackedVector3Array = _leg_line(secs, true, ul, CARGO_PROF, _const_y(y_hem), 0.002)
 		_tube_part(upper, side + "CargoHemMesh", hem, 0.0042, mats, "bottom_dark")
 		_tube_part(upper, side + "CargoHemStitchMesh", _leg_line(secs, true, ul, CARGO_PROF, _const_y(y_hem + 0.017), 0.0016), 0.0013,

@@ -22,6 +22,9 @@ uniform float rim_power : hint_range(0.5, 8.0) = 3.0;
 // 1 multiplies the albedo by the mesh's vertex colour (and a MultiMesh instance colour): weathering, can prints. 0 ignores it.
 // Optional albedo texture (default white, so no change without one): multiplied into albedo by the mesh UVs.
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap, repeat_enable;
+// Cloth opt-in (skater garments only, 0 elsewhere): on saturated colours the shadow band is deepened and a darker core shadow added, so neon
+// tops read as folded cloth instead of flat poster colour. Skin and park materials leave this at 0 and render exactly as before.
+uniform float cloth_shade : hint_range(0.0, 1.0) = 0.0;
 uniform float vertex_color_amount : hint_range(0.0, 1.0) = 0.0;
 
 void fragment() {
@@ -46,6 +49,16 @@ void light() {
 	vec3 base = ALBEDO;
 	vec3 shadow_col = base * shadow_tint;
 	vec3 mid_col = base * mid_level;
+	if (cloth_shade > 0.0) {
+		float mx = max(base.r, max(base.g, base.b));
+		float mn = min(base.r, min(base.g, base.b));
+		float boost = cloth_shade * smoothstep(0.45, 0.9, (mx - mn) / max(mx, 0.001));
+		// Deeper, more saturated shadow (the colour raised to a power), a slightly dimmer mid band, and a core shadow in the darkest light.
+		vec3 deep = pow(max(base, vec3(0.0001)), vec3(1.0 + 0.7 * boost)) * shadow_tint * (1.0 - 0.3 * boost);
+		shadow_col = mix(shadow_col, deep, boost);
+		shadow_col *= 1.0 - 0.3 * boost * (1.0 - smoothstep(0.0, 0.2, lit));
+		mid_col *= 1.0 - 0.1 * boost;
+	}
 	vec3 toon_col = mix(shadow_col, mid_col, mid_band);
 	toon_col = mix(toon_col, base, top_band);
 	DIFFUSE_LIGHT += toon_col * LIGHT_COLOR * (light_gain / 3.14159265);
