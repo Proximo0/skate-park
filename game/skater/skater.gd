@@ -15,6 +15,21 @@ signal bailed
 signal physics_ticked(frame: Dictionary)
 
 const SPIN_POINTS_PER_180 := 100
+## Floor contacts bending more than about 25 degrees from the current floor in one tick are checked against the
+## mesh: an edge or vertex touch is a wall graze, not a new floor.
+const SNAG_CHECK_DOT: float = 0.906
+## Ground ticks on a curved or sloped face (normal y under 0.9) needed before a steep launch counts as vert air.
+const VERT_MIN_TRANSITION_TICKS: int = 3
+## Edge contacts no higher than this above the board (m) are rolled over, not grazed.
+## A floor contact more than about 50 degrees from the current floor is never a new floor (ramp toes are gentler).
+const FLOOR_JUMP_DOT: float = 0.64
+const EDGE_STEP_HEIGHT: float = 0.12
+## Wall hits squarer than this (cos of incidence) bounce back instead of deflecting along the wall.
+const WALL_HEAD_ON: float = 0.85
+## Share of the speed into a wall that comes back as a bounce.
+const WALL_BOUNCE: float = 0.25
+## Head-on speed into a wall (m/s) above which the skater bails instead of stumbling.
+const WALL_BAIL_SPEED: float = 9.0
 
 ## Live physics tuning. Every ride number is read from here each tick.
 var tune: PhysicsTuning = PhysicsTuning.shared()
@@ -80,6 +95,7 @@ var _d_pumping: bool = false
 var _d_pushing: bool = false
 var _d_braking: bool = false
 var _d_pulse: float = 0.0
+var _transition_ticks: int = 0  ## consecutive ground ticks on a face with normal y < 0.9 (a real transition)
 
 
 func _ready() -> void:
@@ -354,6 +370,14 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	if is_on_floor():
 		var fn: Vector3 = get_floor_normal()
 		var was: Vector3 = _floor_normal
+		if fn.dot(was) < SNAG_CHECK_DOT:
+			# A big jump in the floor: is it a real face (a ramp toe, a bank) or the sphere touching an edge or vertex
+			# (the end of a side wall, a ramp's side rim)? Edge contacts give blended normals no face has.
+			var real: Vector3 = _real_floor_normal(was)
+			if real == Vector3.ZERO:
+				_graze_edge(v, was)
+				return
+			fn = real
 		if _leaves_surface(was, fn, v, delta):
 			# Over a lip (kicker top, ledge edge, funbox crest at speed): the surface falls away faster than
 			# gravity can hold the board to it, so carry on along the old surface into the air.
@@ -361,6 +385,9 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			_ev("leave_edge")
 			velocity = v
 			_launch_normal = was
+			return
+		var block: Vector3 = _blocking_normal(v, fn)
+		if block != Vector3.ZERO and _wall_response(v, block, fn, false):
 			return
 		var spd: float = v.length()
 		var grazing: bool = not is_on_wall() or absf(get_wall_normal().dot(v / maxf(spd, 0.001))) < 0.3
@@ -370,6 +397,7 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			_ev("speed_restore")
 			velocity = velocity.slide(fn).normalized() * spd
 		_floor_normal = fn
+		_transition_ticks = _transition_ticks + 1 if fn.y < 0.9 else 0
 		if was.y < tune.vert_normal_y and velocity.dot(Vector3.UP) > 0.0:
 			_launch_normal = was
 		elif fn.y >= tune.vert_normal_y:
@@ -378,6 +406,111 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	else:
 		# leaving a surface: was it the top of a vert ramp?
 		_launch_normal = _floor_normal
+
+
+## The floor normal from this tick's contacts that lie on a real face, averaged, or ZERO when every floor contact
+## that bends more than SNAG_CHECK_DOT away from `was` is an edge or vertex touch. A sphere touching an edge gets
+## a normal pointing from the edge to its centre, a blend no face of the mesh has: a ray along that normal hits a
+## face whose own normal differs. Contacts close to `was` are kept unchecked (facets of a curve).
+func _real_floor_normal(was: Vector3) -> Vector3:
+	var sum: Vector3 = Vector3.ZERO
+	var cos_max: float = cos(floor_max_angle) - 0.01
+	for i: int in get_slide_collision_count():
+		var c: KinematicCollision3D = get_slide_collision(i)
+		for j: int in c.get_collision_count():
+			var n: Vector3 = c.get_normal(j)
+			if n.dot(up_direction) < cos_max:
+				continue  # a wall or ceiling contact
+			if n.dot(was) < FLOOR_JUMP_DOT:
+				continue  # too far round in one tick to be the next stretch of floor: a wall met from a slope
+			if n.dot(was) < SNAG_CHECK_DOT and not _is_face_contact(c.get_position(j), n):
+				continue
+			sum += n
+	return sum.normalized() if sum.length() > 0.001 else Vector3.ZERO
+
+
+## True when the contact at `p` with normal `n` lies on a face with that normal (not an edge or vertex blend).
+func _is_face_contact(p: Vector3, n: Vector3) -> bool:
+	if not is_inside_tree():
+		return true
+	var q := PhysicsRayQueryParameters3D.create(p + n * 0.12, p - n * 0.12, collision_mask, [get_rid()])
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return false
+	return (hit["normal"] as Vector3).dot(n) > 0.985
+
+
+## The only floor contacts this tick were edges or walls (a wall end, a ramp's side rim, a vertical face that
+## counts as floor only because we are on a slope): ride on along the old floor. An edge no higher than a wheel
+## (a ramp toe's side rim) is rolled over at full speed; a taller one is hit like a wall.
+func _graze_edge(v: Vector3, was: Vector3) -> void:
+	_ev("edge_graze")
+	var hit_n: Vector3 = Vector3.ZERO
+	var hit_h: float = 0.0
+	for i: int in get_slide_collision_count():
+		var c: KinematicCollision3D = get_slide_collision(i)
+		if c.get_normal().dot(was) < SNAG_CHECK_DOT:
+			hit_n = c.get_normal()
+			hit_h = (c.get_position() - global_position).dot(was)
+	_floor_normal = was
+	up_direction = was
+	velocity = v
+	if hit_h > EDGE_STEP_HEIGHT:
+		_wall_response(v, hit_n, was, true)
+
+
+## Share of speed kept when glancing off a wall at `square` (0 = parallel, 1 = head-on): a THUG-style deflection
+## that turns you along the wall, not a stop.
+static func _deflect_keep(square: float) -> float:
+	return 1.0 - 0.22 * square * square
+
+
+## The wall (or overhang) contact most against the travel this tick, flattened onto the floor plane `n`.
+func _blocking_normal(v: Vector3, n: Vector3) -> Vector3:
+	var best: Vector3 = Vector3.ZERO
+	var best_d: float = 0.0
+	var cos_max: float = cos(floor_max_angle) - 0.01
+	for i: int in get_slide_collision_count():
+		var cn: Vector3 = get_slide_collision(i).get_normal()
+		if cn.dot(up_direction) >= cos_max:
+			continue  # floor
+		var d: float = -v.dot(cn.slide(n))
+		if d > best_d:
+			best_d = d
+			best = cn
+	return best
+
+
+## Rolling into a wall with normal `wn` (any contact normal; only its part along the floor `n` counts).
+## Glancing: turn along the wall keeping most of the speed. Square-on: bounce back a quarter of the speed into it
+## and stumble; bail when the head-on speed is too high to ride out. `force` sets the deflected velocity even when
+## the slide kept more. Returns true after a bail.
+func _wall_response(v: Vector3, wn: Vector3, n: Vector3, force: bool) -> bool:
+	var spd: float = v.length()
+	var w: Vector3 = wn.slide(n)
+	if spd < 0.5 or w.length() < 0.2:
+		return false
+	w = w.normalized()
+	var dir: Vector3 = v / spd
+	var square: float = -dir.dot(w)
+	if square <= 0.05:
+		return false
+	var into: float = spd * square
+	if square < WALL_HEAD_ON:
+		var keep: float = spd * _deflect_keep(square)
+		if force or velocity.length() < keep:
+			velocity = (dir - w * dir.dot(w)).slide(n).normalized() * keep
+		return false
+	if into > WALL_BAIL_SPEED:
+		velocity = w * into * WALL_BOUNCE
+		_ev("wall_slam")
+		_bail()  # the ragdoll takes the bounce; the body itself drops at the wall
+		velocity = Vector3.ZERO
+		return true
+	velocity = ((v - w * v.dot(w)) * 0.5 + w * into * WALL_BOUNCE).slide(n)
+	_ev("stumble")
+	_set_anim("land")
+	return false
 
 
 ## True when following the floor from normal `was` to `fn` this tick would need more grip than gravity gives:
@@ -444,7 +577,11 @@ func _enter_air(_from_rail: bool) -> void:
 	_ev("air")
 	balance_kind = ""
 	_rail = null
-	vert_air = _launch_normal.y < tune.vert_normal_y and _launch_normal.y > -0.2 and velocity.y > 0.5
+	# Vert air needs a real transition behind it: a steep normal adopted in one tick off flat ground is an edge
+	# touch (a wall end, a ramp rim), and the vert branch would throw away the sideways speed.
+	vert_air = _launch_normal.y < tune.vert_normal_y and _launch_normal.y > -0.2 and velocity.y > 0.5 \
+		and _transition_ticks >= VERT_MIN_TRANSITION_TICKS
+	_transition_ticks = 0
 	if vert_air:
 		# THUG-style vert: stay in the ramp's plane so the skater comes back down onto the ramp.
 		var out: Vector3 = Vector3(_launch_normal.x, 0.0, _launch_normal.z).normalized()
@@ -964,6 +1101,7 @@ func snapshot() -> Dictionary:
 		"left_rail": left_rail_path,
 		"left_rail_t": _left_rail_t,
 		"left_edge": _left_edge,
+		"transition_ticks": _transition_ticks,
 		"recent_grind_press": _recent_grind_press,
 		"pending_air": _pending_air.duplicate(true),
 		"snap_offset": _snap_offset,
@@ -1043,6 +1181,7 @@ func restore(d: Dictionary) -> void:
 	_left_rail = _rail_at(str(d["left_rail"]))
 	_left_rail_t = d["left_rail_t"]
 	_left_edge = d["left_edge"]
+	_transition_ticks = int(d.get("transition_ticks", VERT_MIN_TRANSITION_TICKS))
 	_recent_grind_press = d["recent_grind_press"]
 	_pending_air = (d["pending_air"] as Array).duplicate(true)
 	_snap_offset = d["snap_offset"]
