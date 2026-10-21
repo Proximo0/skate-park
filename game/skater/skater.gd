@@ -38,6 +38,7 @@ const PUMP_ACCEL_VERT := 22.0  ## the same pump on a steep (vert) transition: a 
 const RAIL_GRAVITY := 10.0  ## down rails speed up a little less than free rolling
 const RAIL_FRICTION := 0.5
 const EDGE_GRIP := 2.5  ## how much more than gravity's hold a convex bend may ask before the board leaves it
+const OVERHANG_RADIUS := 3.5  ## assumed curve radius when judging if speed holds the board to an overhang (loop top)
 const KILL_Y := -20.0  ## below the deepest bowl (the dome sinks about 7 m)
 const PUSH_PLANT := 0.18  ## matches SkaterPoser: first push steps off the tail, then each cycle kicks
 const PUSH_CYCLE := 0.6
@@ -250,6 +251,10 @@ func _ollie(power: float) -> void:
 func _ground_move(delta: float, allow_push: bool) -> void:
 	var n: Vector3 = _floor_normal
 	var v: Vector3 = velocity.slide(n)
+	var in_spd: float = velocity.length()
+	if in_spd > 0.5 and v.length() > 0.01 and absf(velocity.dot(n)) < 0.35 * in_spd:
+		# Following a curve onto the next facet: turn the velocity onto it rather than cutting it.
+		v = v.normalized() * in_spd
 	# keep a facing even when stopped
 	if v.length() > 0.5:
 		facing = v.normalized()
@@ -287,7 +292,14 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		_set_anim("crouch")
 	# Going up a steep wall: no snap and no push into the surface, so the skater leaves the lip
 	# into vert air instead of wrapping over onto the deck.
-	var climbing_vert: bool = n.y < VERT_NORMAL_Y and v.y > 0.3
+	# Upside down (a loop's upper half): only centripetal force holds the board on. Too slow, and it drops off.
+	if n.y < -0.2 and v.length_squared() < GRAVITY * -n.y * OVERHANG_RADIUS:
+		_left_edge = true
+		velocity = v
+		_launch_normal = n
+		return
+	# (Not on an overhang: inside a loop the surface keeps curving over the top, so stay glued to it.)
+	var climbing_vert: bool = n.y < VERT_NORMAL_Y and n.y > -0.2 and v.y > 0.3
 	velocity = v if climbing_vert else v - n * 0.5
 	up_direction = n
 	floor_snap_length = 0.0 if climbing_vert else 0.6
@@ -305,9 +317,10 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			_launch_normal = was
 			return
 		var spd: float = v.length()
-		if spd > 0.5 and (fn - was).dot(v) < 0.0 and fn.dot(was) > 0.8 and velocity.length() < spd:
-			# Rolling into a transition (a concave facet edge): ride the curve without losing speed to the
-			# facet corner, as a real ramp's smooth curve would.
+		var grazing: bool = not is_on_wall() or absf(get_wall_normal().dot(v / maxf(spd, 0.001))) < 0.3
+		if spd > 0.5 and fn.dot(was) > 0.8 and grazing and velocity.length() < spd:
+			# Riding a curved (faceted) ramp, transition or loop, or brushing along a curb: keep the speed the
+			# slope physics gave, so facet corners and glancing side contacts don't eat it.
 			velocity = velocity.slide(fn).normalized() * spd
 		_floor_normal = fn
 		if was.y < VERT_NORMAL_Y and velocity.dot(Vector3.UP) > 0.0:
@@ -383,7 +396,7 @@ func _go_airborne(_from_grind: bool) -> void:
 func _enter_air(_from_rail: bool) -> void:
 	balance_kind = ""
 	_rail = null
-	vert_air = _launch_normal.y < VERT_NORMAL_Y and velocity.y > 0.5
+	vert_air = _launch_normal.y < VERT_NORMAL_Y and _launch_normal.y > -0.2 and velocity.y > 0.5
 	if vert_air:
 		# THUG-style vert: stay in the ramp's plane so the skater comes back down onto the ramp.
 		var out: Vector3 = Vector3(_launch_normal.x, 0.0, _launch_normal.z).normalized()
