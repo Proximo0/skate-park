@@ -147,3 +147,12 @@ func test_idle_hips_only_dip_slightly_when_grounded() -> void:
 	var idle: Dictionary = SkaterPoser.pose_for("idle_ride", 0.0, 0.0, 0.0)
 	assert_true(absf(float(idle["hips_y"])) < 0.05, "relaxed hips within 5 cm of rest")
 	assert_near(float(idle["lift"]), 0.0, 0.0001, "no deck lift on flat board")
+
+
+func test_switch_stance_turns_body_and_revert_ends_in_new_stance() -> void:
+	assert_near(SkaterPoser.stance_yaw("idle_ride", false), 0.0, 0.001, "regular faces forward")
+	assert_near(SkaterPoser.stance_yaw("idle_ride", true), 180.0, 0.001, "switch faces back")
+	var end_yaw: float = float(SkaterPoser.pose_for("revert", 1.0, 0.0, 0.0)["body_yaw"])
+	assert_near(fposmod(end_yaw + SkaterPoser.stance_yaw("revert", true), 360.0), 180.0, 0.001, "revert into switch ends switch")
+	var start_yaw: float = float(SkaterPoser.pose_for("revert", 0.0, 0.0, 0.0)["body_yaw"])
+	assert_near(fposmod(start_yaw + SkaterPoser.stance_yaw("revert", false), 360.0), 180.0, 0.001, "revert out of switch starts switch")

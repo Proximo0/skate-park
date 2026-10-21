@@ -55,12 +55,26 @@ func _process(delta: float) -> void:
 	var balance: Balance = skater.get("balance")
 	var target: Dictionary = pose_for(str(skater.get("anim")), float(skater.get("anim_time")),
 			float(skater.get("crouch")), balance.angle)
+	target["body_yaw"] = float(target["body_yaw"]) + stance_yaw(str(skater.get("anim")), bool(skater.get("switch_stance")))
+	if _has_pose:
+		# Unwrap so the blend takes the short way round instead of spinning a full turn.
+		var cur: float = float(_current["body_yaw"])
+		target["body_yaw"] = cur + wrapf(float(target["body_yaw"]) - cur, -180.0, 180.0)
 	if not _has_pose:
 		_current = target
 		_has_pose = true
 	else:
 		_current = _blend(_current, target, 1.0 - exp(-BLEND_RATE * delta))
 	_apply(_current)
+
+
+## Extra body yaw for the stance: switch faces the body the other way round on the board. The revert pose
+## spins 0 to 180 from the old stance, which switch_stance has already left, hence the -180.
+static func stance_yaw(anim_name: String, switch: bool) -> float:
+	var yaw: float = 180.0 if switch else 0.0
+	if anim_name == "revert":
+		yaw -= 180.0
+	return yaw
 
 
 func _capture_rest() -> void:

@@ -6,7 +6,7 @@ extends CanvasLayer
 
 const MARGIN: int = 48
 const COUNT_RATE: float = 3.0  ## exponential approach speed of the score count-up, per second
-const FLOAT_RISE: float = 150.0
+const FLOAT_RISE: float = 110.0
 const FLOAT_TIME: float = 1.3
 const TRICK_HOLD: float = 0.9
 const BANNER_HOLD: float = 2.2
@@ -16,11 +16,11 @@ const BAL_W: int = 520
 const BAL_H: int = 40
 const BAL_TALL_W: int = 40
 const BAL_TALL_H: int = 320
-const BAL_HORIZ_Y: float = 0.36  ## screen height fraction for the horizontal balance meter
+const BAL_HORIZ_Y: float = 0.34  ## screen height fraction for the horizontal balance meter
 const BAL_MANUAL_X: float = 300.0  ## pixels right of centre for the manual (vertical) meter
-const TRICK_Y: float = 0.28
-const FLOAT_Y: float = 0.7
-const BANNER_Y: float = 0.2
+const TRICK_Y: float = 0.245
+const FLOAT_Y: float = 0.79
+const BANNER_Y: float = 0.135
 const TRACK_COLOUR := Color("#FFFFFF")
 const SPECIAL_GLOW_WIDTH: int = 6
 
@@ -202,7 +202,7 @@ func _update_special() -> void:
 	_special_fill.anchor_top = 1.0 - clampf(meter.value, 0.0, 1.0)
 	var pulse: float = 0.5 + 0.5 * sin(_time * 8.0)
 	if meter.is_special():
-		_fill_style.bg_color = UiStyle.SUNSHINE.lerp(UiStyle.WHITE, pulse * 0.5)
+		_fill_style.bg_color = UiStyle.SUNSHINE.lerp(UiStyle.WHITE, pulse * 0.25)
 		_special_glow.visible = true
 		_special_glow.modulate.a = 0.35 + 0.65 * pulse
 		_special_title.text = "SPECIAL!"
@@ -428,11 +428,11 @@ func _on_trick_started(trick: Dictionary) -> void:
 
 
 func _on_combo_landed(points: int, _text: String) -> void:
-	_spawn_float("+%s!" % format_points(points), UiStyle.LIME, false)
+	_spawn_float("+%s!" % format_points(points), UiStyle.LIME, false, UiStyle.SIZE_TITLE)
 
 
 func _on_combo_bailed(_text: String) -> void:
-	_spawn_float("Bail!", UiStyle.BUBBLEGUM, true)
+	_spawn_float("Bail!", UiStyle.BUBBLEGUM, true, UiStyle.SIZE_TITLE)
 
 
 func _on_gap_hit(gap_name: String, points: int) -> void:
@@ -453,8 +453,8 @@ func _pop_trick(text: String) -> void:
 
 
 ## A word that floats up from the combo area and fades. Wobbly text rocks side to side.
-func _spawn_float(text: String, color: Color, wobble: bool) -> void:
-	var lbl: Label = UiStyle.label(text, UiStyle.SIZE_BIG, color)
+func _spawn_float(text: String, color: Color, wobble: bool, size: int) -> void:
+	var lbl: Label = UiStyle.label(text, size, color)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.pivot_offset_ratio = Vector2(0.5, 0.5)
 	lbl.scale = Vector2(0.5, 0.5)

@@ -90,6 +90,10 @@ func _setup_goals() -> void:
 	if park is Park:
 		for c: Collectible in (park as Park).collectibles:
 			c.collected.connect(func(item: String, _group: String) -> void: goals.on_collect(item))
+	var panel := GoalsPanel.new()
+	panel.name = "GoalsPanel"
+	add_child(panel)
+	panel.bind(goals, func() -> float: return _t)
 
 
 func _on_goal(goal: Dictionary) -> void:
