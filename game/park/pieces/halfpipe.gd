@@ -62,7 +62,7 @@ static func _wall(width: float, deck: float, radius: float, height: float) -> No
 	side_right.position.x = width - SIDE_T
 	wall.add_child(side_right)
 	wall.add_child(PieceKit.rail(PackedVector3Array([Vector3(0.0, height, deck), Vector3(width, height, deck)]), "coping", "Coping"))
-	var pipe: Node3D = PieceKit.round_rail(Vector3(0.0, height, deck), Vector3(width, height, deck), 0.05, PieceKit.METAL, "CopingPipe")
+	var pipe: Node3D = PieceKit.round_rail(Vector3(0.0, height, deck), Vector3(width, height, deck), 0.05, PieceKit.COPING, "CopingPipe")
 	# the visual pipe only; the GrindRail above is the coping line
 	pipe.get_node("Line").free()
 	wall.add_child(pipe)

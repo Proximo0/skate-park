@@ -51,7 +51,7 @@ static func spine(length: float = 8.0, radius: float = 2.2, height: float = 2.4)
 	_patch(tris, 0.0, length, rh, rh + fin, 2, 1, top)
 	_patch(tris, 0.0, length, rh + fin, 2.0 * radius, 2, 12, right)
 	root.add_child(PieceKit.body(_mesh(tris), PieceKit.RAMP_WOOD, "Ramps"))
-	var cop := PieceKit.round_rail(Vector3(0.0, height, radius), Vector3(length, height, radius), 0.05, PieceKit.METAL, "Coping")
+	var cop := PieceKit.round_rail(Vector3(0.0, height, radius), Vector3(length, height, radius), 0.05, PieceKit.COPING, "Coping")
 	(cop.get_node("Line") as GrindRail).kind = "coping"
 	root.add_child(cop)
 	return root

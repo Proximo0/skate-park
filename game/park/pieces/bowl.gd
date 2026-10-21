@@ -43,7 +43,7 @@ static func build(size_x: float = 14.0, size_z: float = 10.0, depth: float = 2.6
 	var pipes := Node3D.new()
 	pipes.name = "CopingPipes"
 	for i: int in range(loop.size() - 1):
-		var pipe: Node3D = PieceKit.round_rail(loop[i], loop[i + 1], PIPE_RADIUS, PieceKit.METAL, "CopingPipe%d" % i)
+		var pipe: Node3D = PieceKit.round_rail(loop[i], loop[i + 1], PIPE_RADIUS, PieceKit.COPING, "CopingPipe%d" % i)
 		# visual pipe only: the coping GrindRail above is the grind line
 		var line: Node = pipe.get_node("Line")
 		pipe.remove_child(line)

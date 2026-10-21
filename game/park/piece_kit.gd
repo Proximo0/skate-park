@@ -5,14 +5,16 @@ extends RefCounted
 ## and the riding face looks toward +Z. Units are metres on a 1 m grid. See docs/art_spec.md.
 
 ## Palette for placeholder park pieces (bright, kid-friendly).
-const CONCRETE := Color("b9b3aa")
-const RAMP_WOOD := Color("f2b45a")
+const CONCRETE := Color("a7a6b3")
+const RAMP_WOOD := Color("d9913a")
 const RAMP_SIDE := Color("4fa3e0")
 const METAL := Color("c9d3dd")
+## Dark steel for coping pipes: a readable edge line on the lip of every transition.
+const COPING := Color("4d5266")
 const PAINT_RED := Color("ff5a5f")
 const PAINT_GREEN := Color("6cd46c")
 const PAINT_PURPLE := Color("9b6bff")
-const PAINT_YELLOW := Color("ffd23f")
+const PAINT_YELLOW := Color("f0b820")
 
 
 ## A static body with a mesh and matching trimesh collision. Collision layer 1 = world.

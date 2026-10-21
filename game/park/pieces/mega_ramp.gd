@@ -223,9 +223,11 @@ static func _dress_tower(node: Node3D, width: float, start_height: float, curve:
 		lbl.name = "BannerText%d" % i
 		lbl.text = str(cfg[0])
 		lbl.font_size = 96
-		lbl.pixel_size = 0.02
-		lbl.outline_size = 12
+		lbl.pixel_size = 0.0095
+		lbl.outline_size = 24
+		lbl.outline_modulate = Toon.INK
 		lbl.modulate = Color.WHITE
+		lbl.double_sided = true
 		lbl.rotation_degrees = Vector3(0.0, 180.0, 0.0)
 		lbl.position = Vector3(1.6 + (width - 2.0) * 0.5, y0 + bh * 0.5, -0.35)
 		trim.add_child(lbl)
@@ -281,7 +283,9 @@ static func _gap(root: Node3D, width: float, L: Dictionary) -> void:
 	lbl.text = "MEGA"
 	lbl.font_size = 200
 	lbl.pixel_size = 0.012
-	lbl.outline_size = 12
+	lbl.outline_size = 24
+	lbl.outline_modulate = Toon.INK
+	lbl.double_sided = true
 	lbl.modulate = Color.WHITE
 	lbl.position = Vector3(width * 0.5, 0.03, mid)
 	lbl.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
@@ -303,7 +307,7 @@ static func _quarter_pipe(root: Node3D, width: float, qp_height: float, L: Dicti
 	prof.append(Vector2(qp_height, end_z))
 	root.add_child(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_WOOD, "QuarterPipe"))
 	root.add_child(PieceKit.rail(PackedVector3Array([Vector3(0.0, qp_height, lip_z), Vector3(width, qp_height, lip_z)]), "coping", "Coping"))
-	var pipe: Node3D = PieceKit.round_rail(Vector3(0.0, qp_height, lip_z), Vector3(width, qp_height, lip_z), 0.05, PieceKit.METAL, "CopingPipe")
+	var pipe: Node3D = PieceKit.round_rail(Vector3(0.0, qp_height, lip_z), Vector3(width, qp_height, lip_z), 0.05, PieceKit.COPING, "CopingPipe")
 	# the visual pipe only; the GrindRail above is the coping line
 	pipe.get_node("Line").free()
 	root.add_child(pipe)

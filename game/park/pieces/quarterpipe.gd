@@ -18,7 +18,7 @@ static func build(width: float = 8.0, radius: float = 3.0, height: float = 3.2, 
 	prof.append(Vector2(height, 0.0))
 	root.add_child(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_WOOD, "Ramp"))
 	root.add_child(PieceKit.rail(PackedVector3Array([Vector3(0.0, height, deck), Vector3(width, height, deck)]), "coping", "Coping"))
-	var cop := PieceKit.round_rail(Vector3(0.0, height, deck), Vector3(width, height, deck), 0.05, PieceKit.METAL, "CopingPipe")
+	var cop := PieceKit.round_rail(Vector3(0.0, height, deck), Vector3(width, height, deck), 0.05, PieceKit.COPING, "CopingPipe")
 	# the visual pipe only; the GrindRail above is the coping line
 	cop.get_node("Line").queue_free()
 	root.add_child(cop)
