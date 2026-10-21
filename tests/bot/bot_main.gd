@@ -35,6 +35,8 @@ var _snapshots: Dictionary = {}
 var _line_ticks: int = 0
 var _started_msec: int = 0
 var _fail_reason: String = ""
+var _shard: int = 0  ## with --nshards=N, this process runs every Nth line (tools/check_all.sh runs shards in parallel)
+var _nshards: int = 1
 
 
 func _ready() -> void:
@@ -49,11 +51,17 @@ func _ready() -> void:
 			_record = true
 		elif a == "--list":
 			list_only = true
+		elif a.begins_with("--shard="):
+			_shard = int(a.substr(8))
+		elif a.begins_with("--nshards="):
+			_nshards = maxi(1, int(a.substr(10)))
 	if tune_path != "":
 		_tune_note = _apply_tune(tune_path)
 	DirAccess.make_dir_recursive_absolute(OUT_DIR)
-	for n: String in BotLines.names():
-		if _only == "" or n == _only or n.begins_with(_only):
+	var names: Array[String] = BotLines.names()
+	for i: int in names.size():
+		var n: String = names[i]
+		if (_only == "" or n == _only or n.begins_with(_only)) and i % _nshards == _shard:
 			_queue.append(n)
 	if list_only:
 		for n: String in BotLines.names():
@@ -301,7 +309,7 @@ func _finish() -> void:
 		"tuning": _tune_note, "tuning_diff": PhysicsTuning.shared().diff_from_defaults(),
 		"wall_seconds": snappedf(float(Time.get_ticks_msec() - _started_msec) / 1000.0, 0.1),
 	}
-	var f: FileAccess = FileAccess.open(OUT_DIR + "/report.json", FileAccess.WRITE)
+	var f: FileAccess = FileAccess.open(OUT_DIR + ("/report.json" if _nshards == 1 else "/report_shard%d.json" % _shard), FileAccess.WRITE)
 	f.store_string(JSON.stringify(report, "  "))
 	f.close()
 	get_tree().quit(0)
