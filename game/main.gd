@@ -51,6 +51,10 @@ func _ready() -> void:
 	add_child(FrameStamp.new())
 	add_child(RenderToggles.new())
 	add_child(TuningPanel.new())
+	var overlay := PhysicsOverlay.new()
+	add_child(overlay)
+	overlay.bind(skater)
+	add_child(TimeControl.new())
 	_setup_goals()
 
 
