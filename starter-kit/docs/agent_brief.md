@@ -8,7 +8,7 @@ contracts other modules already provide. Use the contracts; do not change them.
   `project.godot`, autoloads, `tests/runner.gd`, or shared bases. If you need a change there, describe it in your
   final report.
 - Never call any `mcp__hearthbot__` tool and never message the user. Report only through your final answer to the lead.
-- Git is lead-only. Do not run git. The lead stages files by name (never `git commit -a`) and commits.
+- Git is lead-only. Do not run git at all (no clean, stash, checkout or reset). Never delete files you did not create. The lead stages files by name (never `git commit -a`) and commits.
 - Only `godot --import` takes the shared lock, and the `tools/*.sh` scripts already take it. Never wrap
   `tools/*.sh` or any other Godot run in `flock` (nesting deadlocks).
 - Run only your own checks: `tools/run_tests.sh <test_name>`, `tools/lint.sh`, and `tools/run_sims.sh` if you touched
