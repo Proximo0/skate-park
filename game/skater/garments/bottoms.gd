@@ -265,7 +265,7 @@ const CARGO_PROF: Array = [
 ]
 const JEANS_PROF: Array = [
 	[-0.1, 0.012, 0.0, 0.0], [0.0, 0.016, 0.085, 0.09], [0.2, 0.018, 0.088, 0.094], [0.4, 0.024, 0.088, 0.094],
-	[0.5, 0.03, 0.085, 0.092], [0.62, 0.03, 0.08, 0.088], [0.74, 0.03, 0.078, 0.086],
+	[0.5, 0.028, 0.083, 0.09], [0.62, 0.024, 0.074, 0.082], [0.74, 0.018, 0.064, 0.072],
 ]
 const JOGGER_PROF: Array = [
 	[-0.1, 0.012, 0.0, 0.0], [0.0, 0.016, 0.0, 0.0], [0.2, 0.02, 0.0, 0.0], [0.4, 0.024, 0.0, 0.0],
@@ -520,7 +520,7 @@ static func _cargo_pocket(upper: Node3D, side: String, s: float, secs: Array, ul
 ## Jeans hem height (LowerLeg y) at angle a: lower at the sides, riding up over the shoe at the front and back.
 static func _jeans_hem(a: float) -> float:
 	var c: float = cos(a)
-	return -0.338 + 0.09 * pow(maxf(c, 0.0), 1.8) + 0.05 * pow(maxf(-c, 0.0), 3.0)
+	return -0.312 + 0.09 * pow(maxf(c, 0.0), 1.8) + 0.05 * pow(maxf(-c, 0.0), 3.0)
 
 
 ## Back-pocket outline point: u across (0..1), v down (0..1), centred at x = xc on the pelvis at the back.
@@ -534,8 +534,7 @@ static func _back_pocket_pt(pelvis: Array, base: float, xc: float, u: float, v: 
 
 
 ## Baggy straight-leg jeans (90s skate): low-slung waistband with belt loops, a button and fly stitching, patch back
-## pockets with stitching, wide straight legs that stack in ruffles over the shoe, and a faded patch on each knee
-## (a second, lighter material band, "bottom_fade").
+## pockets with stitching, wide straight legs that stack in ruffles over the shoe, and a clean knee (the old faded patch read as a stain).
 static func skate_jeans(rig: Dictionary, _body_type: String, mats: Dictionary) -> void:
 	_mats(mats)
 	var base_col: Color = (mats["bottom"] as StandardMaterial3D).albedo_color
@@ -607,24 +606,11 @@ static func skate_jeans(rig: Dictionary, _body_type: String, mats: Dictionary) -
 		_tube_part(lower, side + "JeansHemMesh", _leg_line(calf, false, ul, JEANS_PROF, hem, 0.0035), 0.0085, mats, "bottom")
 		_tube_part(lower, side + "JeansHemStitchMesh", _leg_line(calf, false, ul, JEANS_PROF, func(a: float) -> float: return _jeans_hem(a) + 0.014,
 				0.0078), 0.0013, mats, "bottom_trim")
-		for r: int in 2:
-			var rise: float = 0.034 + 0.034 * float(r)
+		for r: int in 1:
+			var rise: float = 0.03 + 0.034 * float(r)
 			var ph: float = 1.3 * float(r) + (0.7 if side == "Left" else 0.0)
 			_tube_part(lower, "%sJeansStack%dMesh" % [side, r], _leg_line(calf, false, ul, JEANS_PROF,
 					func(a: float) -> float: return _jeans_hem(a) + rise + 0.007 * sin(3.0 * a + ph), 0.0055), 0.0082, mats, "bottom")
-		# Knee fade band, lighter fabric lying on the front of the knee and shin top.
-		var fade: Array = []
-		for i: int in 9:
-			var v: float = float(i) / 8.0
-			var y: float = lerpf(0.008, -0.1, v)
-			var half: float = 0.62 * sqrt(maxf(sin(v * PI), 0.0)) + 0.04
-			var row: PackedVector3Array = PackedVector3Array()
-			for j: int in 13:
-				var a: float = half * (2.0 * float(j) / 12.0 - 1.0)
-				row.append(_leg_pt(calf, false, ul, JEANS_PROF, y, a, 0.0045))
-			fade.append(row)
-		SkaterParts.part(lower, side + "JeansKneeFadeMesh", SkaterParts.facing_grid(fade, Vector3(0.0, 0.0, -1.0)), Vector3.ZERO, mats,
-				"bottom_fade")
 
 
 ## A ball at the knee joint (a little smaller than the legs) so a bent knee never opens the cloth.

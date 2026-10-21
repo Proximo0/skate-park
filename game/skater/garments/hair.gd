@@ -287,6 +287,7 @@ static func messy(rig: Dictionary, _body_type: String, mats: Dictionary) -> void
 		var tip: Vector2 = Vector2(float(tp[0]), float(tp[1]))
 		_tuft(head, mats, "MessyTop%dMesh" % i, _toward(whorl, tip, 0.18), tip, 0.027, 0.012 if i < 9 else 0.008,
 				str(tp[2]), 0.25, 0.006 if i < 9 else 0.011)
+	_gloss(head, mats, 0.016)
 	# Sides: over the ear and a sideburn in front of it, on a sway pivot at the temple.
 	for sd: Array in Wardrobe.sides():
 		var s: float = sd[1]
@@ -595,15 +596,23 @@ static func _gather(parent: Node3D, part_name: String, mats: Dictionary, key: St
 
 
 ## Angel-ring sheen: n short streaks around the crown at height y.
-static func _sheen(head: Node3D, mats: Dictionary, angles: Array, y: float, lift: float = 0.0075) -> void:
+static func _sheen(head: Node3D, mats: Dictionary, angles: Array, y: float, lift: float = 0.0075, wscale: float = 1.0,
+		key: String = "hair_shine", name_tag: String = "HairSheen") -> void:
 	for i: int in angles.size():
 		var a: float = deg_to_rad(float(angles[i]))
 		var pts: PackedVector3Array = PackedVector3Array()
 		for k: int in 4:
 			var aa: float = a + deg_to_rad(-8.0 + 5.5 * float(k))
 			pts.append(AnimeHead.cap_point(aa, y + 0.003 * sin(PI * float(k) / 3.0) - 0.01 * absf(sin(a)), AnimeHead.CAP_T + lift))
-		_lock(head, "HairSheen%dMesh" % i, mats, "hair_shine", pts, PackedFloat32Array([0.0006, 0.0026, 0.0026, 0.0006]),
-				PackedFloat32Array([0.0006, 0.0011, 0.0011, 0.0006]), 0.0, 6, 3)
+		var ws: PackedFloat32Array = PackedFloat32Array([0.0006, 0.0026 * wscale, 0.0026 * wscale, 0.0006])
+		_lock(head, "%s%dMesh" % [name_tag, i], mats, key, pts, ws, PackedFloat32Array([0.0006, 0.0011, 0.0011, 0.0006]), 0.0, 6, 3)
+
+
+## Short-hair gloss: broad spec bands across the crown (hair_shine) and cool rim streaks over the temples and the back
+## of the head (hair_rim), so dark short cuts read as lit forms, not flat blobs.
+static func _gloss(head: Node3D, mats: Dictionary, lift: float, y: float = 0.17) -> void:
+	_sheen(head, mats, [-35.0, 35.0, 180.0], y, lift, 3.4, "hair_shine", "HairGloss")
+	_sheen(head, mats, [-100.0, 100.0, -150.0, 150.0], y - 0.035, lift, 2.2, "hair_rim", "HairRim")
 
 
 ## Deterministic jitter in [-1, 1] for lock i (no random numbers in game code).
@@ -926,6 +935,7 @@ static func short_spiky(rig: Dictionary, _body_type: String, mats: Dictionary) -
 		var tp: Array = tops[i]
 		var tip: Vector2 = Vector2(float(tp[0]), float(tp[1]))
 		_tuft(head, mats, "SpikyTop%dMesh" % i, _toward(whorl, tip, 0.12), tip, 0.03, float(tp[2]), str(tp[3]), 0.25, 0.008)
+	_gloss(head, mats, 0.018)
 	var fringe: Node3D = _pivot(head, "HairSway_Fringe", Vector3(0.0, 0.172, -0.07))
 	_bangs(fringe, mats, "SpikyBang", [
 		[-0.056, -0.074, 0.112, 0.014, "hair_shadow", 0.0], [0.058, 0.076, 0.114, 0.014, "hair_shadow", 0.0],
@@ -972,6 +982,7 @@ static func undercut(rig: Dictionary, _body_type: String, mats: Dictionary) -> v
 		[0.024, 0.074, 0.104, 0.014, "hair_mid", 0.012], [-0.05, -0.034, 0.128, 0.014, "hair_mid", 0.006],
 	], 0.192, 0.8, 1.3)
 	_sheen(head, mats, [-40.0, 0.0, 40.0], 0.178, 0.02)
+	_gloss(head, mats, 0.014, 0.16)
 
 
 # --- buzz ---------------------------------------------------------------------------------------------------
@@ -996,6 +1007,7 @@ static func buzz(rig: Dictionary, _body_type: String, mats: Dictionary) -> void:
 			_tuft(head, mats, "BuzzTuft%dMesh" % n, Vector2(az, e), tip, 0.022, 0.0, "hair_mid" if n % 3 != 0 else "hair_shadow",
 					0.15, -0.007)
 			n += 1
+	_gloss(head, mats, 0.0095, 0.166)
 
 
 # --- shaggy -------------------------------------------------------------------------------------------------

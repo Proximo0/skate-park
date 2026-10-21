@@ -18,6 +18,8 @@ const TANK_HEM: float = 1.05  ## hem height: just under the bust, so the under-b
 const HOODIE_GROW: float = 0.011
 const FLANNEL_GROW: float = 0.0115
 const TEE_GROW: float = 0.003
+const SKIRT_TEE: float = 0.021  ## loose tee over the waistband zone
+const SKIRT_FLANNEL: float = 0.026
 const FLANNEL_GAP: float = 0.3  ## half-angle of the open front, from the front-centre line
 const PLAID_TILE: float = 0.08  ## metres per texture tile of the plaid
 const TEE_DEFAULT: Color = Color(0.95, 0.93, 0.88)
@@ -181,7 +183,9 @@ static func _cup_rows(s: float, extra: float, n: int, cols: int) -> Array:
 ## band across the chest and a small sun-and-wave chest print.
 static func surf_tee(rig: Dictionary, body_type: String, mats: Dictionary) -> void:
 	_mats(mats)
+	_skirt_t = SKIRT_TEE
 	_shirt(rig, body_type, mats, "SurfTee", GROW_LOOSE, true, 0.5, -1.0)
+	_skirt_t = 0.0
 	_tee_print(rig, body_type, mats)
 
 
@@ -252,11 +256,12 @@ static func _torso_rows(secs_local: Array, base: float, y0: float, y1: float, gr
 				sc[f] = lerpf(float(sc[f]), maxf(float(sc[f]), float(ref[f])), w)
 		var ring: PackedVector3Array = PackedVector3Array()
 		var y: float = float(sc[0]) + base
+		var g: float = _skirted(grow, y)
 		for k: int in n:
 			var a: float = TAU * float(k) / float(n)
-			var p: Vector3 = SkaterParts.section_point(sc, a, grow)
+			var p: Vector3 = SkaterParts.section_point(sc, a, g)
 			if chest_front and cos(a) > 0.0:
-				p = _front_adjust(p, sec, a, y, grow, body_type, loose)
+				p = _front_adjust(p, sec, a, y, g, body_type, loose)
 			ring.append(p)
 		rows.append(ring)
 	return rows
@@ -437,10 +442,25 @@ static func _ref_section(body_type: String) -> Array:
 
 ## A point of a shirt surface at body height y and section angle a (0 = front, joint space of `secs`): the shirt
 ## surface _torso_rows() lofts, sampled anywhere.
+## Target offset (m) a loose top keeps over the hips and low waist so the bottoms' waistband, belt and loops never poke
+## through its hem (0 = off). Set by the garment builders (tee, flannel layers), not by the fitted tops.
+static var _skirt_t: float = 0.0
+
+
+## The grow at body height y once the skirt target is applied: full over the waistband zone, easing out below the hem
+## and above the waist so the shirt still hugs the ribs.
+static func _skirted(g: float, y: float) -> float:
+	if _skirt_t <= 0.0:
+		return g
+	var f: float = smoothstep(0.85, 0.92, y) * (1.0 - smoothstep(1.0, 1.08, y))
+	return lerpf(g, maxf(g, _skirt_t), f)
+
+
 static func _gpoint(secs: Array, base: float, y: float, a: float, grow: float, body_type: String, loose: bool, ref: Array,
 		chest_front: bool) -> Vector3:
 	var sec: Array = SkaterParts.section_at(secs, y - base)
 	sec[0] = y - base
+	grow = _skirted(grow, y)
 	var p: Vector3 = SkaterParts.section_point(_loosened(sec, y, loose, ref), a, grow)
 	if chest_front and cos(a) > 0.0:
 		p = _front_adjust(p, sec, a, y, grow, body_type, loose)
@@ -480,7 +500,7 @@ static func _panel_rows(secs: Array, base: float, body_type: String, loose: bool
 	for i: int in n + 1:
 		var t: float = float(i) / float(n)
 		var y: float = lerpf(y_lo, y_hi, t)
-		var g: float = grow - drops.x * (1.0 - smoothstep(0.0, 0.3, t)) - drops.y * smoothstep(0.7, 1.0, t)
+		var g: float = _skirted(grow, y) - drops.x * (1.0 - smoothstep(0.0, 0.3, t)) - drops.y * smoothstep(0.7, 1.0, t)
 		var sec: Array = SkaterParts.section_at(secs, y - base)
 		sec[0] = y - base
 		var sc: Array = _loosened(sec, y, loose, ref)
@@ -763,11 +783,13 @@ static func flannel(rig: Dictionary, body_type: String, mats: Dictionary) -> voi
 	_plaid_mat(mats)
 	var ref: Array = _ref_section(body_type)
 	# The tee under it: a closed loose tee, shorter than the overshirt, short sleeves.
+	_skirt_t = SKIRT_TEE
 	var tee: Dictionary = _layer(rig, body_type, mats, "FlannelTee", TEE_GROW, 0.9, 1.335, {"key": "top_tee"}, ref, Callable())
 	SkaterParts.part(rig["Hips"], "FlannelTeeHemMesh", _ring_tube((tee["hips"] as Array)[0], 0.003), Vector3.ZERO, mats, "top_tee")
 	SkaterParts.part(rig["Chest"], "FlannelTeeCollarMesh", _ring_tube(tee["top"], 0.0065), Vector3.ZERO, mats, "top_tee")
 	_sleeves(rig, body_type, mats, "FlannelTee", TEE_GROW + 0.002, true, 0.5, -1.0, {"key": "top_tee", "trim": "top_tee", "cuff_r": 0.004})
 	# The overshirt: panels from the front gap (wider toward the hem) round the back.
+	_skirt_t = SKIRT_FLANNEL
 	var over: Dictionary = _layer(rig, body_type, mats, "Flannel", FLANNEL_GROW, 0.855, 1.325, {"key": "top_plaid", "plaid": true}, ref,
 			_flannel_gap)
 	var hem: PackedVector3Array = (over["hips"] as Array)[0]
@@ -775,6 +797,7 @@ static func flannel(rig: Dictionary, body_type: String, mats: Dictionary) -> voi
 	hem_r.resize(hem.size())
 	hem_r.fill(0.004)
 	SkaterParts.part(rig["Hips"], "FlannelHemMesh", SkaterParts.tube_capped(hem, hem_r, 6), Vector3.ZERO, mats, "top")
+	_skirt_t = 0.0
 	_flannel_collar(rig, body_type, mats, ref)
 	_sleeves(rig, body_type, mats, "Flannel", FLANNEL_GROW, true, 0.82, -1.0, {"plaid": true, "key": "top_plaid", "trim": "top",
 			"cuff_r": 0.0085})

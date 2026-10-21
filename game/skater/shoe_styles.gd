@@ -8,7 +8,7 @@ extends RefCounted
 ## RESEARCH (what makes each one instantly readable)
 ## - Cupsole, Nike SB Dunk Low: a chunky stitched cupsole (the cup wall is visible, with its stitch line and a seam
 ##   to the outsole), a leather upper in overlay panels (toe, eyestay, quarter, heel), a big curved side stripe on
-##   the quarter (invented: a long wave, not the real logo), a padded collar, a FAT padded tongue with a woven label
+##   the quarter (invented: a half-sun SUNSET mark), a padded collar, a FAT padded tongue with a woven label
 ##   and 7 eyelets.
 ## - Puffy, 2000s Osiris / DC / es: everything inflated: a huge pillow tongue and a thick padded collar, a thick sole
 ##   with a side bumper, a big side logo patch (invented badge), a lace cover strap, layered overlapping panels.
@@ -420,14 +420,6 @@ const CUP_TONGUE: Array = [
 	[0.142, 0.011, 0.0095, 0.0235], [0.134, 0.131, 0.0135, 0.031], [0.1305, 0.15, 0.0135, 0.0325],
 	[0.129, 0.159, 0.0095, 0.029], [0.1285, 0.1635, 0.0035, 0.019],
 ]
-## Swoosh-like stripe on the quarter: distance from heel, height above fox_top, half width. A long wave with a fat
-## blunt back end, a belly low on the quarter and a thin tail sweeping up toward the laces (invented, not the logo).
-const CUP_WAVE: Array = [
-	[0.064, 0.058, 0.0062], [0.076, 0.042, 0.0088], [0.094, 0.026, 0.0098], [0.116, 0.0185, 0.0086],
-	[0.142, 0.0235, 0.0058], [0.166, 0.037, 0.0032], [0.18, 0.05, 0.0012],
-]
-
-
 static func build_cupsole(foot: Node3D, side: String, ankle_height: float, mats: Dictionary, colourway: Dictionary = {}) -> Node3D:
 	var m: Dictionary = ShoeKit.materials(mats, colourway)
 	var sh: ShoeShape = cup_shape()
@@ -478,7 +470,7 @@ static func _cup_panels(shoe: Node3D, off: Vector3, m: Dictionary, sh: ShoeShape
 	_heel_cup(shoe, off, m, sh, 0.0024, 0.026, 0.066, "shoe_suede")
 	# Quarter overlay (carries the stripe): between the heel cup, the eyestay and the toe cap.
 	_side_panel(shoe, off, m, sh, "QuarterMesh", "shoe_suede", 0.0021, 0.0375, 0.003, Vector2(0.074, 0.07), Vector2(0.172, 0.152))
-	_side_ribbon(shoe, off, m, sh, "WaveStripe", "shoe_stripe", CUP_WAVE, 0.0036)
+	_sun_mark(shoe, off, m, sh)
 	# Stitching: double rows on the toe cap and the eyestay edge, one row round the quarter and the heel cup.
 	var st: SurfaceTool = ShoeKit.begin()
 	for gap: float in [0.0035, 0.0068]:
@@ -508,6 +500,23 @@ static func _cup_panels(shoe: Node3D, off: Vector3, m: Dictionary, sh: ShoeShape
 			var x: float = (float(k) - float(int(counts[i]) - 1) * 0.5) * 0.0098
 			_dot_into(st, sh, float(ds[i]), x, g_cap + 0.0003, 0.0017)
 	SkaterParts.part(shoe, "PerforationMesh", ShoeKit.done(st), off, m, "shoe_lining")
+
+
+## House mark "SUNSET" on each quarter: a half sun rising over two horizon bars (original emblem, not a real brand).
+static func _sun_mark(shoe: Node3D, off: Vector3, m: Dictionary, sh: ShoeShape) -> void:
+	var g: float = 0.0036
+	var d: float = 0.118
+	var v: float = 0.027
+	var sun: SurfaceTool = ShoeKit.begin()
+	var half: Array = []
+	for k: int in 9:
+		var a: float = PI * float(k) / 8.0
+		half.append(Vector2(cos(a), sin(a)) * 0.0185 + Vector2(0.0, 0.0012))
+	for sgn: float in [-1.0, 1.0]:
+		_decal_fan(sun, sh, sgn, d, v, half, g)
+		_decal_bar(sun, sh, sgn, d, v, Vector2(-0.0175, -0.0035), Vector2(0.0175, -0.0035), 0.0034, g)
+		_decal_bar(sun, sh, sgn, d, v, Vector2(-0.0125, -0.0098), Vector2(0.0125, -0.0098), 0.0034, g)
+	SkaterParts.part(shoe, "SunMarkMesh", ShoeKit.done(sun), off, m, "shoe_stripe")
 
 
 ## Woven tongue label on the front of the tongue's top.
@@ -703,6 +712,11 @@ static func _puff_badges(shoe: Node3D, off: Vector3, m: Dictionary, sh: ShoeShap
 # The shaft (padded collar, ankle panels, the other four eyelet pairs, tongue and bow) is a loft of the calf's own
 # sections, so it hangs on the lower leg joint like a sock and stays outside the sock and the skin in every pose.
 
+## SUNSET zigzag on the high top's quarter: distance from heel, height above fox_top, half width (a sharp lightning line).
+const HI_ZIG: Array = [
+	[0.19, 0.03, 0.0026], [0.165, 0.03, 0.0038], [0.148, 0.05, 0.004], [0.12, 0.022, 0.004], [0.098, 0.05, 0.004],
+	[0.074, 0.022, 0.0038], [0.058, 0.026, 0.0026],
+]
 const HI_TONGUE: Array = [
 	[0.207, 0.0012, 0.0012, 0.0125], [0.18, 0.0022, 0.0022, 0.0145], [0.155, 0.0036, 0.0036, 0.0148],
 	[0.14, 0.0085, 0.0075, 0.019], [0.127, 0.0105, 0.0055, 0.016],
@@ -726,7 +740,7 @@ static func build_high_top(foot: Node3D, lower: Node3D, side: String, ankle_heig
 	_toe_bumper(shoe, off, m, sh, 0.0042, 0.07, 0.003, 0.03)
 	_heel_cup(shoe, off, m, sh, 0.0024, 0.022, 0.062, "shoe_suede")
 	_eyestays(shoe, off, m, sh, 0.131, 0.0155, 0.0345, 0.0026, "shoe_suede")
-	_side_ribbon(shoe, off, m, sh, "SidePanel", "shoe_stripe", SkateShoe.STRIPE, 0.0011)
+	_side_ribbon(shoe, off, m, sh, "SidePanel", "shoe_stripe", HI_ZIG, 0.0011, 2)
 	_hi_stitches(shoe, off, m, sh)
 	var holes: Array = _eyelets(shoe, off, m, sh, 4, 0.205, 0.158, 0.0026, 0.0034, 0.0245)
 	_tongue(shoe, off, m, sh, HI_TONGUE)

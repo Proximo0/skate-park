@@ -104,7 +104,7 @@ func test_foot_contract_and_budget() -> void:
 func test_distinct_silhouettes() -> void:
 	# Each style carries the parts that make it recognisable.
 	var want: Dictionary = {
-		"shoes_cupsole": ["SoleStitchMesh", "QuarterMesh", "WaveStripeLeftMesh", "PerforationMesh", "TongueLabelMesh", "CollarMesh"],
+		"shoes_cupsole": ["SoleStitchMesh", "QuarterMesh", "SunMarkMesh", "PerforationMesh", "TongueLabelMesh", "CollarMesh"],
 		"shoes_puffy": ["BumperMesh", "BumperRibsMesh", "BadgeDiscMesh", "LaceCoverMesh", "QuarterTopMesh", "TongueLabelMesh", "CollarMesh"],
 		"shoes_high_top": ["SidePanelLeftMesh", "ToeCapMesh", "TongueMesh", "EyeletsMesh"],
 	}

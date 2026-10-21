@@ -378,5 +378,5 @@ func test_builder_maps_loadout() -> void:
 	var upper: MeshInstance3D = body.find_child("UpperMesh", true, false)
 	assert_true((upper.material_override as StandardMaterial3D).albedo_color.is_equal_approx(shoe), "shoe colour reaches the shoe")
 	var cap: MeshInstance3D = body.find_child("HairCapMesh", true, false)
-	assert_true((cap.material_override as StandardMaterial3D).albedo_color.is_equal_approx(p["hair_mid"]), "hair colour reaches the hair")
+	assert_true((cap.material_override as StandardMaterial3D).albedo_color.is_equal_approx(AnimeHead.floored("hair_mid", p["hair_mid"])), "hair colour reaches the hair")
 	body.free()

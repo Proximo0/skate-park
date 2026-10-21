@@ -70,8 +70,8 @@ const MALE_ROWS: Array = [
 const FACES: Dictionary = {
 	"female": {"rows": FEMALE_ROWS, "eye_x": EYE_X, "eye_y": EYE_Y, "eye_w": EYE_W, "eye_h": EYE_H, "brow_y": BROW_Y,
 			"iris_rx": 0.31, "iris_ry": 0.43, "top_pow": 0.42, "bot_pow": 0.75, "male": false},
-	"male": {"rows": MALE_ROWS, "eye_x": 0.0395, "eye_y": 0.06, "eye_w": 0.0365, "eye_h": 0.0235, "brow_y": 0.0835,
-			"iris_rx": 0.27, "iris_ry": 0.56, "top_pow": 0.3, "bot_pow": 0.5, "male": true},
+	"male": {"rows": MALE_ROWS, "eye_x": 0.0395, "eye_y": 0.06, "eye_w": 0.039, "eye_h": 0.0275, "brow_y": 0.0835,
+			"iris_rx": 0.3, "iris_ry": 0.6, "top_pow": 0.3, "bot_pow": 0.5, "male": true},
 }
 
 ## Head-only colours (spec palette), added to the material set when the palette has no such key.
@@ -92,7 +92,13 @@ const COLORS: Dictionary = {
 	"hair_shadow": Color("c88f2e"),
 	"hair_deep": Color("9a6a1e"),
 	"hair_shine": Color("fff3b0"),
+	"hair_rim": Color("ffe9a0"),
 }
+## Darkest allowed luminance per hair key: near-black hair keeps a readable base, mid, shadow and a bright spec band,
+## so cuts read as shaded forms (the colours are lifted toward a cool blue-grey, which also gives the rim light).
+const HAIR_FLOOR: Dictionary = {"hair_base": 0.3, "hair_mid": 0.235, "hair_shadow": 0.17, "hair_deep": 0.1,
+		"hair_shine": 0.74, "hair_rim": 0.5}
+const HAIR_COOL: Color = Color(0.5, 0.55, 0.72)
 ## Hair style built when build() is given none, per body type.
 const DEFAULT_HAIR: Dictionary = {"female": "hair_ponytail", "male": "hair_messy"}
 
@@ -154,6 +160,30 @@ static func _add_materials(mats: Dictionary) -> void:
 			mat.albedo_color = derived[key]
 			mat.roughness = 0.7
 			mats[key] = mat
+	var rim: StandardMaterial3D = mats["hair_rim"] as StandardMaterial3D
+	if not rim.has_meta("from_shine"):
+		rim.set_meta("from_shine", true)
+		rim.albedo_color = (mats["hair_shine"] as StandardMaterial3D).albedo_color.lerp(HAIR_COOL, 0.4)
+	_hair_floor(mats)
+
+
+## Keeps every hair colour above its luminance floor (see HAIR_FLOOR).
+static func _hair_floor(mats: Dictionary) -> void:
+	for key: String in HAIR_FLOOR:
+		var mat: StandardMaterial3D = mats.get(key) as StandardMaterial3D
+		if mat != null:
+			mat.albedo_color = floored(key, mat.albedo_color)
+
+
+## The colour `c` of hair palette key `key` lifted (toward a cool blue-grey) until it reaches the key's floor.
+static func floored(key: String, c: Color) -> Color:
+	var floor_l: float = float(HAIR_FLOOR.get(key, 0.0))
+	var guard: int = 0
+	while c.get_luminance() < floor_l and guard < 24:
+		c = c.lerp(HAIR_COOL, 0.1)
+		c = Color(c.r + 0.012, c.g + 0.012, c.b + 0.02)
+		guard += 1
+	return c
 
 
 # --- Face surface -------------------------------------------------------------------------------------------------
@@ -392,7 +422,7 @@ static func _build_face(head: Node3D, mats: Dictionary) -> void:
 			SkaterParts.part(head, str(ly[0]) + side + "Mesh", _face_mesh(_fill_rows(_clip_to_eye(shape, ex, s)), true,
 					float(ly[5])), Vector3.ZERO, mats, str(ly[4]))
 		# Highlights on the same side in both eyes: a big one upper +X, a small one lower -X.
-		var shine: Vector2 = Vector2(0.0034, 0.0041) if not male else Vector2(0.0024, 0.0026)
+		var shine: Vector2 = Vector2(0.0034, 0.0041) if not male else Vector2(0.0029, 0.0031)
 		var shine_shape: PackedVector2Array = _ellipse(ic + Vector2(irx * 0.42, iry * (0.38 if not male else 0.28)), shine.x, shine.y, 16)
 		if male:
 			shine_shape = _clip_to_eye(shine_shape, ex, s)
@@ -407,7 +437,7 @@ static func _build_face(head: Node3D, mats: Dictionary) -> void:
 		var lash_w: PackedFloat32Array = PackedFloat32Array()
 		for i: int in 17:
 			var u: float = -1.03 + 1.96 * float(i) / 16.0
-			var hw: float = lerpf(0.0006, 0.0025, smoothstep(-1.0, 0.6, u)) if not male else lerpf(0.0005, 0.0013, smoothstep(-1.0, 0.8, u))
+			var hw: float = lerpf(0.0006, 0.0025, smoothstep(-1.0, 0.6, u)) if not male else lerpf(0.0007, 0.0019, smoothstep(-1.0, 0.8, u))
 			lash.append(Vector2(ex + s * u * hx, eye_y + _eye_top(clampf(u, -1.0, 1.0)) + hw * 0.5))
 			lash_w.append(hw)
 		if male:
@@ -446,8 +476,8 @@ static func _build_face(head: Node3D, mats: Dictionary) -> void:
 		for i: int in 11:
 			var t: float = float(i) / 10.0
 			if male:
-				brow.append(Vector2(s * (0.017 + 0.047 * t), brow_y - 0.0016 + 0.0042 * sin(PI * minf(t * 0.75, 1.0)) - 0.0028 * t * t))
-				brow_w.append(lerpf(0.0021, 0.0007, pow(t, 1.6)) * (0.75 + 0.25 * sin(PI * minf(t * 2.0, 1.0) * 0.5)))
+				brow.append(Vector2(s * (0.017 + 0.047 * t), brow_y - 0.0016 + 0.0056 * sin(PI * minf(t * 0.8, 1.0)) - 0.0034 * t * t))
+				brow_w.append(lerpf(0.0026, 0.0008, pow(t, 1.5)) * (0.78 + 0.22 * sin(PI * minf(t * 2.0, 1.0) * 0.5)))
 			else:
 				brow.append(Vector2(s * (0.019 + 0.043 * t), brow_y + 0.0045 * sin(PI * (0.12 + 0.8 * t)) - 0.003 * t * t))
 				brow_w.append(lerpf(0.0011, 0.0003, t * t) * (0.6 + 0.4 * sin(PI * minf(t * 1.6, 1.0) * 0.5 + 0.0)))

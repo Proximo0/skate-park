@@ -424,13 +424,12 @@ static func _collar_parts(shoe: Node3D, off: Vector3, m: Dictionary) -> void:
 	tab.rotation.x = -0.12
 
 
-# --- jazz stripe: a curved ribbon decal ~1 mm proud of each quarter -------------------------------------------
+# --- SUNSET wave stripe: a curved ribbon decal ~1 mm proud of each quarter -------------------------------------------
 
 ## Stripe path on the quarter: distance from heel, height above FOX_TOP, half width.
 const STRIPE: Array = [
-	[0.186, 0.041, 0.0012], [0.162, 0.035, 0.0042], [0.132, 0.027, 0.0064], [0.106, 0.024, 0.0078],
-	[0.087, 0.032, 0.0085], [0.077, 0.048, 0.0085], [0.066, 0.047, 0.0082], [0.059, 0.028, 0.0078],
-	[0.061, -0.003, 0.0078],
+	[0.185, 0.034, 0.0030], [0.166, 0.046, 0.0034], [0.147, 0.033, 0.0036], [0.128, 0.020, 0.0036],
+	[0.109, 0.033, 0.0036], [0.090, 0.046, 0.0036], [0.071, 0.033, 0.0034], [0.060, 0.022, 0.0030],
 ]
 
 
