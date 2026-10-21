@@ -318,3 +318,98 @@ static func smooth3d(pts: PackedVector3Array, sub: int) -> PackedVector3Array:
 					+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t))
 	out.append(pts[n - 1])
 	return out
+
+
+# --- elliptical lofts (body and limbs) ------------------------------------------------------------------------
+# A loft section is [y, half width, front depth, back depth, power, z centre, x centre]; the last three are optional
+# (power 1 = ellipse, below 1 squarer; z centre and x centre default to 0). Front is -Z. Sections run along +Y or -Y.
+
+## Catmull-Rom resample of loft sections (all fields), `sub` sections per span. Missing optional fields get defaults.
+static func smooth_sections(sections: Array, sub: int) -> Array:
+	var full: Array = []
+	for s: Array in sections:
+		full.append([float(s[0]), float(s[1]), float(s[2]), float(s[3]),
+				float(s[4]) if s.size() > 4 else 1.0, float(s[5]) if s.size() > 5 else 0.0,
+				float(s[6]) if s.size() > 6 else 0.0])
+	var out: Array = []
+	var n: int = full.size()
+	for i: int in n - 1:
+		var p0: Array = full[maxi(i - 1, 0)]
+		var p1: Array = full[i]
+		var p2: Array = full[i + 1]
+		var p3: Array = full[mini(i + 2, n - 1)]
+		for k: int in sub:
+			var t: float = float(k) / float(sub)
+			var row: Array = []
+			for f: int in 7:
+				var a: float = p0[f]
+				var b: float = p1[f]
+				var c: float = p2[f]
+				var d: float = p3[f]
+				row.append(0.5 * ((2.0 * b) + (-a + c) * t + (2.0 * a - 5.0 * b + 4.0 * c - d) * t * t
+						+ (-a + 3.0 * b - 3.0 * c + d) * t * t * t))
+			out.append(row)
+	out.append(full[n - 1])
+	return out
+
+
+## The section at height y (linear between smoothed sections; y may run up or down the list).
+static func section_at(sections: Array, y: float) -> Array:
+	var n: int = sections.size()
+	for i: int in n - 1:
+		var a: Array = sections[i]
+		var b: Array = sections[i + 1]
+		var y0: float = a[0]
+		var y1: float = b[0]
+		if (y - y0) * (y - y1) <= 0.0:
+			var t: float = clampf((y - y0) / (y1 - y0), 0.0, 1.0) if absf(y1 - y0) > 0.000001 else 0.0
+			var row: Array = []
+			for f: int in 7:
+				row.append(lerpf(float(a[f]), float(b[f]), t))
+			return row
+	var nearest: Array = sections[0] if absf(y - float(sections[0][0])) < absf(y - float(sections[n - 1][0])) else sections[n - 1]
+	return nearest.duplicate()
+
+
+## Point on a section's outline at angle a (0 = front, -Z; +PI/2 = +X), pushed out by grow.
+static func section_point(sec: Array, a: float, grow: float = 0.0) -> Vector3:
+	var p: float = sec[4]
+	var sn: float = sin(a)
+	var c: float = cos(a)
+	var x: float = (float(sec[1]) + grow) * signf(sn) * pow(absf(sn), p)
+	var d: float = float(sec[2]) if c > 0.0 else float(sec[3])
+	var z: float = -(d + grow) * signf(c) * pow(absf(c), p)
+	return Vector3(float(sec[6]) + x, float(sec[0]), float(sec[5]) + z)
+
+
+## Angle on a section whose outline point has the given x (front half if front, else back half).
+static func section_angle_for_x(sec: Array, x: float, front: bool, grow: float = 0.0) -> float:
+	var hw: float = float(sec[1]) + grow
+	var u: float = clampf((x - float(sec[6])) / maxf(hw, 0.0001), -0.999, 0.999)
+	var a: float = signf(u) * asin(pow(absf(u), 1.0 / float(sec[4])))
+	return a if front else PI - a
+
+
+## Smooth closed loft through smoothed sections (from smooth_sections), `sides` points round each ring. Sections must
+## be listed bottom to top (increasing y) for outward faces; pass descending=true for limbs listed top to bottom.
+static func loft(sections: Array, sides: int = 16, grow: float = 0.0, descending: bool = false) -> ArrayMesh:
+	var rows: Array = []
+	for sec: Array in sections:
+		var ring: PackedVector3Array = PackedVector3Array()
+		for k: int in sides:
+			ring.append(section_point(sec, TAU * float(k) / float(sides), grow))
+		rows.append(ring)
+	if descending:
+		rows.reverse()
+	return grid(rows, true)
+
+
+## Closed tube following one section outline at height y (a trim line or a stripe round a loft).
+static func loft_ring(sections: Array, y: float, grow: float, tube_r: float, n: int = 28) -> ArrayMesh:
+	var sec: Array = section_at(sections, y)
+	var pts: PackedVector3Array = PackedVector3Array()
+	var radii: PackedFloat32Array = PackedFloat32Array()
+	for i: int in n + 1:
+		pts.append(section_point(sec, TAU * float(i) / float(n), grow))
+		radii.append(tube_r)
+	return tube(pts, radii, 6)

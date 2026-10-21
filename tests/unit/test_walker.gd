@@ -116,7 +116,7 @@ func test_walk_poses_stand_on_the_ground_and_carry_the_board() -> void:
 	var hand: Vector3 = walk["hand_R"]
 	var pos: Vector3 = walk["board_pos"]
 	assert_true(hand.distance_to(pos) < 0.4, "the hand is on the board")
-	assert_true(hand.x > 0.15 and hand.y > 0.4 and hand.y < 0.8, "hand at the hip, right side")
+	assert_true(hand.x > 0.15 and hand.y > 0.4 and hand.y < PlaceholderSkater.HIP_HEIGHT + 0.1, "hand at the hip, right side")
 	# both ankles at ground level when stood still, one lifted mid-swing
 	var idle: Dictionary = SkaterPoser.pose_for("walk", 0.0, 0.0, 0.0, false, 0.0, 0.0)
 	assert_near((idle["foot_L"] as Vector3).y, PlaceholderSkater.ANKLE_HEIGHT, 0.0001)

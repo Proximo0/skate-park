@@ -53,19 +53,20 @@ const MANUAL_PITCH: float = 12.0
 const LIP_PITCH: float = 70.0
 
 ## Stance geometry, stance frame. Feet sit over the bolts; the back foot is a little further out, near the tail.
-const FRONT_FOOT: Vector3 = Vector3(0.0, 0.0, -0.17)
-const BACK_FOOT: Vector3 = Vector3(0.0, 0.0, 0.2)
+const FRONT_FOOT: Vector3 = Vector3(0.0, 0.0, -0.18)
+const BACK_FOOT: Vector3 = Vector3(0.0, 0.0, 0.21)
 const FRONT_TOE: float = 18.0  ## front shoe angled toward the nose
 const BACK_TOE: float = -4.0
-const IDLE_HIPS: float = -0.06  ## relaxed knees
-const CROUCH_DROP: float = 0.17  ## extra hip drop at crouch = 1
+const IDLE_HIPS: float = -0.085  ## relaxed knees
+const CROUCH_DROP: float = 0.24  ## extra hip drop at crouch = 1
 const HEAD_LOOK: float = 68.0  ## head turned to look down the board at the travel direction
 const DECK_CENTER: Vector3 = Vector3(0.0, 0.12, 0.0)
-const REAR_TRUCK: Vector3 = Vector3(0.0, 0.0, 0.28)
-const FRONT_TRUCK: Vector3 = Vector3(0.0, 0.0, -0.28)
+const REAR_TRUCK: Vector3 = Vector3(0.0, 0.0, AnimeBoard.TRUCK_Z)
+const FRONT_TRUCK: Vector3 = Vector3(0.0, 0.0, -AnimeBoard.TRUCK_Z)
+const WHEEL_CONTACT_Z: float = AnimeBoard.TRUCK_Z + 0.03  ## manual pivot: where the wheels touch the ground
 const TAIL_TIP: Vector3 = Vector3(0.0, 0.0, 0.40)
-const GRAB_RISE: float = 0.55  ## board comes up to the knees
-const GRAB_LIFT: float = 0.18  ## the body rises less, so the knees tuck
+const GRAB_RISE: float = 0.72  ## board comes up to the knees
+const GRAB_LIFT: float = 0.24  ## the body rises less, so the knees tuck
 const GRAB_CURL: float = 50.0
 const GRAB_ROLL: float = 22.0  ## grabbed edge tipped up toward the hand
 const EDGE: float = 0.12  ## deck half width plus a little, where a hand wraps the edge
@@ -74,10 +75,10 @@ const EDGE: float = 0.12  ## deck half width plus a little, where a hand wraps t
 ## board is carried on edge under the right arm (wheels out, grip against the hip) and that hand holds the deck's top edge.
 const STEP_OFF_TIME: float = 0.25  ## "dismount": ride pose to carry pose
 const HOP_ON_TIME: float = 0.3  ## "mount": board drops in front, the rider steps onto it
-const WALK_LEG: float = 0.5  ## working leg length for the stride maths (the bones allow 0.52)
+const WALK_LEG: float = 0.71  ## working leg length for the stride maths (the bones allow 0.73)
 const CARRY_ROLL: float = 90.0  ## deck on edge: grip side toward the body
 const CARRY_PITCH: float = 12.0  ## nose up
-const CARRY_CENTER: Vector3 = Vector3(0.27, 0.54, -0.02)  ## where the deck's middle hangs, visual space
+const CARRY_CENTER: Vector3 = Vector3(0.3, 0.72, -0.02)  ## where the deck's middle hangs, visual space
 
 ## The Skater. Typed Object and read with get(): naming the Skater class would make this script (and its unit test)
 ## depend on skater.gd compiling, which needs the Flags autoload. Fields read: anim, anim_time, crouch, balance,
@@ -194,7 +195,7 @@ func _apply(pose: Dictionary) -> void:
 		var target: Vector3 = space * (pose["foot_" + s] as Vector3)
 		if free > 0.0:
 			var hang: Vector3 = body.global_transform * Vector3((-1.0 if side == "Left" else 1.0) * 0.13,
-					PlaceholderSkater.HIP_HEIGHT + float(pose["hips_y"]) - 0.46, -0.08)
+					PlaceholderSkater.HIP_HEIGHT + float(pose["hips_y"]) - 0.88 * (PlaceholderSkater.UPPER_LEG + PlaceholderSkater.LOWER_LEG), -0.08)
 			target = target.lerp(hang, free)
 		var toe: float = feet_yaw + deg_to_rad(float(pose["toe_" + s]) - 90.0)
 		var foot_basis: Basis = Basis(space_q.slerp(board_q, flat)) * Basis(Vector3.UP, toe)
@@ -444,7 +445,7 @@ static func _pose_push(pose: Dictionary, t: float, c: float) -> void:
 			reach = 1.0 - k
 			foot = ground_point(pose, finish.lerp(plant, k)) + Vector3.UP * 0.1 * sin(PI * k)
 			contact = 1.0 - sin(PI * k)
-	pose["hips_y"] = IDLE_HIPS - 0.13 * maxf(contact, 0.6) - 0.06 * c
+	pose["hips_y"] = IDLE_HIPS - 0.17 * maxf(contact, 0.6) - 0.08 * c
 	pose["body_yaw"] = float(pose["body_yaw"]) + 38.0  ## torso turns to face down the board
 	pose["pitch"] = 7.0
 	_curl(pose, 14.0)
@@ -693,7 +694,7 @@ static func _pose_manual(pose: Dictionary, anim: String, t: float, c: float, b: 
 	var flail: float = 25.0 * sin(t * 8.0) * b
 	_arms(pose, Vector3(flail, 0.0, -50.0), Vector3(-flail, 0.0, 50.0), 15.0)
 	pose["pitch"] = -10.0 * sgn + 6.0 * b  ## weight back over the tail (forward over the nose)
-	var pivot: Vector3 = Vector3(0.0, 0.0, -0.31) if nose else Vector3(0.0, 0.0, 0.31)  ## wheel contact
+	var pivot: Vector3 = Vector3(0.0, 0.0, -WHEEL_CONTACT_Z) if nose else Vector3(0.0, 0.0, WHEEL_CONTACT_Z)
 	_board_turn(pose, Vector3(sgn * MANUAL_PITCH + 8.0 * b, 0.0, 0.0), pivot)
 	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * c
 	_curl(pose, 8.0 + 10.0 * c)
