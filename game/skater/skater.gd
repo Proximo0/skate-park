@@ -33,10 +33,10 @@ const DOUBLE_FLIP_TIME := 0.68
 const WALLRIDE_TIME := 1.2
 const LIP_MAX_TIME := 2.5
 const SPIN_POINTS_PER_180 := 100
-const PUMP_ACCEL := 4.0  ## holding forward on the way down a transition pumps speed, as on a real halfpipe
+const PUMP_ACCEL := 2.5  ## holding forward on the way down a transition pumps speed, as on a real halfpipe
 const RAIL_GRAVITY := 10.0  ## down rails speed up a little less than free rolling
 const RAIL_FRICTION := 0.5
-const EDGE_ANGLE_COS := 0.64  ## the surface ahead turning away by more than ~50 degrees is a lip: go airborne
+const EDGE_GRIP := 2.5  ## how much more than gravity's hold a convex bend may ask before the board leaves it
 const KILL_Y := -6.0
 const PUSH_PLANT := 0.18  ## matches SkaterPoser: first push steps off the tail, then each cycle kicks
 const PUSH_CYCLE := 0.6
@@ -236,8 +236,8 @@ func _handle_ollie(delta: float) -> void:
 func _ollie(power: float) -> void:
 	# Pop straight up off anything you can stand on: popping along a kicker's normal would brake you.
 	var up: Vector3 = Vector3.UP
-	if state.state != SkateState.State.GRIND and _floor_normal.y < 0.5:
-		up = (_floor_normal + Vector3.UP).normalized()
+	if state.state != SkateState.State.GRIND and _floor_normal.y < 0.8:
+		up = (_floor_normal + Vector3.UP).normalized()  # on a steep transition, pop out of the ramp too
 	velocity += up * power
 	if state.state != SkateState.State.GRIND:
 		position += up * 0.05
@@ -274,7 +274,7 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		along = move_toward(along, 0.0, BRAKE * delta)
 	along = move_toward(along, 0.0, ROLL_FRICTION * delta)
 	var side: Vector3 = v - facing * v.dot(facing)
-	side = side.move_toward(Vector3.ZERO, 10.0 * delta)  # wheels grip sideways; a steep bank still slides you down
+	side = side.move_toward(Vector3.ZERO, 25.0 * delta)  # wheels resist sliding sideways
 	v = facing * along + side
 	if v.length() > MAX_SPEED:
 		v = v.normalized() * MAX_SPEED
@@ -294,9 +294,9 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	if is_on_floor():
 		var fn: Vector3 = get_floor_normal()
 		var was: Vector3 = _floor_normal
-		if fn.dot(was) < EDGE_ANGLE_COS and v.length() > 1.0 and fn.dot(v.normalized()) > 0.2:
-			# Over a lip (kicker top, ledge edge, funbox end): the new face falls away from the travel
-			# direction, so carry on along the old surface into the air instead of sticking to the face.
+		if _leaves_surface(was, fn, v, delta):
+			# Over a lip (kicker top, ledge edge, funbox crest at speed): the surface falls away faster than
+			# gravity can hold the board to it, so carry on along the old surface into the air.
 			_left_edge = true
 			velocity = v
 			_launch_normal = was
@@ -310,6 +310,25 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	else:
 		# leaving a surface: was it the top of a vert ramp?
 		_launch_normal = _floor_normal
+
+
+## True when following the floor from normal `was` to `fn` this tick would need more grip than gravity gives:
+## a convex bend (the normal tips toward the travel direction) whose curvature at this speed wants a
+## centripetal pull over EDGE_GRIP times gravity's, or riding down onto a near-vertical face.
+func _leaves_surface(was: Vector3, fn: Vector3, v: Vector3, delta: float) -> bool:
+	var spd: float = v.length()
+	if spd < 0.5:
+		return false
+	var dir: Vector3 = v / spd
+	if (fn - was).dot(dir) <= 0.0:
+		return false  # concave (into a ramp) or flat: stay on it
+	if fn.y < 0.1 and v.y <= 0.0:
+		return true  # rolling off onto a vertical face is a fall, not a ride
+	var bend: float = acos(clampf(fn.dot(was), -1.0, 1.0))
+	if bend < 0.01:
+		return false
+	var curvature: float = bend / maxf(spd * delta, 0.001)
+	return spd * spd * curvature > EDGE_GRIP * GRAVITY * maxf(was.y, 0.1)
 
 
 ## 0..1 push strength this tick, from the push anim's time: 0 while stepping off and swinging the foot forward,
@@ -382,9 +401,9 @@ func _tick_air(delta: float, requests: Array) -> void:
 		spin_in += 1.0
 	if _held.has("spin_right"):
 		spin_in -= 1.0
-	if spin_in == 0.0 and absf(_stick.x) > 0.2:
-		# THUG-style stick spin, analog: a light touch turns slowly, full stick spins at SPIN_RATE.
-		spin_in = -signf(_stick.x) * clampf((absf(_stick.x) - 0.2) / 0.6, 0.25, 1.0)
+	if spin_in == 0.0 and absf(_stick.x) > 0.35:
+		# THUG-style stick spin, analog: past the steering range it spins, full stick at SPIN_RATE.
+		spin_in = -signf(_stick.x) * clampf((absf(_stick.x) - 0.35) / 0.5, 0.3, 1.0)
 	if spin_in != 0.0:
 		facing = facing.rotated(Vector3.UP, spin_in * SPIN_RATE * delta).normalized()
 	elif not vert_air:
@@ -476,7 +495,7 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	# keep speed, now along the surface
 	var v: Vector3 = hit_v.slide(n)
 	var keep: float = 0.97 if result == "clean" else 0.8
-	velocity = v * keep
+	velocity = (v * keep).limit_length(MAX_SPEED)
 	if v.length() > 0.5:
 		facing = v.normalized()
 	vert_air = false
@@ -542,6 +561,10 @@ func _try_grind() -> bool:
 	_rail_t = best_hit["t"]
 	var tan: Vector3 = best_hit["tangent"]
 	var along: float = velocity.dot(tan)
+	# A steep catch keeps at least half the incoming speed, turned onto the rail.
+	if absf(along) < velocity.length() * 0.5:
+		var sgn: float = signf(along) if absf(along) > 0.01 else (1.0 if facing.dot(tan) >= 0.0 else -1.0)
+		along = velocity.length() * 0.5 * sgn
 	var floor_speed: float = GRIND_MIN_SPEED * 0.5
 	if absf(along) < floor_speed:
 		along = floor_speed * (1.0 if along >= 0.0 else -1.0)
