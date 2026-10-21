@@ -6,8 +6,9 @@ extends Control
 
 signal closed
 
-const CTRL_BG := Color("#1B2360")
-const CTRL_CARD := Color("#2F3B8C")
+const CTRL_ROW_FONT: int = 28
+const CTRL_BUTTON_INK := Color("#C8382B")  ## coral deep enough to read on cream
+const CTRL_KEY_INK := Color("#00758F")  ## teal deep enough to read on cream
 const CTRL_BACK_MIN := Vector2(320, 72)
 const CTRL_COLUMN_GAP := 48
 const CTRL_NAME_MIN := 200
@@ -68,32 +69,32 @@ func _ctrl_is_circle(event: InputEvent) -> bool:
 
 
 func _build() -> void:
-	var bg := ColorRect.new()
-	bg.color = CTRL_BG
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	add_child(SkyBackdrop.new())
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 64)
 	margin.add_theme_constant_override("margin_right", 64)
-	margin.add_theme_constant_override("margin_top", 24)
-	margin.add_theme_constant_override("margin_bottom", 24)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
 	add_child(margin)
 
 	var main := VBoxContainer.new()
-	main.add_theme_constant_override("separation", 20)
+	main.add_theme_constant_override("separation", 10)
 	margin.add_child(main)
 
-	var title := UiStyle.label("Controls", UiStyle.SIZE_TITLE, UiStyle.SUNSHINE)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var title := AnimeText.new("CONTROLS", 56, UiStyle.SUNSHINE)
+	title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	main.add_child(title)
 
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", CTRL_COLUMN_GAP)
 	main.add_child(columns)
-	columns.add_child(_column([CTRL_SECTIONS[0], CTRL_SECTIONS[1]]))
-	columns.add_child(_column([CTRL_SECTIONS[2], CTRL_SECTIONS[3]]))
+	for pair: Array in [[CTRL_SECTIONS[0], CTRL_SECTIONS[1]], [CTRL_SECTIONS[2], CTRL_SECTIONS[3]]]:
+		var card: PanelContainer = MenuKit.panel()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.add_child(_column(pair))
+		columns.add_child(card)
 
 	main.add_child(_tips())
 
@@ -102,13 +103,7 @@ func _build() -> void:
 	_back = Button.new()
 	_back.text = "Back"
 	_back.custom_minimum_size = CTRL_BACK_MIN
-	_back.add_theme_font_size_override("font_size", UiStyle.SIZE_BODY)
-	for k: String in ["font_color", "font_hover_color", "font_focus_color", "font_pressed_color"]:
-		_back.add_theme_color_override(k, UiStyle.INK)
-	_back.add_theme_stylebox_override("normal", _ctrl_box(UiStyle.SKY_BLUE, UiStyle.INK, 4))
-	_back.add_theme_stylebox_override("hover", _ctrl_box(UiStyle.SKY_BLUE.lightened(0.15), UiStyle.INK, 4))
-	_back.add_theme_stylebox_override("pressed", _ctrl_box(UiStyle.SKY_BLUE.darkened(0.15), UiStyle.INK, 4))
-	_back.add_theme_stylebox_override("focus", _ctrl_box(UiStyle.SKY_BLUE, UiStyle.WHITE, 8))
+	_back.theme_type_variation = SkateThemeBuilder.BTN_SUN
 	_back.pressed.connect(func() -> void: closed.emit())
 	back_row.add_child(_back)
 
@@ -116,13 +111,13 @@ func _build() -> void:
 ## One column of sections; each section is a heading and its action rows.
 func _column(sections: Array) -> VBoxContainer:
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 12)
+	col.add_theme_constant_override("separation", 10)
 	for section: Array in sections:
 		var box := VBoxContainer.new()
 		box.add_theme_constant_override("separation", 4)
 		col.add_child(box)
 		var heading: String = section[0]
-		box.add_child(UiStyle.label(heading, UiStyle.SIZE_BODY, UiStyle.BUBBLEGUM))
+		box.add_child(MenuKit.text(heading.to_upper(), CTRL_ROW_FONT, CTRL_BUTTON_INK))
 		for row: Array in section[1]:
 			var text: String = row[0]
 			var action: String = row[1]
@@ -133,36 +128,35 @@ func _column(sections: Array) -> VBoxContainer:
 func _row(text: String, action: String) -> HBoxContainer:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 20)
-	var name_label := UiStyle.label(text, UiStyle.SIZE_BODY, UiStyle.WHITE, false)
+	var name_label := MenuKit.text(text, CTRL_ROW_FONT)
 	name_label.custom_minimum_size.x = CTRL_NAME_MIN
 	h.add_child(name_label)
-	var button_label := UiStyle.label(_joy_text(action), UiStyle.SIZE_BODY, UiStyle.LIME, false)
+	var button_label := MenuKit.text(_joy_text(action), CTRL_ROW_FONT, CTRL_BUTTON_INK)
 	button_label.custom_minimum_size.x = CTRL_BUTTON_MIN
 	h.add_child(button_label)
-	h.add_child(UiStyle.label(_key_text(action), UiStyle.SIZE_BODY, UiStyle.SKY_BLUE, false))
+	h.add_child(MenuKit.text(_key_text(action), CTRL_ROW_FONT, CTRL_KEY_INK))
 	return h
 
 
 func _tips() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
-	box.add_child(UiStyle.label("How to", UiStyle.SIZE_BIG, UiStyle.SUNSHINE))
+	box.add_child(UiStyle.label("HOW TO", UiStyle.SIZE_BODY, UiStyle.SUNSHINE))
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 24)
 	grid.add_theme_constant_override("v_separation", 16)
 	box.add_child(grid)
 	for i: int in CTRL_TIPS.size():
-		var card := PanelContainer.new()
-		card.add_theme_stylebox_override("panel", UiStyle.panel_style(CTRL_CARD))
+		var card: PanelContainer = MenuKit.panel(SkateThemeBuilder.PNL_TEAL)
 		card.custom_minimum_size = Vector2(CTRL_TIP_WIDTH, 0)
 		grid.add_child(card)
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 16)
 		card.add_child(row)
-		row.add_child(UiStyle.label(str(i + 1), UiStyle.SIZE_BODY, UiStyle.SUNSHINE))
+		row.add_child(UiStyle.label(str(i + 1), UiStyle.SIZE_BIG, UiStyle.WHITE))
 		var tip_text: String = CTRL_TIPS[i]
-		var tip := UiStyle.label(tip_text, UiStyle.SIZE_BODY, UiStyle.WHITE, false)
+		var tip := MenuKit.text(tip_text, CTRL_ROW_FONT)
 		tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(tip)
@@ -242,13 +236,3 @@ func _axis_name(a: int) -> String:
 		JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y:
 			return "Left stick"
 	return ""
-
-
-func _ctrl_box(fill: Color, border: Color, border_w: int) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = fill
-	s.set_corner_radius_all(26)
-	s.set_border_width_all(border_w)
-	s.border_color = border
-	s.set_content_margin_all(18)
-	return s

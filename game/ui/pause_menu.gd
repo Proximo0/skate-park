@@ -11,13 +11,9 @@ signal quit_requested
 signal resumed
 
 const PAUSE_BACKDROP := Color(0.02, 0.03, 0.09, 0.62)
-const PAUSE_PANEL := Color("#2B2F7A")
-const PAUSE_BUTTON_MIN := Vector2(420, 90)
-const PAUSE_DROP_IN_MIN := Vector2(420, 72)
-const PAUSE_DROP_IN_FONT := 36
-const PAUSE_FOCUS_SCALE := 1.08
-const PAUSE_PANEL_RADIUS := 40
-const PAUSE_PANEL_PAD := 36
+const PAUSE_BUTTON_MIN := Vector2(460, 84)
+const PAUSE_DROP_IN_MIN := Vector2(460, 68)
+const PAUSE_DROP_IN_FONT := 32
 
 var _backdrop: ColorRect
 var _panel: PanelContainer
@@ -26,7 +22,6 @@ var _controls_button: Button
 var _controls_screen: ControlsScreen
 var _controls_open: bool = false
 var _intro: Tween
-var _pops: Dictionary = {}  ## Button -> Tween running its focus scale
 
 
 func _ready() -> void:
@@ -48,16 +43,17 @@ func _build() -> void:
 	_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(_backdrop)
 
+	var deco: SkyBackdrop = SkyBackdrop.new(true)
+	root.add_child(deco)
+
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(center)
 
 	_panel = PanelContainer.new()
-	var panel_box: StyleBoxFlat = UiStyle.panel_style(PAUSE_PANEL)
-	panel_box.set_corner_radius_all(PAUSE_PANEL_RADIUS)
-	panel_box.set_content_margin_all(PAUSE_PANEL_PAD)
-	_panel.add_theme_stylebox_override("panel", panel_box)
+	_panel.theme_type_variation = SkateThemeBuilder.PNL_NAVY
+	_panel.add_child(StickerDots.new())
 	_panel.resized.connect(func() -> void: _panel.pivot_offset = _panel.size * 0.5)
 	center.add_child(_panel)
 
@@ -65,41 +61,42 @@ func _build() -> void:
 	col.add_theme_constant_override("separation", 16)
 	_panel.add_child(col)
 
-	var title := UiStyle.label("Paused", UiStyle.SIZE_TITLE, UiStyle.SUNSHINE)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var title := AnimeText.new("PAUSED", UiStyle.SIZE_TITLE, UiStyle.SUNSHINE)
+	title.name = "Title"
+	title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	col.add_child(title)
 
-	_resume_button = _pause_button("Resume", UiStyle.LIME)
+	_resume_button = _pause_button("Resume", SkateThemeBuilder.BTN_MINT)
 	_resume_button.pressed.connect(resume)
 	col.add_child(_resume_button)
 
-	var restart := _pause_button("Restart Run", UiStyle.SUNSHINE)
+	var restart := _pause_button("Restart Run", SkateThemeBuilder.BTN_SUN)
 	restart.pressed.connect(_on_restart_pressed)
 	col.add_child(restart)
 
-	var drop_mega := _pause_button("Drop In: Mega Ramp", Color("#FF9F43"), PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	var drop_mega := _pause_button("Drop In: Mega Ramp", SkateThemeBuilder.BTN_CORAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
 	drop_mega.pressed.connect(_on_drop_in_pressed.bind("mega"))
 	col.add_child(drop_mega)
 
-	var drop_loop := _pause_button("Drop In: Loop", Color("#FF9F43"), PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	var drop_loop := _pause_button("Drop In: Loop", SkateThemeBuilder.BTN_CORAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
 	drop_loop.pressed.connect(_on_drop_in_pressed.bind("loop"))
 	col.add_child(drop_loop)
 
-	var hair_btn := _pause_button("", UiStyle.SKY_BLUE, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	var hair_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
 	_set_toggle_text(hair_btn, "Hair physics", GameSettings.hair_on())
 	hair_btn.pressed.connect(_on_toggle.bind(hair_btn, "Hair physics", true))
 	col.add_child(hair_btn)
 
-	var body_btn := _pause_button("", UiStyle.SKY_BLUE, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	var body_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
 	_set_toggle_text(body_btn, "Body physics", GameSettings.body_on())
 	body_btn.pressed.connect(_on_toggle.bind(body_btn, "Body physics", false))
 	col.add_child(body_btn)
 
-	_controls_button = _pause_button("Controls", UiStyle.SKY_BLUE)
+	_controls_button = _pause_button("Controls", SkateThemeBuilder.BTN_TEAL)
 	_controls_button.pressed.connect(_on_controls_pressed)
 	col.add_child(_controls_button)
 
-	var quit := _pause_button("Quit to Title", UiStyle.BUBBLEGUM)
+	var quit := _pause_button("Quit to Title", SkateThemeBuilder.BTN_CREAM)
 	quit.pressed.connect(_on_quit_pressed)
 	col.add_child(quit)
 
@@ -215,41 +212,13 @@ func _on_controls_closed() -> void:
 	_controls_button.grab_focus()
 
 
-func _pause_button(text: String, color: Color, min_size: Vector2 = PAUSE_BUTTON_MIN, font_size: int = UiStyle.SIZE_BIG) -> Button:
+func _pause_button(text: String, variation: StringName, min_size: Vector2 = PAUSE_BUTTON_MIN, font_size: int = 0) -> Button:
 	var b := Button.new()
 	b.text = text
+	b.theme_type_variation = variation
 	b.custom_minimum_size = min_size
 	b.focus_mode = Control.FOCUS_ALL
-	b.add_theme_font_size_override("font_size", font_size)
-	for k: String in ["font_color", "font_hover_color", "font_focus_color", "font_pressed_color"]:
-		b.add_theme_color_override(k, UiStyle.INK)
-	b.add_theme_stylebox_override("normal", _pause_box(color, 26, UiStyle.INK, 4, 18))
-	b.add_theme_stylebox_override("hover", _pause_box(color.lightened(0.15), 26, UiStyle.INK, 4, 18))
-	b.add_theme_stylebox_override("pressed", _pause_box(color.darkened(0.15), 26, UiStyle.INK, 4, 18))
-	b.add_theme_stylebox_override("focus", _pause_box(color, 26, UiStyle.WHITE, 8, 18))
-	b.resized.connect(func() -> void: b.pivot_offset = b.size * 0.5)
-	b.focus_entered.connect(_pop.bind(b, PAUSE_FOCUS_SCALE))
-	b.focus_exited.connect(_pop.bind(b, 1.0))
+	if font_size > 0:
+		b.add_theme_font_size_override("font_size", font_size)
 	b.mouse_entered.connect(b.grab_focus)
 	return b
-
-
-## Scales a button to target with a short tween, replacing any tween still running on it.
-func _pop(b: Button, target: float) -> void:
-	var old: Tween = _pops.get(b) as Tween
-	if old and old.is_valid():
-		old.kill()
-	var t := create_tween()
-	t.tween_property(b, "scale", Vector2.ONE * target, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_pops[b] = t
-
-
-func _pause_box(fill: Color, radius: int, border: Color, border_w: int, pad: int) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = fill
-	s.set_corner_radius_all(radius)
-	if border_w > 0:
-		s.set_border_width_all(border_w)
-		s.border_color = border
-	s.set_content_margin_all(pad)
-	return s

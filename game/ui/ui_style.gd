@@ -3,30 +3,34 @@ extends RefCounted
 ## Shared look for every UI screen: colour tokens, 1080p font sizes, outlined labels and rounded panels.
 ## Pure helpers. Sizes are in px at 1920x1080; the viewport stretch scales them with the window.
 
-const SKY_BLUE := Color("#4FC3F7")
-const SUNSHINE := Color("#FFD84D")
-const BUBBLEGUM := Color("#FF7EB6")
-const LIME := Color("#A6E22E")
-const WHITE := Color("#FFFFFF")
-const INK := Color("#1B1B2F")
+## Sunset palette (SkateThemeBuilder holds the master copy). The old token names stay: SKY_BLUE is the teal,
+## BUBBLEGUM the coral, SUNSHINE the sunny yellow, LIME the one "go" green, WHITE the off-white, INK the deep navy.
+const SKY_BLUE := SkateThemeBuilder.TEAL
+const SUNSHINE := SkateThemeBuilder.SUN
+const BUBBLEGUM := SkateThemeBuilder.CORAL
+const LIME := SkateThemeBuilder.MINT
+const WHITE := SkateThemeBuilder.CREAM
+const INK := SkateThemeBuilder.NAVY
+const MUTED := SkateThemeBuilder.MUTED
 
-const SIZE_TITLE: int = 72
-const SIZE_BIG: int = 48
-const SIZE_BODY: int = 30
-const SIZE_SMALL: int = 22
+const SIZE_TITLE: int = 80
+const SIZE_BIG: int = 54
+const SIZE_BODY: int = 36
+const SIZE_SMALL: int = 28
 
-const OUTLINE_SIZE: int = 8
-const SHADOW_OFFSET := Vector2(0, 5)
-const SHADOW_SIZE: int = 6
-const SHADOW_ALPHA: float = 0.45
+const OUTLINE_SIZE: int = 10
+const SHADOW_OFFSET := Vector2(0, 6)
+const SHADOW_SIZE: int = 1
+const SHADOW_ALPHA: float = 0.9
 
-const PANEL_RADIUS: int = 18
-const PANEL_BORDER: int = 4
+const PANEL_RADIUS: int = SkateThemeBuilder.RADIUS
+const PANEL_BORDER: int = SkateThemeBuilder.BORDER
 
 
 ## A bright text label with a thick ink outline and a soft drop shadow. Outline makes it read as bold.
 static func label(text: String, size: int, color: Color, outline: bool = true) -> Label:
 	var settings := LabelSettings.new()
+	settings.font = SkateThemeBuilder.heading_font()
 	settings.font_size = size
 	settings.font_color = color
 	if outline:
@@ -44,12 +48,11 @@ static func label(text: String, size: int, color: Color, outline: bool = true) -
 	return lbl
 
 
-## A rounded panel in the given fill colour with an ink border.
+## A sticker panel in the given fill: thick navy outline, rounded, hard offset drop shadow.
 static func panel_style(color: Color) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = color
-	sb.set_corner_radius_all(PANEL_RADIUS)
-	sb.set_border_width_all(PANEL_BORDER)
-	sb.border_color = INK
-	sb.set_content_margin_all(12)
-	return sb
+	return SkateThemeBuilder.sticker(color)
+
+
+## The same rounded outline without the drop shadow, for bars and tracks drawn inside panels.
+static func flat_style(color: Color) -> StyleBoxFlat:
+	return SkateThemeBuilder.flat(color)

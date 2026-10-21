@@ -64,12 +64,7 @@ func _ready() -> void:
 	add_child(_timer)
 
 	_box = PanelContainer.new()
-	var style: StyleBoxFlat = UiStyle.panel_style(Color(UiStyle.INK, 0.55))
-	style.content_margin_left = 18
-	style.content_margin_right = 18
-	style.content_margin_top = 10
-	style.content_margin_bottom = 12
-	_box.add_theme_stylebox_override("panel", style)
+	_box.theme_type_variation = SkateThemeBuilder.PNL_NAVY
 	_box.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_box.offset_right = -MARGIN

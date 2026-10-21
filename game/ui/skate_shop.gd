@@ -80,11 +80,11 @@ func _build_layout() -> void:
 	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rows.add_theme_constant_override("separation", 8)
 	_scroll.add_child(_rows)
-	var hint: Label = MenuKit.text("Q / E or LB / RB: category    Left / Right: colour", UiStyle.SIZE_SMALL, Color("#4A5170"))
+	var hint: Label = MenuKit.text("Q / E or LB / RB: category    Left / Right: colour", UiStyle.SIZE_SMALL, UiStyle.MUTED)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(hint)
 
-	var right: PanelContainer = MenuKit.panel(Color("#FFFFFF", 0.35))
+	var right: PanelContainer = MenuKit.panel(SkateThemeBuilder.PNL_NAVY)
 	right.anchor_right = 1.0
 	right.anchor_bottom = 1.0
 	right.offset_left = 920
@@ -106,7 +106,7 @@ func _build_layout() -> void:
 	info.add_child(icol)
 	_name_label = MenuKit.text("", UiStyle.SIZE_BODY + 4)
 	icol.add_child(_name_label)
-	_desc_label = MenuKit.text("", UiStyle.SIZE_SMALL, Color("#4A5170"))
+	_desc_label = MenuKit.text("", UiStyle.SIZE_SMALL, UiStyle.MUTED)
 	_desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_desc_label.custom_minimum_size = Vector2(0, 54)
 	icol.add_child(_desc_label)
@@ -119,18 +119,18 @@ func _build_layout() -> void:
 	_action = Button.new()
 	_action.custom_minimum_size = Vector2(240, 62)
 	_action.focus_mode = Control.FOCUS_NONE
-	MenuKit.style_button(_action, UiStyle.LIME)
+	MenuKit.style_button(_action, SkateThemeBuilder.BTN_MINT)
 	_action.pressed.connect(_activate)
 	buy_row.add_child(_action)
 	var back: Button = Button.new()
 	back.text = "Back"
 	back.custom_minimum_size = Vector2(150, 62)
 	back.focus_mode = Control.FOCUS_NONE
-	MenuKit.style_button(back, UiStyle.BUBBLEGUM)
+	MenuKit.style_button(back, SkateThemeBuilder.BTN_CORAL)
 	back.pressed.connect(func() -> void: closed.emit())
 	buy_row.add_child(back)
 
-	var coins_panel: PanelContainer = MenuKit.panel(UiStyle.INK)
+	var coins_panel: PanelContainer = MenuKit.panel(SkateThemeBuilder.PNL_NAVY)
 	coins_panel.anchor_left = 1.0
 	coins_panel.anchor_right = 1.0
 	coins_panel.offset_left = -330
@@ -164,8 +164,7 @@ func _input(event: InputEvent) -> void:
 func _set_category(i: int) -> void:
 	_category = clampi(i, 0, _cat.categories.size() - 1)
 	for t: int in _tab_buttons.size():
-		MenuKit.style_button(_tab_buttons[t], UiStyle.SKY_BLUE if t == _category else Color("#EAF7FF"))
-		_tab_buttons[t].add_theme_stylebox_override("focus", _tab_buttons[t].get_theme_stylebox("normal"))
+		MenuKit.style_button(_tab_buttons[t], SkateThemeBuilder.BTN_TEAL if t == _category else SkateThemeBuilder.BTN_CREAM)
 	_items = _cat.category_items(str(_cat.categories[_category]["id"]), _lo.body_type)
 	_rebuild_rows(0)
 
@@ -215,9 +214,9 @@ func _refresh_row(i: int) -> void:
 	row.setup(str(it["name"]), "", sw)
 	row.set_arrows_visible(_cat.color_count(id) > 1)
 	if _is_equipped(it):
-		row.set_value("EQUIPPED", sw, Color("#1A8F4A"))
+		row.set_value("EQUIPPED", sw, Color("#0B6B33"))
 	elif _wallet.owns(id):
-		row.set_value("OWNED", sw, Color("#1A6FB0"))
+		row.set_value("OWNED", sw, Color("#0E4F8B"))
 	else:
 		var price: int = int(it["price"])
 		row.set_value("%d coins" % price, sw, UiStyle.INK if _wallet.can_afford(price) else MenuKit.BAD)

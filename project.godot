@@ -9,6 +9,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 [autoload]
 Flags="*res://game/autoload/flags.gd"
 Controls="*res://game/autoload/controls.gd"
+UiFx="*res://game/ui/theme/ui_fx.gd"
 
 [display]
 window/size/viewport_width=1920
@@ -17,6 +18,10 @@ window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[gui]
+
+theme/custom="res://game/ui/theme/skate_theme.tres"
 
 [debug]
 gdscript/warnings/untyped_declaration=1

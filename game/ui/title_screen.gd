@@ -11,10 +11,10 @@ const SHOP_SCENE: String = "res://game/shop/shop.tscn"  ## the walk-in shop
 const TITLE: String = "SKATE PARK"
 const SUBTITLE: String = "Shred. Grind. Have fun!"
 const TITLE_COLORS: PackedColorArray = [
-	Color("#FF5A5F"), Color("#FF9F1C"), Color("#FFD84D"), Color("#A6E22E"), Color("#4FC3F7"),
-	Color("#7C83FD"), Color("#FF7EB6"),
+	SkateThemeBuilder.CORAL, SkateThemeBuilder.SUN, SkateThemeBuilder.CREAM, SkateThemeBuilder.TEAL,
+	SkateThemeBuilder.SUN, SkateThemeBuilder.CORAL, SkateThemeBuilder.CREAM,
 ]
-const TITLE_FONT_SIZE: int = 144
+const TITLE_FONT_SIZE: int = 150
 const BOB_AMPLITUDE: float = 14.0
 const BOB_SPEED: float = 3.0
 const BOB_PHASE: float = 0.55
@@ -24,8 +24,7 @@ const ORBIT_SPEED: float = 0.3  # phase rad/s; the camera sways, see ORBIT_SWAY
 const ORBIT_SWAY: float = 0.6  # max camera angle either side of the front, rad (keeps the quarter pipe in frame)
 const LOOK_AT: Vector3 = Vector3(0.0, 1.05, 0.0)
 const GROUND_COLOR: Color = Color("#7BC96F")
-const BUTTON_RADIUS: int = 18
-const BUTTON_FONT_SIZE: int = 48
+const LETTER_TIGHTEN: float = 0.66  ## letter advance as a share of its box, the boxes carry outline padding
 
 @onready var _viewport: SubViewport = $World/Viewport
 @onready var _title_row: Control = $Ui/TitleRow
@@ -41,7 +40,7 @@ const BUTTON_FONT_SIZE: int = 48
 var _camera: Camera3D
 var _orbit: float = 0.0
 var _time: float = 0.0
-var _letters: Array[Label] = []
+var _letters: Array[AnimeText] = []
 var _letter_base_y: float = 0.0
 var _overlay: Control = null
 var _overlay_button: Button = null
@@ -52,15 +51,21 @@ var _leaving: bool = false
 func _ready() -> void:
 	_build_world(_viewport)
 	_build_title()
-	var subtitle_label: Label = UiStyle.label(SUBTITLE, UiStyle.SIZE_BODY, UiStyle.WHITE)
-	_subtitle.label_settings = subtitle_label.label_settings
-	subtitle_label.free()
-	_style_button(_play, UiStyle.LIME)
-	_style_button(_create, UiStyle.SKY_BLUE)
-	_style_button(_shop, UiStyle.SUNSHINE)
-	_style_button(_visit, Color("#FF9F1C"))
-	_style_button(_controls, Color("#B79CFF"))
-	_style_button(_quit, UiStyle.BUBBLEGUM)
+	var deco: SkyBackdrop = SkyBackdrop.new(true)
+	$Ui.add_child(deco)
+	$Ui.move_child(deco, 0)
+	_subtitle.theme_type_variation = SkateThemeBuilder.LBL_RIBBON
+	_subtitle.anchor_left = 0.5
+	_subtitle.anchor_right = 0.5
+	_subtitle.offset_left = -330.0
+	_subtitle.offset_right = 330.0
+	_subtitle.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_play.theme_type_variation = SkateThemeBuilder.BTN_MINT
+	_create.theme_type_variation = SkateThemeBuilder.BTN_TEAL
+	_shop.theme_type_variation = SkateThemeBuilder.BTN_SUN
+	_visit.theme_type_variation = SkateThemeBuilder.BTN_NAVY
+	_controls.theme_type_variation = SkateThemeBuilder.BTN_CREAM
+	_quit.theme_type_variation = SkateThemeBuilder.BTN_CORAL
 	_play.pressed.connect(_on_play)
 	_create.pressed.connect(_open_overlay.bind(CREATOR_SCRIPT, _create))
 	_shop.pressed.connect(_open_overlay.bind(SHOP_SCRIPT, _shop))
@@ -150,8 +155,10 @@ func _update_camera() -> void:
 ## One label per character (spaces included, for the gap) so each letter takes its own colour and bobs on its own.
 func _build_title() -> void:
 	for i: int in TITLE.length():
-		var letter: Label = UiStyle.label(TITLE.substr(i, 1), TITLE_FONT_SIZE, TITLE_COLORS[i % TITLE_COLORS.size()])
-		letter.label_settings.outline_size = 16
+		var letter: AnimeText = AnimeText.new(TITLE.substr(i, 1), TITLE_FONT_SIZE, TITLE_COLORS[i % TITLE_COLORS.size()])
+		letter.impact_lines = false
+		letter.tilt_degrees = -3.0 if i % 2 == 0 else 2.0
+		letter.rotation_degrees = letter.tilt_degrees
 		_title_row.add_child(letter)
 		_letters.append(letter)
 	_title_row.resized.connect(_layout_title)
@@ -162,40 +169,18 @@ func _build_title() -> void:
 func _layout_title() -> void:
 	var total: float = 0.0
 	var sizes: Array[Vector2] = []
-	for letter: Label in _letters:
-		var s: Vector2 = letter.get_minimum_size()
+	for letter: AnimeText in _letters:
+		var s: Vector2 = letter.get_combined_minimum_size()
 		sizes.append(s)
-		total += s.x
+		total += s.x * LETTER_TIGHTEN
 	var x: float = (_title_row.size.x - total) * 0.5
 	var max_h: float = 0.0
 	for i: int in _letters.size():
 		_letters[i].size = sizes[i]
 		_letters[i].position.x = x
-		x += sizes[i].x
+		x += sizes[i].x * LETTER_TIGHTEN
 		max_h = maxf(max_h, sizes[i].y)
 	_letter_base_y = (_title_row.size.y - max_h) * 0.5
-
-
-func _style_button(button: Button, color: Color) -> void:
-	button.add_theme_font_size_override("font_size", BUTTON_FONT_SIZE)
-	button.add_theme_color_override("font_color", UiStyle.INK)
-	button.add_theme_color_override("font_hover_color", UiStyle.INK)
-	button.add_theme_color_override("font_pressed_color", UiStyle.INK)
-	button.add_theme_color_override("font_focus_color", UiStyle.INK)
-	button.add_theme_stylebox_override("normal", _button_box(color))
-	button.add_theme_stylebox_override("hover", _button_box(color.lightened(0.12)))
-	button.add_theme_stylebox_override("pressed", _button_box(color.darkened(0.12)))
-	var focus: StyleBoxFlat = _button_box(color.lightened(0.2))
-	focus.border_color = UiStyle.WHITE
-	focus.set_border_width_all(6)
-	button.add_theme_stylebox_override("focus", focus)
-
-
-func _button_box(color: Color) -> StyleBoxFlat:
-	var box: StyleBoxFlat = UiStyle.panel_style(color)
-	box.set_corner_radius_all(BUTTON_RADIUS)
-	box.set_content_margin_all(10)
-	return box
 
 
 func _on_play() -> void:

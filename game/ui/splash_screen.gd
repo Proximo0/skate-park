@@ -15,13 +15,13 @@ const STUDIO_END: float = 2.3  ## s, studio card wipes out
 const TITLE_START: float = 2.0
 const TITLE_SLAM: float = 3.3  ## s, letters hit
 const TOTAL: float = 7.2
-const INK: Color = Color("#1B1B2F")
+const INK: Color = SkateThemeBuilder.NAVY
 const LETTER_COLORS: PackedColorArray = [
-	Color("#FFD84D"), Color("#FF9F1C"), Color("#FF5A5F"), Color("#FF7EB6"), Color("#7C83FD"),
-	Color("#4FC3F7"), Color("#FFD84D"), Color("#FF9F1C"), Color("#FF5A5F"), Color("#FF7EB6"),
+	SkateThemeBuilder.SUN, SkateThemeBuilder.CORAL, SkateThemeBuilder.CREAM, SkateThemeBuilder.TEAL, SkateThemeBuilder.SUN,
+	SkateThemeBuilder.SUN, SkateThemeBuilder.CORAL, SkateThemeBuilder.CREAM, SkateThemeBuilder.TEAL, SkateThemeBuilder.SUN,
 ]
 const SKY_STOPS: PackedFloat32Array = [0.0, 0.45, 0.75, 1.0]
-const SKY_COLORS: PackedColorArray = [Color("#3B2A8C"), Color("#E0529C"), Color("#FF9A5A"), Color("#FFD84D")]
+const SKY_COLORS: PackedColorArray = [Color("#3B2A8C"), Color("#E0529C"), Color("#FF9A5A"), Color("#FFD23F")]
 const BOARD_VIEW: Vector2i = Vector2i(720, 420)
 
 var change_scene: bool = true  ## tests turn this off
@@ -245,7 +245,7 @@ func _circle(center: Vector2, radius: float, color: Color, n: int = 48) -> Polyg
 func _sun() -> Node2D:
 	var root := Node2D.new()
 	var c: Vector2 = Vector2(_size.x * 0.5, _size.y * 0.55)
-	root.add_child(_circle(c, 250.0, Color("#FFD84D", 0.18)))
+	root.add_child(_circle(c, 250.0, Color("#FFD23F", 0.18)))
 	root.add_child(_circle(c, 190.0, Color("#FFE98A", 0.35)))
 	var sun: Polygon2D = _circle(c, 135.0, Color("#FFF0A0"))
 	root.add_child(sun)
@@ -269,7 +269,7 @@ func _speed_burst() -> Node2D:
 		var a1: float = a0 + TAU / float(n) * 0.5
 		var tri := Polygon2D.new()
 		tri.polygon = PackedVector2Array([Vector2.ZERO, Vector2.from_angle(a0) * 1500.0, Vector2.from_angle(a1) * 1500.0])
-		tri.color = Color(1, 1, 1, 0.16) if i % 3 != 0 else Color("#FFD84D", 0.22)
+		tri.color = Color(1, 1, 1, 0.16) if i % 3 != 0 else Color("#FFD23F", 0.22)
 		root.add_child(tri)
 	root.scale = Vector2(0.2, 0.2)
 	return root
@@ -279,7 +279,7 @@ func _wave() -> Node2D:
 	var root := Node2D.new()
 	var base: float = _size.y * 0.8
 	for layer: int in 3:
-		var col: Color = [Color("#7C83FD"), Color("#4FC3F7"), Color("#2A9FD6")][layer]
+		var col: Color = [Color("#7C83FD"), Color("#00A6C8"), Color("#2A9FD6")][layer]
 		var amp: float = 46.0 - float(layer) * 10.0
 		var top := PackedVector2Array()
 		var steps: int = 64
@@ -409,9 +409,9 @@ func _build_lettering() -> void:
 	var font_size: int = 230
 	var x: float = 0.0
 	var widths: Array[float] = []
-	var font: Font = ThemeDB.fallback_font
+	var font: Font = SkateThemeBuilder.heading_font()
 	for ch: String in TITLE:
-		widths.append(font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x - 4.0)
+		widths.append(font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x - 4.0 + (70.0 if ch == " " else 0.0))
 		x += widths[-1]
 	var cursor: float = (_size.x - x) * 0.5
 	var idx: int = 0
@@ -452,7 +452,7 @@ func _build_sparkles() -> void:
 		for k: int in 8:
 			pts.append(Vector2.from_angle(TAU * float(k) / 8.0) * (r if k % 2 == 0 else r * 0.22))
 		star.polygon = pts
-		star.color = Color.WHITE if i % 3 != 0 else Color("#FFD84D")
+		star.color = Color.WHITE if i % 3 != 0 else Color("#FFD23F")
 		s.add_child(star)
 		var rim := Line2D.new()
 		rim.points = pts
@@ -493,7 +493,7 @@ func _build_wipe() -> void:
 	add_child(wipe)
 	_wipe = wipe
 	# Slanted anime-style colour bands wiping across.
-	var colors: Array[Color] = [Color("#FF5A5F"), Color("#FFD84D"), Color("#4FC3F7"), Color("#FFF6E0")]
+	var colors: Array[Color] = [Color("#FF6B5B"), Color("#FFD23F"), Color("#00A6C8"), Color("#FFF6E0")]
 	var bands := Node2D.new()
 	wipe.add_child(bands)
 	for i: int in colors.size():
@@ -514,11 +514,11 @@ func _build_logo(logo: Control) -> void:
 	emblem.position = c + Vector2(-330.0, -20.0)
 	logo.add_child(emblem)
 	emblem.add_child(_circle(Vector2.ZERO, 92.0, INK, 40))
-	emblem.add_child(_circle(Vector2.ZERO, 80.0, Color("#FF5A5F"), 40))
+	emblem.add_child(_circle(Vector2.ZERO, 80.0, Color("#FF6B5B"), 40))
 	# Lightning-bolt flare cut into the emblem.
 	var bolt := Polygon2D.new()
 	bolt.polygon = PackedVector2Array([Vector2(14, -78), Vector2(-40, 8), Vector2(-4, 8), Vector2(-20, 78), Vector2(46, -12), Vector2(6, -12)])
-	bolt.color = Color("#FFD84D")
+	bolt.color = Color("#FFD23F")
 	emblem.add_child(bolt)
 	var bolt_rim := Line2D.new()
 	bolt_rim.points = bolt.polygon
@@ -532,13 +532,13 @@ func _build_logo(logo: Control) -> void:
 	name_lbl.position = c + Vector2(-210.0, -118.0)
 	name_lbl.rotation = deg_to_rad(-3.0)
 	logo.add_child(name_lbl)
-	var tag: Label = UiStyle.label(STUDIO_TAG, UiStyle.SIZE_BIG, Color("#FFD84D"))
+	var tag: Label = UiStyle.label(STUDIO_TAG, UiStyle.SIZE_BIG, Color("#FFD23F"))
 	tag.position = c + Vector2(-190.0, 58.0)
 	logo.add_child(tag)
 	var underline := Line2D.new()
 	underline.points = PackedVector2Array([c + Vector2(-210, 128), c + Vector2(360, 108)])
 	underline.width = 8.0
-	underline.default_color = Color("#4FC3F7")
+	underline.default_color = Color("#00A6C8")
 	underline.begin_cap_mode = Line2D.LINE_CAP_ROUND
 	underline.end_cap_mode = Line2D.LINE_CAP_ROUND
 	logo.add_child(underline)

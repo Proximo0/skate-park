@@ -81,17 +81,17 @@ func _build_layout() -> void:
 	var foot: HBoxContainer = HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 10)
 	col.add_child(foot)
-	var rnd: Button = _footer_button("Random", UiStyle.SUNSHINE, _on_random)
-	var save: Button = _footer_button("Save", UiStyle.LIME, _on_save)
-	var back: Button = _footer_button("Cancel", UiStyle.BUBBLEGUM, _on_cancel)
+	var rnd: Button = _footer_button("Random", SkateThemeBuilder.BTN_SUN, _on_random)
+	var save: Button = _footer_button("Save", SkateThemeBuilder.BTN_MINT, _on_save)
+	var back: Button = _footer_button("Cancel", SkateThemeBuilder.BTN_CORAL, _on_cancel)
 	foot.add_child(rnd)
 	foot.add_child(save)
 	foot.add_child(back)
-	var hint: Label = MenuKit.text("Q / E or LB / RB: tab    Z / X or right stick: turn", UiStyle.SIZE_SMALL, Color("#4A5170"))
+	var hint: Label = MenuKit.text("Q / E or LB / RB: tab    Z / X or right stick: turn", UiStyle.SIZE_SMALL, UiStyle.MUTED)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(hint)
 
-	var right: PanelContainer = MenuKit.panel(Color("#FFFFFF", 0.35))
+	var right: PanelContainer = MenuKit.panel(SkateThemeBuilder.PNL_NAVY)
 	right.anchor_right = 1.0
 	right.anchor_bottom = 1.0
 	right.offset_left = 820
@@ -113,12 +113,12 @@ func _build_layout() -> void:
 	add_child(_toast)
 
 
-func _footer_button(text_: String, color: Color, cb: Callable) -> Button:
+func _footer_button(text_: String, variation: StringName, cb: Callable) -> Button:
 	var b: Button = Button.new()
 	b.text = text_
 	b.custom_minimum_size = Vector2(0, 70)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	MenuKit.style_button(b, color, UiStyle.SIZE_BODY)
+	MenuKit.style_button(b, variation)
 	b.pressed.connect(cb)
 	return b
 
@@ -132,8 +132,7 @@ func _set_tab(i: int) -> void:
 func _style_tabs() -> void:
 	for i: int in _tab_buttons.size():
 		var on: bool = i == _tab
-		MenuKit.style_button(_tab_buttons[i], UiStyle.SKY_BLUE if on else Color("#EAF7FF"), UiStyle.SIZE_BODY)
-		_tab_buttons[i].add_theme_stylebox_override("focus", _tab_buttons[i].get_theme_stylebox("normal"))
+		MenuKit.style_button(_tab_buttons[i], SkateThemeBuilder.BTN_TEAL if on else SkateThemeBuilder.BTN_CREAM)
 
 
 func _input(event: InputEvent) -> void:

@@ -60,7 +60,7 @@ func _init() -> void:
 	box.add_child(_value)
 	_right = Arrow.new(1)
 	box.add_child(_right)
-	MenuKit.style_button(self, Color("#EAF7FF"))
+	MenuKit.style_button(self, SkateThemeBuilder.BTN_ROW)
 
 
 func setup(title_text: String, value_text: String, swatch: Color = Color(0, 0, 0, 0)) -> StepRow:

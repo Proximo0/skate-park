@@ -6,8 +6,6 @@ extends CanvasLayer
 
 const PROMPT_Y: float = 0.82
 const BUBBLE_WIDTH: float = 460.0
-const BUBBLE_FILL := Color("#FFFFFF")
-const PROMPT_FILL := Color("#1B1B2F", 0.88)
 
 var npcs: Array[ShopNpc] = []
 var _root: Control
@@ -25,44 +23,30 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 	var tag: PanelContainer = PanelContainer.new()
-	var tag_box: StyleBoxFlat = UiStyle.panel_style(Color("#241B38", 0.85))
-	tag_box.border_color = Color("#FF5FA2")
-	tag.add_theme_stylebox_override("panel", tag_box)
+	tag.theme_type_variation = SkateThemeBuilder.PNL_NAVY
 	tag.position = Vector2(40, 32)
 	_root.add_child(tag)
 	var col: VBoxContainer = VBoxContainer.new()
 	tag.add_child(col)
-	col.add_child(UiStyle.label("SUNSET SKATE CO.", UiStyle.SIZE_BODY, Color("#FFB3D6")))
+	col.add_child(UiStyle.label("SUNSET SKATE CO.", UiStyle.SIZE_BODY, UiStyle.SUNSHINE))
 	_hint = UiStyle.label("Walk up to anything to shop  -  Esc / Start: title", UiStyle.SIZE_SMALL, UiStyle.WHITE, false)
 	col.add_child(_hint)
 
 	_prompt = PanelContainer.new()
-	_prompt.add_theme_stylebox_override("panel", _prompt_style())
+	_prompt.theme_type_variation = SkateThemeBuilder.PNL_NAVY
 	_root.add_child(_prompt)
 	var row: HBoxContainer = HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	_prompt.add_child(row)
 	row.add_child(UiStyle.label("Press", UiStyle.SIZE_BODY, UiStyle.WHITE))
 	var key_panel: PanelContainer = PanelContainer.new()
-	var key_box: StyleBoxFlat = UiStyle.panel_style(UiStyle.SUNSHINE)
-	key_box.set_corner_radius_all(12)
-	key_box.set_content_margin_all(6)
-	key_panel.add_theme_stylebox_override("panel", key_box)
+	key_panel.theme_type_variation = SkateThemeBuilder.PNL_SUN
 	row.add_child(key_panel)
 	_prompt_key = UiStyle.label(ShopStation.PROMPT_KEYS, UiStyle.SIZE_BODY, UiStyle.INK, false)
 	key_panel.add_child(_prompt_key)
 	_prompt_text = UiStyle.label("", UiStyle.SIZE_BODY, UiStyle.WHITE)
 	row.add_child(_prompt_text)
 	_prompt.visible = false
-
-
-func _prompt_style() -> StyleBoxFlat:
-	var sb: StyleBoxFlat = UiStyle.panel_style(PROMPT_FILL)
-	sb.border_color = UiStyle.SUNSHINE
-	sb.set_corner_radius_all(26)
-	sb.content_margin_left = 18
-	sb.content_margin_right = 26
-	return sb
 
 
 ## Shows "Press E / A to <prompt>" for a station, or hides the prompt for null.
@@ -113,14 +97,7 @@ func _process(_delta: float) -> void:
 
 func _make_bubble(npc: ShopNpc) -> PanelContainer:
 	var b: PanelContainer = PanelContainer.new()
-	var sb: StyleBoxFlat = UiStyle.panel_style(BUBBLE_FILL)
-	sb.set_corner_radius_all(24)
-	sb.content_margin_left = 20
-	sb.content_margin_right = 20
-	sb.shadow_color = Color(0.1, 0.1, 0.2, 0.35)
-	sb.shadow_size = 6
-	sb.shadow_offset = Vector2(0, 5)
-	b.add_theme_stylebox_override("panel", sb)
+	b.theme_type_variation = SkateThemeBuilder.PNL_CREAM
 	var l: Label = MenuKit.text("", UiStyle.SIZE_SMALL + 2)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.custom_minimum_size = Vector2(BUBBLE_WIDTH, 0)

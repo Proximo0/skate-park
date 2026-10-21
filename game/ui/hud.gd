@@ -16,12 +16,12 @@ const BAL_W: int = 520
 const BAL_H: int = 40
 const BAL_TALL_W: int = 40
 const BAL_TALL_H: int = 320
-const BAL_HORIZ_Y: float = 0.34  ## screen height fraction for the horizontal balance meter
+const BAL_HORIZ_Y: float = 0.36  ## screen height fraction for the horizontal balance meter
 const BAL_MANUAL_X: float = 300.0  ## pixels right of centre for the manual (vertical) meter
-const TRICK_Y: float = 0.245
+const TRICK_Y: float = 0.255
 const FLOAT_Y: float = 0.79
-const BANNER_Y: float = 0.135
-const TRACK_COLOUR := Color("#FFFFFF")
+const BANNER_Y: float = 0.15
+const TRACK_COLOUR := SkateThemeBuilder.CREAM
 const SPECIAL_GLOW_WIDTH: int = 6
 
 var _skater: Skater
@@ -35,7 +35,7 @@ var _score_value: Label
 var _gaps_label: Label
 var _combo_box: VBoxContainer
 var _combo_trick: Label
-var _combo_pts: Label
+var _combo_pts: AnimeText
 var _special_fill: Panel
 var _fill_style: StyleBoxFlat
 var _special_glow: Panel
@@ -43,7 +43,7 @@ var _special_title: Label
 var _bal_box: VBoxContainer
 var _bal_title: Label
 var _bal_view: HudBalanceView
-var _trick_pop: Label
+var _trick_pop: AnimeText
 var _trick_tween: Tween
 var _banner: PanelContainer
 var _banner_label: Label
@@ -60,7 +60,7 @@ class HudBalanceView:
 		var w: float = size.x
 		var h: float = size.y
 		var centre: Vector2 = size * 0.5
-		draw_style_box(UiStyle.panel_style(Hud.TRACK_COLOUR), Rect2(Vector2.ZERO, size))
+		draw_style_box(UiStyle.flat_style(Hud.TRACK_COLOUR), Rect2(Vector2.ZERO, size))
 		var inset: float = 14.0
 		var a: float = clampf(angle, -1.0, 1.0)
 		var needle_colour: Color = UiStyle.BUBBLEGUM if absf(a) > 0.7 else UiStyle.SUNSHINE
@@ -70,13 +70,13 @@ class HudBalanceView:
 			draw_rect(Rect2(inset, centre.y - half_v * 0.3, w - inset * 2.0, half_v * 0.6), band)
 			draw_line(Vector2(6.0, centre.y), Vector2(w - 6.0, centre.y), UiStyle.INK, 3.0)
 			var y: float = centre.y - a * half_v
-			draw_style_box(UiStyle.panel_style(needle_colour), Rect2(inset * 0.5, y - 7.0, w - inset, 14.0))
+			draw_style_box(UiStyle.flat_style(needle_colour), Rect2(inset * 0.5, y - 7.0, w - inset, 14.0))
 		else:
 			var half_h: float = w * 0.5 - inset
 			draw_rect(Rect2(centre.x - half_h * 0.3, inset, half_h * 0.6, h - inset * 2.0), band)
 			draw_line(Vector2(centre.x, 6.0), Vector2(centre.x, h - 6.0), UiStyle.INK, 3.0)
 			var x: float = centre.x + a * half_h
-			draw_style_box(UiStyle.panel_style(needle_colour), Rect2(x - 7.0, inset * 0.5, 14.0, h - inset))
+			draw_style_box(UiStyle.flat_style(needle_colour), Rect2(x - 7.0, inset * 0.5, 14.0, h - inset))
 
 
 func _ready() -> void:
@@ -291,7 +291,7 @@ func _anchor_bottom_centre(c: Control) -> void:
 
 func _build_score() -> void:
 	var chip := PanelContainer.new()
-	chip.add_theme_stylebox_override("panel", UiStyle.panel_style(UiStyle.SKY_BLUE))
+	chip.theme_type_variation = SkateThemeBuilder.PNL_TEAL
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_anchor_top_left(chip)
 	_root.add_child(chip)
@@ -305,7 +305,7 @@ func _build_score() -> void:
 
 func _build_gaps() -> void:
 	var chip := PanelContainer.new()
-	chip.add_theme_stylebox_override("panel", UiStyle.panel_style(UiStyle.BUBBLEGUM))
+	chip.theme_type_variation = SkateThemeBuilder.PNL_CORAL
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_anchor_top_right(chip)
 	_root.add_child(chip)
@@ -323,8 +323,9 @@ func _build_combo() -> void:
 	_combo_trick = UiStyle.label("", UiStyle.SIZE_BODY, UiStyle.WHITE)
 	_combo_trick.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_combo_box.add_child(_combo_trick)
-	_combo_pts = UiStyle.label("", UiStyle.SIZE_BIG, UiStyle.SUNSHINE)
-	_combo_pts.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_combo_pts = AnimeText.new("", UiStyle.SIZE_BIG, UiStyle.SUNSHINE)
+	_combo_pts.impact_lines = false
+	_combo_pts.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_combo_box.add_child(_combo_pts)
 
 
@@ -350,7 +351,7 @@ func _build_special() -> void:
 	track.set_anchors_preset(Control.PRESET_FULL_RECT)
 	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(track)
-	_fill_style = UiStyle.panel_style(UiStyle.SKY_BLUE)
+	_fill_style = UiStyle.flat_style(UiStyle.SKY_BLUE)
 	_fill_style.border_width_left = 0
 	_fill_style.border_width_right = 0
 	_fill_style.border_width_top = 0
@@ -401,9 +402,7 @@ func _build_balance() -> void:
 
 
 func _build_trick_pop() -> void:
-	_trick_pop = UiStyle.label("", UiStyle.SIZE_BIG, UiStyle.WHITE)
-	_trick_pop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_trick_pop.pivot_offset_ratio = Vector2(0.5, 0.5)
+	_trick_pop = AnimeText.new("", UiStyle.SIZE_TITLE, UiStyle.SUNSHINE)
 	_trick_pop.modulate.a = 0.0
 	_anchor_point(_trick_pop, 0.5, TRICK_Y)
 	_root.add_child(_trick_pop)
@@ -411,7 +410,7 @@ func _build_trick_pop() -> void:
 
 func _build_banner() -> void:
 	_banner = PanelContainer.new()
-	_banner.add_theme_stylebox_override("panel", UiStyle.panel_style(UiStyle.SKY_BLUE))
+	_banner.theme_type_variation = SkateThemeBuilder.PNL_NAVY
 	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_banner.pivot_offset_ratio = Vector2(0.5, 0.5)
 	_banner.modulate.a = 0.0
@@ -439,29 +438,23 @@ func _on_gap_hit(gap_name: String, points: int) -> void:
 	_show_banner("%s! +%s" % [gap_name, format_points(points)])
 
 
-## Shows the trick name in the centre and shrinks it into place, then fades it.
+## Shows the trick name in the centre as anime action text: slams in big and crooked, settles, then fades.
 func _pop_trick(text: String) -> void:
-	_trick_pop.text = text
-	_trick_pop.modulate.a = 1.0
-	_trick_pop.scale = Vector2(1.5, 1.5)
 	if _trick_tween != null and _trick_tween.is_valid():
 		_trick_tween.kill()
+	_trick_pop.pop(text.to_upper())
 	_trick_tween = create_tween()
-	_trick_tween.tween_property(_trick_pop, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_trick_tween.tween_interval(TRICK_HOLD)
 	_trick_tween.tween_property(_trick_pop, "modulate:a", 0.0, 0.35)
 
 
 ## A word that floats up from the combo area and fades. Wobbly text rocks side to side.
 func _spawn_float(text: String, color: Color, wobble: bool, size: int) -> void:
-	var lbl: Label = UiStyle.label(text, size, color)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.pivot_offset_ratio = Vector2(0.5, 0.5)
-	lbl.scale = Vector2(0.5, 0.5)
+	var lbl: AnimeText = AnimeText.new(text, size, color)
+	lbl.tilt_degrees = 5.0 if wobble else -5.0
 	_anchor_point(lbl, 0.5, FLOAT_Y)
 	_fx.add_child(lbl)
-	var pop := lbl.create_tween()
-	pop.tween_property(lbl, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	lbl.pop(text)
 	var move := lbl.create_tween().set_parallel(true)
 	move.tween_property(lbl, "offset_top", -FLOAT_RISE, FLOAT_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	move.tween_property(lbl, "offset_bottom", -FLOAT_RISE, FLOAT_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
@@ -469,6 +462,7 @@ func _spawn_float(text: String, color: Color, wobble: bool, size: int) -> void:
 	move.finished.connect(lbl.queue_free)
 	if wobble:
 		var wob := lbl.create_tween()
+		wob.tween_interval(0.25)
 		for i: int in range(6):
 			var amp: float = 0.2 * (1.0 - float(i) / 6.0)
 			var target: float = amp if i % 2 == 0 else -amp
