@@ -142,18 +142,9 @@ func test_bank_has_no_ledge_rail() -> void:
 
 # fence
 
-func test_fence_thin_box_collision_and_transparent_panel() -> void:
+func test_fence_has_no_collision_and_transparent_panel() -> void:
 	var root: Node3D = Walls.fence(10.0, 1.4)
-	var bodies: Array[StaticBody3D] = _solid_bodies(root)
-	assert_eq(bodies.size(), 1, "one collision body")
-	if bodies.size() == 1:
-		var shape: Shape3D = _shape_of(bodies[0])
-		assert_true(shape is BoxShape3D, "fence collision is a box")
-		if shape is BoxShape3D:
-			var size: Vector3 = (shape as BoxShape3D).size
-			assert_near(size.x, 10.0, 0.0001, "spans the length")
-			assert_near(size.y, 1.4, 0.0001, "spans the height")
-			assert_true(size.z < 0.2, "thin")
+	assert_eq(_solid_bodies(root).size(), 0, "fence is visual only; the park boundary walls stop the skater")
 	var panel_ok: bool = false
 	for n: Node in _all(root):
 		if n is MeshInstance3D and (n as MeshInstance3D).material_override is StandardMaterial3D:

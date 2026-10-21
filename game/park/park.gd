@@ -9,6 +9,12 @@ extends Node3D
 
 const HALF := 40.0
 const SPAWN_POS := Vector3(0.0, 0.1, 20.0)
+## Invisible boundary walls. The inner faces sit flush with the fence's inner face (HALF + 0.5), so the skater
+## stops at the fence without snagging on it. The walls are tall enough that no jump clears them.
+const BOUNDARY_INNER := HALF + 0.5
+const BOUNDARY_THICK := 2.0
+const BOUNDARY_HEIGHT := 40.0
+const BOUNDARY_BASE_Y := -2.0
 
 var spawn: Transform3D = Transform3D(Basis.IDENTITY, SPAWN_POS)
 var collectibles: Array[Collectible] = []
@@ -24,6 +30,7 @@ func _ready() -> void:
 	_centre()
 	_street()
 	_fences()
+	_boundary()
 	_decor()
 	_collectibles()
 
@@ -92,7 +99,7 @@ func _south() -> void:
 	# SE: the big stair set with its handrail, descending north into the park, and a bank up to its platform.
 	_put(StairSet.build(5.0, 4.0, 6), Vector3(20.0, 0.0, HALF), 180.0, "StairSet")
 	_put(Walls.bank(4.0, 4.0, 1.6), Vector3(20.0, 0.0, 38.0), 90.0, "StairBank")
-	_put(Walls.billboard_sign("SKATE PARK", 8.0), Vector3(-34.0, 0.0, 39.0), 180.0, "Sign")
+	_put(Walls.billboard_sign("SKATE PARK", 8.0), Vector3(-32.0, 0.0, 39.0), 180.0, "Sign")
 
 
 func _west() -> void:
@@ -142,6 +149,42 @@ func _fences() -> void:
 		_put(Walls.fence(10.0, 1.4), Vector3(HALF + 0.6, 0.0, x), -90.0, "FenceE%d" % i)
 
 
+func _boundary() -> void:
+	add_child(Park.boundary_walls())
+
+
+## Four invisible, collision-only walls around the riding area: flat inner faces at +-BOUNDARY_INNER, each
+## BOUNDARY_THICK thick and BOUNDARY_HEIGHT tall. North and south span the full width; east and west span the full
+## depth, so the corners overlap and leave no gap. Static bodies on the world layer (1), like the ground.
+static func boundary_walls() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Boundary"
+	var outer: float = BOUNDARY_INNER + BOUNDARY_THICK
+	var centre: float = BOUNDARY_INNER + BOUNDARY_THICK * 0.5
+	var y: float = BOUNDARY_BASE_Y + BOUNDARY_HEIGHT * 0.5
+	var span: Vector3 = Vector3(outer * 2.0, BOUNDARY_HEIGHT, BOUNDARY_THICK)
+	var side: Vector3 = Vector3(BOUNDARY_THICK, BOUNDARY_HEIGHT, outer * 2.0)
+	root.add_child(_wall_body("BoundaryN", Vector3(0.0, y, -centre), span))
+	root.add_child(_wall_body("BoundaryS", Vector3(0.0, y, centre), span))
+	root.add_child(_wall_body("BoundaryW", Vector3(-centre, y, 0.0), side))
+	root.add_child(_wall_body("BoundaryE", Vector3(centre, y, 0.0), side))
+	return root
+
+
+static func _wall_body(node_name: String, centre: Vector3, size: Vector3) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.name = node_name
+	body.collision_layer = 1
+	body.position = centre
+	var cs := CollisionShape3D.new()
+	cs.name = "Collision"
+	var shape := BoxShape3D.new()
+	shape.size = size
+	cs.shape = shape
+	body.add_child(cs)
+	return body
+
+
 func _decor() -> void:
 	var decor := Node3D.new()
 	decor.name = "Decor"
@@ -165,7 +208,7 @@ func _decor() -> void:
 	Props.scatter(decor, "ice_cream_cart", PackedVector3Array([Vector3(-6, 0, 29)]), 10)
 	var crowd := PackedVector3Array()
 	for i: int in 6:
-		crowd.append(Vector3(-42.5, 0.0, -36.0 + i * 1.6))
+		crowd.append(Vector3(-44.0, 0.0, -36.0 + i * 1.6))
 	Props.scatter(decor, "crowd_kid", crowd, 11)
 	var mountains := PackedVector3Array()
 	for i: int in 9:

@@ -45,8 +45,8 @@ static func bank(width: float = 6.0, length: float = 4.0, height: float = 1.6, z
 	return root
 
 
-## A chain-link style fence along X: posts, rails, a semi-transparent diamond-mesh panel, and one thin collision box
-## so the skater cannot leave the park. The panel and posts are visual only.
+## A chain-link style fence along X: posts, rails and a semi-transparent diamond-mesh panel. Visual only: the park's
+## invisible boundary walls (Park.boundary_walls) keep the skater in, so the fence has no collision to snag on.
 static func fence(length: float = 10.0, height: float = 1.4) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Fence"
@@ -65,16 +65,6 @@ static func fence(length: float = 10.0, height: float = 1.4) -> Node3D:
 	panel.position = Vector3(length * 0.5, height * 0.5, mid_z)
 	panel.material_override = _chain_material(length, height)
 	root.add_child(panel)
-	var col := StaticBody3D.new()
-	col.name = "FenceCollision"
-	var cs := CollisionShape3D.new()
-	cs.name = "Collision"
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(length, height, FENCE_THICKNESS)
-	cs.shape = shape
-	cs.position = Vector3(length * 0.5, height * 0.5, mid_z)
-	col.add_child(cs)
-	root.add_child(col)
 	return root
 
 

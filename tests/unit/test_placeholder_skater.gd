@@ -96,14 +96,14 @@ func test_left_foot_forward_regular_stance() -> void:
 	body.free()
 
 
-func test_head_and_helmet_are_on_top() -> void:
+func test_hair_cap_is_on_top() -> void:
 	var body: Node3D = PlaceholderSkater.build_body()
-	var helmet: MeshInstance3D = body.find_child("HelmetMesh", true, false)
-	assert_true(helmet.mesh is SphereMesh, "helmet is a sphere mesh")
-	assert_true((helmet.mesh as SphereMesh).is_hemisphere, "helmet is a hemisphere")
+	var cap: MeshInstance3D = body.find_child("HairCapMesh", true, false)
+	assert_true(cap.mesh is SphereMesh, "hair cap is a sphere mesh")
+	assert_true((cap.mesh as SphereMesh).is_hemisphere, "hair cap is a hemisphere")
 	var head_y: float = _world_origin(body.find_child("Head", true, false)).y
-	var hr: Vector2 = _world_y_range(helmet)
-	assert_true(hr.x >= head_y - 0.02, "helmet sits on the head, not below it")
+	var hr: Vector2 = _world_y_range(cap)
+	assert_true(hr.x >= head_y - 0.02, "hair cap sits on the head, not below it")
 	body.free()
 
 

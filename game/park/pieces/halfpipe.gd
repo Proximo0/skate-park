@@ -7,7 +7,6 @@ extends RefCounted
 
 
 const SIDE_T: float = 0.2  # thickness of the side plates at each end
-const FLOOR_T: float = 0.2  # the flat bottom is a slab whose top is at y = 0
 const ARC_STEPS: int = 16
 const FENCE_POSTS: int = 5  # spacing = width / FENCE_POSTS
 const FENCE_H: float = 0.9
@@ -25,7 +24,16 @@ static func build(width: float = 10.0, flat: float = 6.0, radius: float = 3.5, h
 	wall_b.rotation_degrees = Vector3(0.0, 180.0, 0.0)
 	wall_b.position = Vector3(width, 0.0, length)
 	root.add_child(wall_b)
-	root.add_child(PieceKit.box(Vector3(0.0, -FLOOR_T, deck + radius), Vector3(width, FLOOR_T, flat), PieceKit.RAMP_WOOD, "Floor"))
+	# The flat bottom rides on the park ground; this is a thin painted skin just above it (no collision), so
+	# the two surfaces never share a plane and z-fight.
+	var floor_mesh := BoxMesh.new()
+	floor_mesh.size = Vector3(width, 0.01, flat)
+	var floor_mi := MeshInstance3D.new()
+	floor_mi.name = "Floor"
+	floor_mi.mesh = floor_mesh
+	floor_mi.material_override = Toon.material(PieceKit.RAMP_WOOD)
+	floor_mi.position = Vector3(width * 0.5, 0.005, deck + radius + flat * 0.5)
+	root.add_child(floor_mi)
 	# two painted stripes across the flat bottom (decorative, no collision)
 	for i: int in 2:
 		var z: float = deck + radius + flat * float(i + 1) / 3.0

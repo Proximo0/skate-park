@@ -92,10 +92,12 @@ static func palm_tree() -> Node3D:
 		var yaw: float = TAU * float(k) / 7.0
 		var pivot := Node3D.new()
 		pivot.name = "Frond%d" % k
-		pivot.rotation = Vector3(-0.5, yaw, 0.0)
+		pivot.rotation = Vector3(-0.4, yaw, 0.0)
+		# Wide, fat fronds without ink: thin inked slats read as floating green crosses from far away.
 		var leaf_color: Color = FROND if k % 2 == 0 else FROND_DARK
-		pivot.add_child(_part(_box(Vector3(0.35, 0.05, 1.7)), leaf_color, Vector3(0.0, 0.0, -0.85), "Leaf"))
+		pivot.add_child(_part(_box(Vector3(0.7, 0.1, 1.5)), leaf_color, Vector3(0.0, 0.0, -0.75), "Leaf", Vector3.ZERO, false))
 		crown.add_child(pivot)
+	crown.add_child(_part(_sphere(0.32, 8, 4), FROND_DARK, Vector3(0.0, 0.0, 0.0), "Heart"))
 	crown.add_child(_part(_sphere(0.09, 6, 3), COCONUT, Vector3(0.08, -0.12, 0.06), "CoconutA"))
 	crown.add_child(_part(_sphere(0.09, 6, 3), COCONUT, Vector3(-0.07, -0.13, -0.05), "CoconutB"))
 	return root

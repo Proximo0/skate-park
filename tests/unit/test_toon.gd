@@ -67,3 +67,14 @@ func test_sky_environment_is_bright_sky() -> void:
 	assert_true(env.sky != null, "sky set")
 	assert_eq(env.ambient_light_source, Environment.AMBIENT_SOURCE_COLOR, "neutral ambient, not sky-tinted")
 	assert_eq(env.tonemap_mode, Environment.TONE_MAPPER_LINEAR, "linear tonemap keeps colours bright")
+
+
+func test_outline_is_screen_width_with_depth_push() -> void:
+	var outline: ShaderMaterial = Toon.material(Color.GREEN).next_pass as ShaderMaterial
+	assert_true(outline != null, "outline material present")
+	if outline == null:
+		return
+	var width: float = outline.get_shader_parameter("outline_width")
+	assert_true(width > 0.0 and width <= 0.02, "outline width is a small fraction of the viewport height")
+	var push: float = outline.get_shader_parameter("depth_push")
+	assert_true(push > 0.0 and push <= 0.05, "shell is pushed back a little in depth")

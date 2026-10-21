@@ -34,6 +34,7 @@ const WALLRIDE_TIME := 1.2
 const LIP_MAX_TIME := 2.5
 const SPIN_POINTS_PER_180 := 100
 const PUMP_ACCEL := 2.5  ## holding forward on the way down a transition pumps speed, as on a real halfpipe
+const PUMP_ACCEL_VERT := 22.0  ## the same pump on a steep (vert) transition: a few back-and-forths build big air
 const RAIL_GRAVITY := 10.0  ## down rails speed up a little less than free rolling
 const RAIL_FRICTION := 0.5
 const EDGE_GRIP := 2.5  ## how much more than gravity's hold a convex bend may ask before the board leaves it
@@ -268,8 +269,10 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			_set_anim("push")
 		# Speed comes from the kicks: only while the push foot is on the ground (same timing as the pose).
 		along = minf(along + PUSH_ACCEL * _push_pulse() * delta, PUSH_MAX)
-	elif _stick.y < -0.3 and n.y < 0.95 and n.y > 0.15 and v.y < 0.0:
-		along += PUMP_ACCEL * delta
+	elif _stick.y < -0.3 and n.y < 0.95 and n.y > 0.15 and (v.y < 0.0 or n.y < 0.8):
+		# Steeper transition, stronger pump: kickers and banks give a little on the way down, a vert wall pumps
+		# both ways (compress in, extend out) so a few back-and-forths build big air.
+		along += lerpf(PUMP_ACCEL, PUMP_ACCEL_VERT, clampf((0.95 - n.y) / 0.6, 0.0, 1.0)) * delta
 	elif _stick.y > 0.5 and n.y > 0.8 and state.state == SkateState.State.ROLLING:
 		along = move_toward(along, 0.0, BRAKE * delta)
 	along = move_toward(along, 0.0, ROLL_FRICTION * delta)
@@ -301,6 +304,11 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			velocity = v
 			_launch_normal = was
 			return
+		var spd: float = v.length()
+		if spd > 0.5 and (fn - was).dot(v) < 0.0 and fn.dot(was) > 0.8 and velocity.length() < spd:
+			# Rolling into a transition (a concave facet edge): ride the curve without losing speed to the
+			# facet corner, as a real ramp's smooth curve would.
+			velocity = velocity.slide(fn).normalized() * spd
 		_floor_normal = fn
 		if was.y < VERT_NORMAL_Y and velocity.dot(Vector3.UP) > 0.0:
 			_launch_normal = was
@@ -495,6 +503,11 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	# keep speed, now along the surface
 	var v: Vector3 = hit_v.slide(n)
 	var keep: float = 0.97 if result == "clean" else 0.8
+	if vert_air and result == "clean" and v.length() > 0.5:
+		# Clean vert re-entry: the fall turns into roll along the transition with no loss (as in THUG), so
+		# pumping on each pass builds height instead of bleeding it away.
+		v = v.normalized() * hit_v.length()
+		keep = 1.0
 	velocity = (v * keep).limit_length(MAX_SPEED)
 	if v.length() > 0.5:
 		facing = v.normalized()
