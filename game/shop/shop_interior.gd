@@ -77,6 +77,9 @@ static func build(parent: Node3D) -> ShopInterior:
 	si._build_decor()
 	si._build_lights()
 	si._define_stations()
+	for b: Variant in si._board_cache.values():
+		(b as Node).free()  # the duplicates share the meshes; the master copies were never in the tree
+	si._board_cache.clear()
 	return si
 
 
@@ -414,25 +417,67 @@ func _build_outside() -> void:
 
 # --- boards: deck wall, glass case, workbench -------------------------------------------------------------------
 
-## A popsicle deck standing on its tail, graphic facing +Z, origin at its centre.
-func _deck(parent: Node3D, center: Vector3, base: Color, accent: Color, style: int, tilt: float = 0.0) -> void:
-	var d: Node3D = Node3D.new()
-	d.position = center
-	d.rotation_degrees.z = tilt
-	parent.add_child(d)
-	_capsule(d, Vector3.ZERO, 0.11, 0.8, base, Vector3.ZERO, Vector3(1.0, 1.0, 0.14))
-	match style % 4:
-		0:
-			_capsule(d, Vector3(0, 0, 0.012), 0.035, 0.62, accent, Vector3.ZERO, Vector3(1.0, 1.0, 0.2))
-		1:
-			_ball(d, Vector3(0, 0.08, 0.014), 0.07, accent, Vector3(1.0, 1.0, 0.15))
-			_box(d, Vector3(0, -0.12, 0.014), Vector3(0.18, 0.04, 0.01), accent)
-		2:
-			for k: int in 3:
-				_box(d, Vector3(0, -0.2 + float(k) * 0.2, 0.014), Vector3(0.2, 0.05, 0.01), accent, Vector3(0, 0, 25))
-		_:
-			_ball(d, Vector3(0, 0.0, 0.014), 0.09, accent, Vector3(1.0, 1.0, 0.15))
-			_ball(d, Vector3(0, 0.0, 0.02), 0.05, base, Vector3(1.0, 1.0, 0.15))
+const _DECK_SHAPE_KEYS: Array[String] = ["popsicle", "popsicle", "cruiser", "oldschool", "popsicle"]
+const _DECK_GRAPHICS: Array[String] = ["sunset", "wave", "face", "checker", "flames", "palm"]
+var _board_cache: Dictionary = {}
+const DECK_Y_OFFSET: float = 0.125  ## deck sits 0.12 above the board origin; standing, that is depth behind the holder
+
+
+## A real AnimeBoard deck (graphic, shaped nose/tail, optionally trucks and wheels) standing on its tail with the
+## graphic facing +Z (rotated by `face_yaw` about Y), tilted `tilt` degrees on its peg. Built once per variant and
+## copied, so a wall of twenty decks stays cheap. Origin at the board's centre.
+func _deck(parent: Node3D, center: Vector3, base: Color, accent: Color, style: int, tilt: float = 0.0,
+		with_trucks: bool = false, face_yaw: float = 0.0) -> void:
+	var shape: String = _DECK_SHAPE_KEYS[style % _DECK_SHAPE_KEYS.size()]
+	var graphic: String = _DECK_GRAPHICS[style % _DECK_GRAPHICS.size()]
+	var key: String = "%s|%s|%s|%s|%s" % [shape, graphic, base.to_html(false), accent.to_html(false), with_trucks]
+	if not _board_cache.has(key):
+		var pal: Dictionary = {"deck": base, "deck_dark": base.darkened(0.35), "deck_alt": accent,
+				"deck_accent": accent, "deck_foam": CREAM, "deck_sun": accent.lightened(0.25)}
+		var board: Node3D = PlaceholderSkater.build_board(pal, {"deck": shape, "graphic": graphic})
+		if not with_trucks:
+			for n: String in ["Truck_Front", "Truck_Back", "Wheel_FL", "Wheel_FL_Hub", "Wheel_FR", "Wheel_FR_Hub",
+					"Wheel_BL", "Wheel_BL_Hub", "Wheel_BR", "Wheel_BR_Hub"]:
+				var node: Node = board.get_node_or_null(n)
+				if node != null:
+					board.remove_child(node)
+					node.free()
+		Toon.apply_to(board)
+		_board_cache[key] = board
+	var src: Node3D = _board_cache[key] as Node3D
+	var holder: Node3D = Node3D.new()
+	holder.position = center
+	holder.rotation_degrees = Vector3(0, face_yaw, tilt)
+	parent.add_child(holder)
+	var d: Node3D = src.duplicate() as Node3D
+	# Board length (Z) up, underside graphic toward +Z; the deck's own centre sits near its origin.
+	d.rotation_degrees = Vector3(-90, 0, 0)
+	d.position = Vector3(0, 0, DECK_Y_OFFSET)
+	holder.add_child(d)
+
+
+## A shaped surfboard (pointed nose, round tail, stripe, fins) built from the same lofted-tube helper as the garments.
+func _surfboard(parent: Node3D, length: float, width: float, base: Color, stripe: Color) -> void:
+	var rows: Array = []
+	var stripe_rows: Array = []
+	var n: int = 16
+	for i: int in n + 1:
+		var t: float = float(i) / float(n)  # 0 = nose, 1 = tail
+		var hw: float = width * 0.5 * pow(sin(PI * clampf(0.02 + 0.98 * t, 0.0, 1.0)) , 0.55) * (1.0 - 0.18 * t)
+		if t < 0.3:
+			hw = width * 0.5 * pow(sin(PI * 0.5 * (t / 0.3)), 0.7)
+		hw = maxf(hw, 0.012)
+		var hd: float = 0.035 * (1.0 - pow(absf(t - 0.45) * 1.7, 2.0)) + 0.012
+		var y: float = length * 0.5 - t * length
+		rows.append(Vector3(y, hw, hd))
+		stripe_rows.append(Vector3(y, hw * 0.22, hd + 0.006))
+	var mesh: ArrayMesh = _loft(rows, 20, 0.0, 0.0)
+	_place(parent, mesh, Vector3.ZERO, _toon(base))
+	_place(parent, _loft(stripe_rows, 10, 0.0, 0.0), Vector3(0, 0, 0.0), _toon(stripe))
+	# two side fins and a centre fin on the wall-facing side, at the tail
+	for fx: float in [-width * 0.3, width * 0.3]:
+		_box(parent, Vector3(fx, -length * 0.5 + 0.38, -0.07), Vector3(0.02, 0.14, 0.1), INK, Vector3(0, 0, fx * 20.0))
+	_box(parent, Vector3(0, -length * 0.5 + 0.28, -0.08), Vector3(0.02, 0.18, 0.12), INK)
 
 
 func _wheel(parent: Node3D, center: Vector3, color: Color, rot_deg: Vector3 = Vector3(0, 0, 90)) -> void:
@@ -459,13 +504,13 @@ func _build_boards() -> void:
 			var accent: Color = DECK_COLORS[(i * 7 + row * 5 + 4) % DECK_COLORS.size()]
 			if accent == base:
 				accent = CREAM
-			_deck(g, Vector3(x, y, -D + 0.05), base, accent, n)
+			_deck(g, Vector3(x, y, -D + 0.07), base, accent, n, float((n * 7) % 5 - 2) * 1.6)
 			_cyl(g, Vector3(x, y + 0.43, -D + 0.04), 0.012, 0.012, 0.1, METAL, Vector3(90, 0, 0), 8)
 			n += 1
 	_plaque(g, "DECKS", Vector3(-5.0, 3.1, -D + 0.04), 0.0, 1.2, Color("#E0455A"))
-	# A few completes leaning on the west wall.
+	# A few completes (decks with trucks and wheels) leaning on the west wall, graphics out.
 	for i: int in 3:
-		_deck(g, Vector3(-W + 0.14, 0.5, -1.6 - float(i) * 0.3), DECK_COLORS[i + 5], CREAM, i, 0.0)
+		_deck(g, Vector3(-W + 0.2, 0.46, -1.6 - float(i) * 0.32), DECK_COLORS[i + 5], CREAM, i + 2, 8.0, true, 90.0)
 	# Workbench with a vice; ShopRoom clamps the player's board into `vice`.
 	var bench: Node3D = Node3D.new()
 	bench.name = "Workbench"
@@ -607,7 +652,7 @@ func _garment_meshes(hoodie: bool) -> Dictionary:
 func _tee(parent: Node3D, center: Vector3, color: Color, hoodie: bool, face_out: bool = false) -> void:
 	var t: Node3D = Node3D.new()
 	t.position = center
-	t.rotation_degrees.y = 0.0 if face_out else 90.0
+	t.rotation_degrees.y = 48.0 if face_out else 90.0  # the face-out sample is turned toward the aisle
 	parent.add_child(t)
 	var meshes: Dictionary = _garment_meshes(hoodie)
 	var cloth: Material = _toon(color)
@@ -615,8 +660,8 @@ func _tee(parent: Node3D, center: Vector3, color: Color, hoodie: bool, face_out:
 	var trim: Material = _toon(color.darkened(0.25))
 	_place(t, meshes["body"] as Mesh, Vector3.ZERO, cloth)
 	var sleeve_y: float = -0.115 if not hoodie else -0.13
-	var ang: float = 62.0 if not hoodie else 16.0
-	var sx: float = 0.185 if not hoodie else 0.215
+	var ang: float = 62.0 if not hoodie else 30.0
+	var sx: float = 0.185 if not hoodie else 0.205
 	_place(t, meshes["sleeve"] as Mesh, Vector3(sx, sleeve_y, 0.0), cloth2, Vector3(0, 0, ang))
 	_place(t, meshes["sleeve"] as Mesh, Vector3(-sx, sleeve_y, 0.0), cloth2, Vector3(0, 0, -ang))
 	var collar: TorusMesh = TorusMesh.new()
@@ -624,7 +669,8 @@ func _tee(parent: Node3D, center: Vector3, color: Color, hoodie: bool, face_out:
 	collar.outer_radius = 0.07
 	_place(t, collar, Vector3(0, -0.095, 0.012), trim, Vector3(0, 0, 0), Vector3(1.0, 0.45, 0.8))
 	if hoodie:
-		_ball(t, Vector3(0, -0.13, -0.075), 0.1, color.darkened(0.12), Vector3(1.2, 0.8, 0.7))
+		_ball(t, Vector3(0, -0.12, -0.085), 0.12, color.darkened(0.12), Vector3(1.35, 0.9, 0.75))
+		_ball(t, Vector3(0, -0.15, 0.055), 0.08, color.darkened(0.2), Vector3(1.5, 0.55, 0.35))  # hood front folded at the neck
 		_box(t, Vector3(0, -0.46, 0.062), Vector3(0.3, 0.12, 0.02), color.darkened(0.12))
 		_box(t, Vector3(0, -0.665, 0.0), Vector3(0.45, 0.04, 0.1), color.darkened(0.2))
 		for cx: float in [-0.04, 0.04]:
@@ -725,9 +771,7 @@ func _build_surf_corner() -> void:
 		holder.position = Vector3(-W + 0.3, 1.05, float(b[0]))
 		holder.rotation_degrees = Vector3(0, 90, -12)
 		g.add_child(holder)
-		_capsule(holder, Vector3.ZERO, 0.26, 2.1, b[1] as Color, Vector3.ZERO, Vector3(1.0, 1.0, 0.12))
-		_capsule(holder, Vector3(0, 0, 0.02), 0.03, 1.9, b[2] as Color, Vector3.ZERO, Vector3(1.0, 1.0, 0.3))
-		_box(holder, Vector3(0, -0.8, -0.06), Vector3(0.02, 0.12, 0.1), INK)
+		_surfboard(holder, 2.0, 0.5, b[1] as Color, b[2] as Color)
 	_solid(Vector3(-W + 0.35, 1.0, 3.9), Vector3(0.6, 2.0, 1.7))
 	# Wetsuits hanging face-out on the front wall.
 	for i: int in 2:

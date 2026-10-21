@@ -81,24 +81,41 @@ func _process(_delta: float) -> void:
 			_bubbles[npc] = b
 		if b == null:
 			continue
-		b.visible = talking and not cam.is_position_behind(npc.bubble_anchor())
+		# Fade out as the NPC leaves the view (behind or far off to the side of the camera), not by time.
+		var to_npc: Vector3 = (npc.bubble_anchor() - cam.global_position).normalized() if talking else Vector3.ZERO
+		var facing: float = to_npc.dot(-cam.global_transform.basis.z) if talking else -1.0
+		var view_a: float = clampf((facing - 0.05) / 0.2, 0.0, 1.0)
+		b.visible = talking and view_a > 0.0
 		if not b.visible:
 			continue
-		(b.get_meta("label") as Label).text = npc.display_name + ":  " + npc.current_line()
-		b.reset_size()
+		var l: Label = b.get_meta("label") as Label
+		var line: String = npc.current_line()
+		if l.text != line or (b.get_meta("name_l") as Label).text != npc.display_name:
+			(b.get_meta("name_l") as Label).text = npc.display_name
+			l.text = line
+			# Fixed width, wrapped text: size the panel from the wrapped label height.
+			l.custom_minimum_size = Vector2(BUBBLE_WIDTH, 0)
+			l.size = Vector2(BUBBLE_WIDTH, 0)
+			b.reset_size()
+			b.size = b.get_combined_minimum_size()
 		var p: Vector2 = cam.unproject_position(npc.bubble_anchor())
 		# The canvas is stretched from the window: map viewport pixels to canvas units.
 		var scale_k: Vector2 = _root.size / Vector2(get_viewport().get_visible_rect().size)
 		p *= scale_k
 		b.position = Vector2(clampf(p.x - b.size.x * 0.5, 16.0, _root.size.x - b.size.x - 16.0),
-				clampf(p.y - b.size.y - 44.0, 16.0, _root.size.y - b.size.y - 16.0))
-		b.modulate.a = clampf(npc.bubble_left / 0.4, 0.0, 1.0)
+				clampf(p.y - b.size.y - 44.0, 16.0, _root.size.y - b.size.y - 60.0))
+		if b.position.y < 120.0 and b.position.x < 500.0:
+			b.position.y = 120.0  # keep clear of the shop name tag
+		b.set_meta("tail_x", clampf(p.x - b.position.x, 40.0, b.size.x - 40.0))
+		b.queue_redraw()
+		# Opaque while it is up; only a quick fade at the very end and when leaving the view.
+		b.modulate.a = minf(clampf(npc.bubble_left / 0.2, 0.0, 1.0), view_a)
 
 
 ## Cream sticker bubble with a small navy-outlined tail pointing down at the speaker.
 class Bubble extends PanelContainer:
 	func _draw() -> void:
-		var cx: float = size.x * 0.5
+		var cx: float = float(get_meta("tail_x", size.x * 0.5))
 		var y: float = size.y - 2.0
 		var outline: PackedVector2Array = [Vector2(cx - 24.0, y), Vector2(cx + 24.0, y), Vector2(cx, y + 38.0)]
 		draw_colored_polygon(outline, SkateThemeBuilder.NAVY)
@@ -109,12 +126,31 @@ class Bubble extends PanelContainer:
 func _make_bubble(npc: ShopNpc) -> PanelContainer:
 	var b: PanelContainer = Bubble.new()
 	b.theme_type_variation = SkateThemeBuilder.PNL_CREAM
+	# Explicit opaque sticker box so a theme fallback can never make it grey or translucent.
+	var sb: StyleBoxFlat = StyleBoxFlat.new()
+	sb.bg_color = SkateThemeBuilder.CREAM
+	sb.border_color = SkateThemeBuilder.NAVY
+	sb.set_border_width_all(4)
+	sb.set_corner_radius_all(18)
+	sb.content_margin_left = 20.0
+	sb.content_margin_right = 20.0
+	sb.content_margin_top = 12.0
+	sb.content_margin_bottom = 14.0
+	b.add_theme_stylebox_override("panel", sb)
+	var col: VBoxContainer = VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	b.add_child(col)
+	var nl: Label = MenuKit.text("", UiStyle.SIZE_SMALL, SkateThemeBuilder.CORAL)
+	nl.clip_text = false
+	col.add_child(nl)
 	var l: Label = MenuKit.text("", UiStyle.SIZE_SMALL + 2)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.custom_minimum_size = Vector2(BUBBLE_WIDTH, 0)
-	b.add_child(l)
+	col.add_child(l)
 	b.set_meta("label", l)
+	b.set_meta("name_l", nl)
 	b.name = "Bubble_" + npc.role
 	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.modulate = Color.WHITE
 	_root.add_child(b)
 	return b

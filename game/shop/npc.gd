@@ -105,7 +105,7 @@ func update_talk(player_pos: Vector3, delta: float) -> bool:
 
 
 func is_talking() -> bool:
-	return bubble_left > 0.0 and line_index >= 0
+	return bubble_left > 0.0 and line_index >= 0 and line_index < lines.size()
 
 
 func current_line() -> String:

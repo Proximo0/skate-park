@@ -117,11 +117,13 @@ func _build_world(vp: SubViewport) -> void:
 	plane.size = Vector2(80.0, 80.0)
 	ground.mesh = plane
 	ground.material_override = Toon.material(GROUND_COLOR, false)
+	ground.material_overlay = _overlay_material(GROUND_SHADER)
 	vp.add_child(ground)
 
 	var ramp: Node3D = QuarterPipe.build()
 	ramp.position = Vector3(-4.0, 0.0, -14.0)
 	vp.add_child(ramp)
+	_ground_ramp(ramp)
 
 	_build_skater(vp)
 
@@ -160,8 +162,100 @@ func _build_skater(vp: SubViewport) -> void:
 	skater.add_child(sway)
 	sway.bind(skater)
 	skater.rotation.y = SKATER_YAW
+	skater.add_child(_blob_shadow())
 	vp.add_child(skater)
 	_skater_node = skater
+
+
+const GROUND_SHADER: String = """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, fog_disabled;
+varying vec3 wp;
+void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+void fragment() {
+	// A faint ground gradient: a deeper plum band in the mid-ground that eases back out toward the horizon haze.
+	float d = length(wp.xz - vec2(0.0, -4.0));
+	float band = smoothstep(4.0, 13.0, d) * (1.0 - smoothstep(20.0, 52.0, d));
+	ALBEDO = vec3(0.50, 0.17, 0.42);
+	ALPHA = 0.34 * band;
+}
+"""
+const RAMP_SHADER: String = """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, fog_disabled;
+varying vec3 wp;
+void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+void fragment() {
+	// Darker where the ramp meets the ground, fading out over the first ~1.8 m of height.
+	float k = 1.0 - smoothstep(0.0, 1.8, wp.y);
+	ALBEDO = vec3(0.30, 0.10, 0.20);
+	ALPHA = 0.55 * k * k + 0.10 * k;
+}
+"""
+const BLOB_SHADER: String = """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, shadows_disabled, fog_disabled;
+void fragment() {
+	vec2 q = UV * 2.0 - 1.0;
+	float r = length(q);
+	ALBEDO = vec3(0.30, 0.08, 0.22);
+	ALPHA = 0.62 * (1.0 - smoothstep(0.25, 1.0, r));
+}
+"""
+
+
+func _overlay_material(code: String) -> ShaderMaterial:
+	var sh: Shader = Shader.new()
+	sh.code = code
+	var m: ShaderMaterial = ShaderMaterial.new()
+	m.shader = sh
+	return m
+
+
+## A soft contact shadow lying on the ground under the skater (ellipse along the board).
+func _blob_shadow() -> MeshInstance3D:
+	var quad: QuadMesh = QuadMesh.new()
+	quad.size = Vector2(1.05, 1.9)
+	quad.orientation = PlaneMesh.FACE_Y
+	var blob: MeshInstance3D = MeshInstance3D.new()
+	blob.name = "BlobShadow"
+	blob.mesh = quad
+	blob.position = Vector3(0.0, 0.012, 0.0)
+	blob.material_override = _overlay_material(BLOB_SHADER)
+	blob.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return blob
+
+
+## Grounds the quarter pipe: a darker contact band up its lower face, plus a soft shadow strip on the ground along
+## its foot.
+func _ground_ramp(ramp: Node3D) -> void:
+	var body: Node = ramp.get_node_or_null("Ramp/Mesh")
+	if body is MeshInstance3D:
+		(body as MeshInstance3D).material_overlay = _overlay_material(RAMP_SHADER)
+	var strip: QuadMesh = QuadMesh.new()
+	strip.size = Vector2(8.6, 2.4)
+	strip.orientation = PlaneMesh.FACE_Y
+	var m: MeshInstance3D = MeshInstance3D.new()
+	m.name = "RampContactShadow"
+	m.mesh = strip
+	m.position = Vector3(4.0, 0.015, 4.5 + 0.9)  # in front of the foot of the transition (z = deck + radius)
+	var sh: Shader = Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, shadows_disabled, fog_disabled;
+void fragment() {
+	// UV.y runs 0 (far, at the ramp) to 1 (near): dark at the foot, fading out; soft at the two ends.
+	float along = 1.0 - smoothstep(0.0, 0.85, UV.y);
+	float ends = smoothstep(0.0, 0.05, UV.x) * (1.0 - smoothstep(0.95, 1.0, UV.x));
+	ALBEDO = vec3(0.30, 0.08, 0.22);
+	ALPHA = 0.5 * along * along * ends;
+}
+"""
+	var mat: ShaderMaterial = ShaderMaterial.new()
+	mat.shader = sh
+	m.material_override = mat
+	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ramp.add_child(m)
 
 
 func _update_camera() -> void:

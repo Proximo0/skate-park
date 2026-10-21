@@ -53,6 +53,10 @@ func _ready() -> void:
 	_fade = _rect(Color(INK, 1.0))
 	_fade.name = "Fade"
 	add_child(_fade)
+	# Warm the title card (and its 3D board viewport) invisibly under the studio card, so its first draw and shader
+	# compiles happen during the hold, not on a frame in the middle of the wipe (a hitch there freezes a half wipe).
+	_title_layer.visible = true
+	_title_layer.modulate.a = 0.0
 	_play_sequence()
 
 

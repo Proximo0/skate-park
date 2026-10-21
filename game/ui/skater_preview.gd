@@ -15,8 +15,8 @@ const BACKDROP_SHADER: Shader = preload("res://game/ui/theme/preview_backdrop.gd
 ## turntable, "top" the board seen from above on a slow swing, "grip" a close top-down look at the griptape and
 ## "display" the board stood up with the deck graphic, trucks and wheels facing the camera.
 const VIEWS := {
-	"face": {"fov": 30.0, "cam": Vector3(0.0, 1.5, 2.05), "at": Vector3(0.0, 1.36, 0.0), "base": PI + 0.5, "sway": 0.3, "spin": 0.0},
-	"body": {"fov": 34.0, "cam": Vector3(0.0, 1.2, 3.5), "at": Vector3(0.0, 0.72, 0.0), "base": PI, "sway": 0.0, "spin": 0.5},
+	"face": {"fov": 32.0, "cam": Vector3(0.0, 1.5, 2.55), "at": Vector3(0.0, 1.31, 0.0), "base": PI + 0.5, "sway": 0.3, "spin": 0.0},
+	"body": {"fov": 34.0, "cam": Vector3(0.0, 1.2, 3.5), "at": Vector3(0.0, 0.72, 0.0), "base": PI - 0.58, "sway": 0.22, "spin": 0.0},
 	"top": {"fov": 30.0, "cam": Vector3(0.0, 0.62, 1.25), "at": Vector3(0.0, 0.08, 0.0), "base": 0.9, "sway": 0.55, "spin": 0.0},
 	"grip": {"fov": 32.0, "cam": Vector3(0.0, 0.75, 1.0), "at": Vector3(0.0, 0.1, 0.0), "base": 0.6, "sway": 0.25, "spin": 0.0},
 	"trucks": {"fov": 34.0, "cam": Vector3(0.0, 0.1, 0.8), "at": Vector3(0.0, 0.38, 0.0), "base": 0.45, "sway": 0.25, "spin": 0.0},
@@ -30,6 +30,7 @@ var _pivot: Node3D
 var _holder: Node3D
 var _platform: Node3D
 var _cam: Camera3D
+var _key: DirectionalLight3D
 var _loadout: SkaterLoadout = null
 var _board_only: bool = false
 var _view: String = "body"
@@ -61,6 +62,12 @@ func _init() -> void:
 	rim.light_color = Color(0.55, 0.9, 1.0)
 	rim.light_energy = 0.7
 	_vp.add_child(rim)
+	# Soft face key: a dim warm light from the camera side so the face and front of the clothes never fall into the toon shadow.
+	_key = DirectionalLight3D.new()
+	_key.light_color = Color(1.0, 0.92, 0.86)
+	_key.light_energy = 0.45
+	_key.shadow_enabled = false
+	_vp.add_child(_key)
 	_pivot = Node3D.new()
 	_pivot.name = "Turntable"
 	_pivot.rotation.y = PI
@@ -169,6 +176,8 @@ func _frame_camera() -> void:
 	var v: Dictionary = VIEWS[_view]
 	_cam.fov = float(v["fov"])
 	_cam.transform = Transform3D(Basis.IDENTITY, v["cam"]).looking_at(v["at"], Vector3.UP)
+	if _key != null:  # shines the way the camera looks, tipped a little from above-left
+		_key.transform = Transform3D(_cam.transform.basis * Basis.from_euler(Vector3(deg_to_rad(-12.0), deg_to_rad(-18.0), 0.0)), Vector3.ZERO)
 
 
 func _rebuild() -> void:
