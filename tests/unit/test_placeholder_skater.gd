@@ -83,7 +83,7 @@ func test_shoes_sit_flat_on_ground() -> void:
 		var shoe: Node3D = body.find_child(side + "ShoeMesh", true, false)
 		var r: Vector2 = _world_y_range(shoe)
 		assert_near(r.x, 0.0, 0.005, side + " shoe sole")
-		assert_near(r.y - r.x, 0.12, 0.005, side + " shoe height")
+		assert_true(r.y - r.x >= 0.12 and r.y - r.x <= 0.2, side + " shoe height (sole to tongue top) %f" % (r.y - r.x))
 	body.free()
 
 
@@ -99,8 +99,7 @@ func test_left_foot_forward_regular_stance() -> void:
 func test_hair_cap_is_on_top() -> void:
 	var body: Node3D = PlaceholderSkater.build_body()
 	var cap: MeshInstance3D = body.find_child("HairCapMesh", true, false)
-	assert_true(cap.mesh is SphereMesh, "hair cap is a sphere mesh")
-	assert_true((cap.mesh as SphereMesh).is_hemisphere, "hair cap is a hemisphere")
+	assert_true(cap.mesh is ArrayMesh, "hair cap is a smooth lathe dome")
 	var head_y: float = _world_origin(body.find_child("Head", true, false)).y
 	var hr: Vector2 = _world_y_range(cap)
 	assert_true(hr.x >= head_y - 0.02, "hair cap sits on the head, not below it")
@@ -109,7 +108,7 @@ func test_hair_cap_is_on_top() -> void:
 
 func test_body_palette_override() -> void:
 	var body: Node3D = PlaceholderSkater.build_body({"shirt": Color(1, 0, 0)})
-	var chest: Node3D = body.find_child("ChestMesh", true, false)
+	var chest: Node3D = body.find_child("RashGuardMesh", true, false)
 	var mat: StandardMaterial3D = chest.material_override
 	assert_eq(mat.albedo_color, Color(1, 0, 0), "shirt palette applied")
 	assert_eq(chest.get_meta("palette"), "shirt", "palette key meta")
@@ -167,3 +166,28 @@ func _world_extent_z(node: Node3D) -> Vector2:
 			lo = minf(lo, p.z)
 			hi = maxf(hi, p.z)
 	return Vector2(lo, hi)
+
+
+func test_palette_has_no_pure_green() -> void:
+	var body: Node3D = PlaceholderSkater.build_body()
+	var found: Array[MeshInstance3D] = []
+	_meshes(body, found)
+	for mi: MeshInstance3D in found:
+		var c: Color = (mi.material_override as StandardMaterial3D).albedo_color
+		assert_false(c.is_equal_approx(Color(0.0, 1.0, 0.0)), str(mi.name) + " is not pure green")
+	body.free()
+
+
+func test_skate_shoe_parts_and_adult_proportions() -> void:
+	var body: Node3D = PlaceholderSkater.build_body()
+	for side: String in ["Left", "Right"]:
+		var shoe: Node = body.find_child(side + "ShoeMesh", true, false)
+		for part: String in ["SoleMesh", "FoxingMesh", "UpperMesh", "ToeCapMesh", "StitchMesh", "LacesMesh", "TongueMesh",
+				"CollarMesh", "SidePanelLeftMesh", "SidePanelRightMesh"]:
+			assert_true(shoe.find_child(part, true, false) != null, side + " shoe has " + part)
+	var head_y: float = _world_origin(body.find_child("Head", true, false)).y
+	var r: Vector2 = _world_y_range(body)
+	var head: Vector2 = _world_y_range(body.find_child("HeadMesh", true, false))
+	var heads: float = r.y / (head.y - head.x)
+	assert_true(heads >= 5.8 and heads <= 7.5, "about 6.5 heads tall, got %f (head joint %f)" % [heads, head_y])
+	body.free()

@@ -44,8 +44,8 @@ static func sphere(radius: float) -> SphereMesh:
 	var m: SphereMesh = SphereMesh.new()
 	m.radius = radius
 	m.height = radius * 2.0
-	m.radial_segments = 24
-	m.rings = 12
+	m.radial_segments = 20
+	m.rings = 10
 	return m
 
 
@@ -62,6 +62,24 @@ static func torus(inner_radius: float, outer_radius: float) -> TorusMesh:
 	var m: TorusMesh = TorusMesh.new()
 	m.inner_radius = inner_radius
 	m.outer_radius = outer_radius
+	m.rings = 24
+	m.ring_segments = 8
+	return m
+
+
+## Low-poly capsule for tiny parts (laces, fingers).
+static func capsule_small(radius: float, height: float) -> CapsuleMesh:
+	var m: CapsuleMesh = capsule(radius, height)
+	m.radial_segments = 8
+	m.rings = 2
+	return m
+
+
+## Low-poly sphere for tiny parts.
+static func sphere_small(radius: float) -> SphereMesh:
+	var m: SphereMesh = sphere(radius)
+	m.radial_segments = 10
+	m.rings = 5
 	return m
 
 
@@ -69,8 +87,8 @@ static func capsule(radius: float, height: float) -> CapsuleMesh:
 	var m: CapsuleMesh = CapsuleMesh.new()
 	m.radius = radius
 	m.height = height
-	m.radial_segments = 20
-	m.rings = 6
+	m.radial_segments = 16
+	m.rings = 4
 	return m
 
 
@@ -130,3 +148,173 @@ static func tube(points: PackedVector3Array, radii: PackedFloat32Array, sides: i
 			st.set_normal(nc)
 			st.add_vertex(c)
 	return st.commit()
+
+
+## Tube with rounded (hemispherical) ends: the first and last point are the centres of the end caps.
+static func tube_capped(points: PackedVector3Array, radii: PackedFloat32Array, sides: int = 12) -> ArrayMesh:
+	var n: int = points.size()
+	var t0: Vector3 = (points[1] - points[0]).normalized()
+	var t1: Vector3 = (points[n - 1] - points[n - 2]).normalized()
+	var pts: PackedVector3Array = PackedVector3Array()
+	var rs: PackedFloat32Array = PackedFloat32Array()
+	var caps: Array = [[1.0, 0.0], [0.866, 0.5], [0.5, 0.866]]
+	for c: Array in caps:
+		pts.append(points[0] - t0 * radii[0] * float(c[0]))
+		rs.append(radii[0] * float(c[1]) + 0.0001)
+	for i: int in n:
+		pts.append(points[i])
+		rs.append(radii[i])
+	for c: Array in caps:
+		var k: Array = caps[2 - caps.find(c)]
+		pts.append(points[n - 1] + t1 * radii[n - 1] * float(k[0]))
+		rs.append(radii[n - 1] * float(k[1]) + 0.0001)
+	return tube(pts, rs, sides)
+
+
+## Catmull-Rom resample of a 2D profile: `sub` points per segment.
+static func smooth2d(pts: PackedVector2Array, sub: int) -> PackedVector2Array:
+	var out: PackedVector2Array = PackedVector2Array()
+	var n: int = pts.size()
+	for i: int in n - 1:
+		var p0: Vector2 = pts[maxi(i - 1, 0)]
+		var p1: Vector2 = pts[i]
+		var p2: Vector2 = pts[i + 1]
+		var p3: Vector2 = pts[mini(i + 2, n - 1)]
+		for k: int in sub:
+			var t: float = float(k) / float(sub)
+			out.append(0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t
+					+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t))
+	out.append(pts[n - 1])
+	return out
+
+
+## Radius of a lathe profile (x = radius, y = height, y increasing) at height y.
+static func profile_r(profile: PackedVector2Array, y: float) -> float:
+	if y <= profile[0].y:
+		return profile[0].x
+	for i: int in profile.size() - 1:
+		var a: Vector2 = profile[i]
+		var b: Vector2 = profile[i + 1]
+		if y <= b.y:
+			return lerpf(a.x, b.x, (y - a.y) / maxf(b.y - a.y, 0.00001))
+	return profile[profile.size() - 1].x
+
+
+## Sub-profile between two heights, pushed outward by `offset`.
+static func profile_band(profile: PackedVector2Array, y0: float, y1: float, offset: float, steps: int = 10) -> PackedVector2Array:
+	var out: PackedVector2Array = PackedVector2Array()
+	for i: int in steps + 1:
+		var y: float = lerpf(y0, y1, float(i) / float(steps))
+		out.append(Vector2(profile_r(profile, y) + offset, y))
+	return out
+
+
+## Smooth triangle surface from rows of points (each row a ring or a strip). Shared vertices get smooth normals.
+## Winding: rows going "up" with columns running clockwise seen from above face outward.
+static func grid(rows: Array, closed: bool, flip: bool = false) -> ArrayMesh:
+	var st: SurfaceTool = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i: int in rows.size() - 1:
+		var r0: PackedVector3Array = rows[i]
+		var r1: PackedVector3Array = rows[i + 1]
+		var cols: int = r0.size() if closed else r0.size() - 1
+		for k: int in cols:
+			var k2: int = (k + 1) % r0.size()
+			var a: Vector3 = r0[k]
+			var b: Vector3 = r0[k2]
+			var c: Vector3 = r1[k]
+			var d: Vector3 = r1[k2]
+			if flip:
+				st.add_vertex(a)
+				st.add_vertex(c)
+				st.add_vertex(b)
+				st.add_vertex(b)
+				st.add_vertex(c)
+				st.add_vertex(d)
+			else:
+				st.add_vertex(a)
+				st.add_vertex(b)
+				st.add_vertex(c)
+				st.add_vertex(b)
+				st.add_vertex(d)
+				st.add_vertex(c)
+	st.index()
+	st.generate_normals()
+	return st.commit()
+
+
+## Surface of revolution. profile: (radius, y) points bottom to top. x = r sin(a), z = -r depth cos(a), so a = 0
+## faces -Z. A full turn (a0 = 0, a1 = TAU) is closed; any other arc is open.
+static func lathe(profile: PackedVector2Array, depth: float = 1.0, a0: float = 0.0, a1: float = TAU, segs: int = 32) -> ArrayMesh:
+	var full: bool = absf((a1 - a0) - TAU) < 0.0001
+	var cols: int = segs if full else segs + 1
+	var rows: Array = []
+	for p: Vector2 in profile:
+		var ring: PackedVector3Array = PackedVector3Array()
+		for k: int in cols:
+			var a: float = a0 + (a1 - a0) * float(k) / float(segs)
+			ring.append(Vector3(p.x * sin(a), p.y, -p.x * depth * cos(a)))
+		rows.append(ring)
+	return grid(rows, full)
+
+
+## Flat-bottomed slab with softly bevelled edges over an outline of (x, z) points. y0 = bottom, y1 = top.
+static func slab(outline: PackedVector2Array, y0: float, y1: float, bevel: float = 0.006) -> ArrayMesh:
+	var c: Vector2 = Vector2.ZERO
+	for p: Vector2 in outline:
+		c += p
+	c /= float(outline.size())
+	var spec: Array = [[0.0, y0], [0.9, y0], [1.0, y0 + bevel], [1.0, y1 - bevel], [0.93, y1], [0.0, y1]]
+	var rows: Array = []
+	for sp: Array in spec:
+		var ring: PackedVector3Array = PackedVector3Array()
+		for p: Vector2 in outline:
+			var q: Vector2 = c + (p - c) * float(sp[0])
+			ring.append(Vector3(q.x, float(sp[1]), q.y))
+		rows.append(ring)
+	return grid(rows, true)
+
+
+## Combines meshes, each with its own transform, into one ArrayMesh (one draw call).
+static func merge(items: Array) -> ArrayMesh:
+	var st: SurfaceTool = SurfaceTool.new()
+	for it: Array in items:
+		st.append_from(it[0] as Mesh, 0, it[1] as Transform3D)
+	return st.commit()
+
+
+## Grid whose faces look toward `outward` (judged on the first triangle).
+static func facing_grid(rows: Array, outward: Vector3) -> ArrayMesh:
+	var m: ArrayMesh = grid(rows, false)
+	var verts: PackedVector3Array = (m.surface_get_arrays(0) as Array)[Mesh.ARRAY_VERTEX]
+	var tri_n: Vector3 = (verts[1] - verts[0]).cross(verts[2] - verts[0])
+	if tri_n.dot(outward) > 0.0:
+		return grid(rows, false, true)
+	return m
+
+
+## Flat ribbon along a path (width along `across`), for stripes lying on a surface. Faces toward `outward`.
+static func ribbon(points: PackedVector3Array, across: Vector3, half_width: float, outward: Vector3) -> ArrayMesh:
+	var left: PackedVector3Array = PackedVector3Array()
+	var right: PackedVector3Array = PackedVector3Array()
+	for p: Vector3 in points:
+		left.append(p - across * half_width)
+		right.append(p + across * half_width)
+	return facing_grid([left, right], outward)
+
+
+## Catmull-Rom resample of 3D points (sub points per segment).
+static func smooth3d(pts: PackedVector3Array, sub: int) -> PackedVector3Array:
+	var out: PackedVector3Array = PackedVector3Array()
+	var n: int = pts.size()
+	for i: int in n - 1:
+		var p0: Vector3 = pts[maxi(i - 1, 0)]
+		var p1: Vector3 = pts[i]
+		var p2: Vector3 = pts[i + 1]
+		var p3: Vector3 = pts[mini(i + 2, n - 1)]
+		for k: int in sub:
+			var t: float = float(k) / float(sub)
+			out.append(0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t
+					+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t))
+	out.append(pts[n - 1])
+	return out
