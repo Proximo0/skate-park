@@ -1,0 +1,3 @@
+# Art drop-in folder
+
+To add generated art, put a glTF 2.0 binary file in this folder named exactly after its slot: `skater_body.glb`, `skater_board.glb`, `park_quarterpipe.glb`, and so on for each slot in the table in `docs/art_spec.md`. The game picks up any file that matches a slot name the next time it starts, and uses its built-in placeholder for any slot without a file, so you can add pieces one at a time and no code changes are needed. Read `docs/art_spec.md` first for the format rules (units, facing direction, bone names, required animations, budgets) so the file works in the game as soon as it is dropped in.

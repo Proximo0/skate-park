@@ -1,0 +1,20 @@
+{
+	"views": [
+		{
+			"name": "golden_world_overview",
+			"scene": "res://game/main.tscn",
+			"camera": {"pos": [0, 30, 40], "look_at": [0, 0, 0], "fov": 60},
+			"settle_frames": 30,
+			"measure_frames": 10,
+			"hide_hud": true
+		},
+		{
+			"name": "golden_world_street",
+			"scene": "res://game/main.tscn",
+			"camera": {"pos": [14, 2.5, 14], "look_at": [0, 1, 0], "fov": 70},
+			"settle_frames": 30,
+			"measure_frames": 10,
+			"hide_hud": true
+		}
+	]
+}
