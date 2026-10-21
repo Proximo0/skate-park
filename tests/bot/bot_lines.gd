@@ -61,7 +61,6 @@ func build(line_name: String) -> Dictionary:
 		"manuals":
 			line["wps"] = _manuals()
 			line["expect"] = ["Manual Bridge"]
-			line["design_unreachable"] = {"Manual Bridge": "zone A (z 13.0-13.5) is the first 0.5 m of an un-ramped 0.3 m pad and is entered in AIR by every ollie onto the pad (the rider cannot roll up a 0.3 m step, edge step limit 0.12 m), but the gap needs MANUAL at both entries; landing in a manual happens past the zone"}
 			line["limit"] = 40.0
 		"dome":
 			line["wps"] = _dome()
@@ -313,11 +312,9 @@ func _manuals() -> Array:
 	var r: Rect2 = rect_of("ManualPad")
 	var cx: float = r.get_center().x
 	out.append(tp(Vector3(cx, Y0, r.position.y - 18.0), Vector3(0, 0, 1), 4.0))
-	# Manual Bridge needs MANUAL when entering BOTH zones (0.5 m at each end of the pad): manual on the ground, hop onto
-	# the pad (the zone is entered by the rider's body before the hop), land in a manual and ride it to the far end.
-	out.append(wp(cx, r.position.y - 9.0, 9.0, {"r": 1.5}))
-	out.append(wp(cx, r.position.y - 7.0, 9.0, {"r": 0.8, "act": "manual", "dur": 1.5, "exit": "ollie_man", "dur2": 1.2,
-		"exit_p": Vector3(cx, 0.0, r.position.y - 0.5)}))
+	# Manual Bridge: ollie up onto the pad and land in a manual inside zone A (its first half), then hold it past zone B.
+	out.append(wp(cx, r.position.y - 9.0, 8.0, {"r": 1.5}))
+	out.append(wp(cx, r.position.y - 1.6, 8.0, {"r": 0.8, "act": "ollie", "h": 5, "man": true, "dur": 1.5}))
 	out.append(wp(cx, r.end.y + 8.0, 7.0, {"r": 2.5}))
 	return out
 
