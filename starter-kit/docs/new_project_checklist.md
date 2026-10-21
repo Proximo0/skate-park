@@ -26,6 +26,10 @@ Once there is a level:
       `tools/check_all.sh` picks it up automatically. Fan it out in `.github/workflows/checks.yml`.
 - [ ] A lab/sweep scene (`tests/lab/lab.tscn`) for measuring snags and feel numbers, if the game has physics.
 
+Characters:
+- [ ] Rating and tone agreed (kid-friendly, Teen, M), plus reference images and comparable games.
+- [ ] Before building any humanoid, follow `docs/character_creation_lessons.md`: numeric spec, skeleton sized to it, parts in separate files, pose-grid renders.
+
 Shipping:
 - [ ] `tools/check_all.sh` green and CI green, then `tools/export_windows.sh`.
 - [ ] Lead-only git: stage by name, one commit per integrated step.

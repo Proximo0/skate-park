@@ -13,7 +13,7 @@ minute one.
   `export_windows.sh`, `frame_code.py`. Quiet by design: failures plus one summary line.
 - `.github/`: `checks` workflow (unit, lint, sims matrix, commented bot shard block) and the `setup-godot` action.
 - `.claude/`: settings (75-agent caps, SessionStart hook) and the hook that installs Godot and imports the project.
-- `CLAUDE.md`, `docs/agent_brief.md` (subagent rules), `docs/lessons_learned.md`, `docs/new_project_checklist.md`.
+- `CLAUDE.md`, `docs/agent_brief.md` (subagent rules), `docs/lessons_learned.md`, `docs/new_project_checklist.md`, `docs/character_creation_lessons.md` (read before building any humanoid character).
 
 ## Daily use
     tools/run_tests.sh          # TESTS passed=N failed=0
