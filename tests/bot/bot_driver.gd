@@ -22,6 +22,7 @@ const DEFAULT_TMO: float = 14.0
 const GIVE_UP_TICKS: int = 150
 const BAL_K1: float = 3.0
 const BAL_K2: float = 1.1
+const TP_WAIT_MAX: int = 240  ## ticks (4 s) a teleport waits for an open combo to land before it goes ahead anyway
 
 var sk: Skater
 var park: Node
@@ -57,6 +58,7 @@ var _since_push: int = 100
 var _stick: Vector2 = Vector2.ZERO
 var _pressed: Array = []
 var _held: Array = []
+var _tp_wait: int = 0  ## ticks spent holding a teleport for the open combo to land
 
 
 func _init(skater: Skater, park_node: Node, waypoints: Array) -> void:
@@ -80,7 +82,13 @@ func step(delta: float) -> void:
 	_pressed = []
 	_held = []
 	_watch_stuck(st, pos)
-	_consume_special(pos)
+	if not _consume_special(pos):
+		# a teleport is held while a combo is open: respawn() would wipe its points (see teleport)
+		moving_intent = false
+		_pos_ring.clear()
+		_prev_state = st
+		sk.set_input(Vector2.ZERO, [], [])
+		return
 	if finished and st == "ROLLING":
 		sk.set_input(Vector2.ZERO, [], [])
 		moving_intent = false
@@ -168,11 +176,18 @@ func _end_segment() -> void:
 		finished = true
 
 
-## Teleport / drop-in waypoints take effect without a tick of their own.
-func _consume_special(pos: Vector3) -> void:
+## Teleport / drop-in waypoints take effect without a tick of their own. Returns false while a teleport is held
+## for an open combo to land (the caller then idles this tick).
+func _consume_special(pos: Vector3) -> bool:
 	while idx < wps.size():
 		var wp: Dictionary = wps[idx]
 		if wp.has("tp"):
+			if sk.combo.is_active():
+				if _tp_wait < TP_WAIT_MAX:
+					_tp_wait += 1
+					return false
+				notes.append("tp_forced_with_combo_open")
+			_tp_wait = 0
 			var tp: Dictionary = wp["tp"]
 			teleport(tp["pos"], tp["dir"], float(tp.get("speed", 0.0)))
 			_next(true)
@@ -188,9 +203,11 @@ func _consume_special(pos: Vector3) -> void:
 			break
 	if idx >= wps.size():
 		finished = true
+	return true
 
 
 func teleport(pos: Vector3, dir: Vector3, speed: float) -> void:
+	# respawn() bails the combo, so the caller has already let any open combo land (see _consume_special)
 	sk.respawn()
 	var d: Vector3 = Vector3(dir.x, 0.0, dir.z).normalized()
 	var p: Vector3 = pos

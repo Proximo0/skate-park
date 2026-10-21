@@ -212,6 +212,7 @@ func _end_line(reason: String) -> void:
 	elif d.counts.has("respawn") or d.counts.has("below_kill_plane"):
 		_fail_reason = "fell_out"
 	var t_sec: float = float(_line_ticks) / 60.0
+	var landed: int = _sk.combo.landed_total  ## points banked on this line (a bailed or wiped combo banks nothing)
 	var notes: Array[String] = []
 	if not d.snaps.is_empty():
 		var smax: float = 0.0
@@ -246,11 +247,12 @@ func _end_line(reason: String) -> void:
 		"route_faults": d.route_faults.duplicate(), "wall_hits": d.wall_hits, "head_on": d.head_on_log.duplicate(),
 		"infos": d.infos.duplicate(), "wall_tests": drv.wall_tests, "wall_test_slams": d.wall_test_results.duplicate(), "grind_snaps": d.snaps.size(),
 		"issue_counts": d.counts.duplicate(), "peaks": drv.peaks.duplicate(), "notes": notes, "reason": _fail_reason,
+		"landed_total": landed,
 	}
 	_results.append(res)
-	print("BOT %s %s t=%.1f bails=%d snags=%d gaps=[%s] max_speed=%.1f max_h=%.1f grind=%.1fs manual=%.1fs landings=%s %s" % [
+	print("BOT %s %s t=%.1f bails=%d snags=%d gaps=[%s] max_speed=%.1f max_h=%.1f grind=%.1fs manual=%.1fs landings=%s landed_total=%d %s" % [
 		d.line_name, "DONE" if ok else "FAIL", t_sec, d.bails, d.snags, ",".join(d.gaps), d.max_speed_seen, d.max_height,
-		float(drv.grind_ticks) / 60.0, float(drv.manual_ticks) / 60.0, _land_str(d.landings), " ".join(notes)])
+		float(drv.grind_ticks) / 60.0, float(drv.manual_ticks) / 60.0, _land_str(d.landings), landed, " ".join(notes)])
 	for iss: Dictionary in d.issues:
 		var p: Vector3 = iss["pos"]
 		print("BOTISSUE %s %s pos=(%.1f,%.1f,%.1f) tick=%d %s" % [iss["kind"], iss["line"], p.x, p.y, p.z, int(iss["tick"]), iss["detail"]])
@@ -310,15 +312,17 @@ func _finish() -> void:
 			penalty += float(PENALTY.get(k, 2.0)) * float(mini(c, 6))
 	var score: int = clampi(int(round(100.0 - penalty)), 0, 100)
 	var failed: int = 0
+	var landed_sum: int = 0
 	for r: Dictionary in _results:
 		if not bool(r["ok"]):
 			failed += 1
-	print("BOT score=%d issues=%d lines=%d failed=%d" % [score, total, _results.size(), failed])
+		landed_sum += int(r["landed_total"])
+	print("BOT score=%d issues=%d lines=%d failed=%d landed_total=%d" % [score, total, _results.size(), failed, landed_sum])
 	var issues_out: Array = []
 	for iss: Dictionary in _all_issues:
 		issues_out.append({"kind": iss["kind"], "line": iss["line"], "pos": BotDetectors._encode({"p": iss["pos"]})["p"], "tick": iss["tick"], "detail": iss["detail"]})
 	var report: Dictionary = {
-		"version": 1, "score": score, "issues": total, "issue_counts": counts, "lines": _results, "issue_list": issues_out,
+		"version": 1, "score": score, "issues": total, "issue_counts": counts, "landed_total": landed_sum, "lines": _results, "issue_list": issues_out,
 		"tuning": _tune_note, "tuning_diff": PhysicsTuning.shared().diff_from_defaults(),
 		"wall_seconds": snappedf(float(Time.get_ticks_msec() - _started_msec) / 1000.0, 0.1),
 	}
