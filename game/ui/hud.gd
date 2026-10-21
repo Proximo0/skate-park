@@ -19,8 +19,8 @@ const BAL_TALL_H: int = 320
 const BAL_HORIZ_Y: float = 0.36  ## screen height fraction for the horizontal balance meter
 const BAL_MANUAL_X: float = 300.0  ## pixels right of centre for the manual (vertical) meter
 const TRICK_Y: float = 0.255
-const FLOAT_Y: float = 0.79
-const BANNER_Y: float = 0.15
+const FLOAT_Y: float = 0.78
+const BANNER_TOP: float = 215.0  ## px (1080 layout) under the score chip, away from the centre readouts
 const TRACK_COLOUR := SkateThemeBuilder.CREAM
 const SPECIAL_GLOW_WIDTH: int = 6
 
@@ -48,6 +48,8 @@ var _trick_tween: Tween
 var _banner: PanelContainer
 var _banner_label: Label
 var _banner_tween: Tween
+var _banner_queue: PackedStringArray = PackedStringArray()
+var _banner_busy: bool = false
 
 
 ## Balance meter drawn in code: a track, a sweet-spot band, a centre tick and a needle.
@@ -99,6 +101,19 @@ func _ready() -> void:
 	add_child(_fx)
 	if _skater != null:
 		_connect_skater(_skater)
+	_hide_debug_strip.call_deferred()
+
+
+## The F5/F6 render-toggle strip is a dev aid: hidden unless run with --dev or SKATE_DEV=1 (F4 still toggles it).
+func _hide_debug_strip() -> void:
+	if OS.get_cmdline_user_args().has("--dev") or OS.get_cmdline_args().has("--dev") or OS.get_environment("SKATE_DEV") != "":
+		return
+	var host: Node = get_parent()
+	if host == null:
+		return
+	for n: Node in host.get_children():
+		if n is RenderToggles:
+			(n as RenderToggles).visible = false
 
 
 ## Binds the HUD to a skater. Safe to call before or after the HUD enters the tree.
@@ -414,9 +429,12 @@ func _build_banner() -> void:
 	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_banner.pivot_offset_ratio = Vector2(0.5, 0.5)
 	_banner.modulate.a = 0.0
-	_anchor_point(_banner, 0.5, BANNER_Y)
+	_anchor_top_left(_banner)
+	_banner.offset_top = BANNER_TOP
+	_banner.offset_bottom = BANNER_TOP
+	_banner.grow_horizontal = Control.GROW_DIRECTION_END
 	_root.add_child(_banner)
-	_banner_label = UiStyle.label("", UiStyle.SIZE_BIG, UiStyle.SUNSHINE)
+	_banner_label = UiStyle.label("", UiStyle.SIZE_BODY + 6, UiStyle.SUNSHINE)
 	_banner.add_child(_banner_label)
 
 
@@ -470,14 +488,26 @@ func _spawn_float(text: String, color: Color, wobble: bool, size: int) -> void:
 		wob.tween_property(lbl, "rotation", 0.0, 0.1)
 
 
-## The gap banner drops in with a bounce, holds, then fades.
+## The gap / goal banner drops in with a bounce, holds, then fades. Banners that arrive together queue up.
 func _show_banner(text: String) -> void:
-	_banner_label.text = text
+	_banner_queue.append(text)
+	if not _banner_busy:
+		_next_banner()
+
+
+func _next_banner() -> void:
+	if _banner_queue.is_empty():
+		_banner_busy = false
+		return
+	_banner_busy = true
+	_banner_label.text = _banner_queue[0]
+	_banner_queue.remove_at(0)
 	_banner.modulate.a = 1.0
 	_banner.scale = Vector2(0.6, 0.6)
 	if _banner_tween != null and _banner_tween.is_valid():
 		_banner_tween.kill()
 	_banner_tween = create_tween()
 	_banner_tween.tween_property(_banner, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_banner_tween.tween_interval(BANNER_HOLD)
-	_banner_tween.tween_property(_banner, "modulate:a", 0.0, 0.4)
+	_banner_tween.tween_interval(BANNER_HOLD if _banner_queue.is_empty() else BANNER_HOLD * 0.5)
+	_banner_tween.tween_property(_banner, "modulate:a", 0.0, 0.3)
+	_banner_tween.tween_callback(_next_banner)

@@ -7,6 +7,15 @@ extends Control
 signal closed
 
 const TABS: PackedStringArray = ["Body", "Clothes", "Board"]
+const ROW_TIPS := {
+	"Name": "Who is on the board? Pick a name.", "Body": "Girl or boy frame. Clothes and hair re-fit.",
+	"Skin": "Skin tone.", "Hair style": "Cut and style. Buy more in the Skate Shop.",
+	"Hair colour": "Dye job.", "Eyes": "Eye colour.", "Top": "Shirt, hoodie or jacket.",
+	"Bottom": "Pants, shorts or skirt.", "Socks": "Socks for the shoe-gazers.", "Shoes": "Your kicks.",
+	"Accessory": "Hats, glasses and extras. Buy more in the Skate Shop.",
+	"Trucks": "Axles: turning and grind feel.", "Wheels": "Wheel colour and style.",
+	"Bearings": "How fast the wheels spin.", "Griptape": "The sandpaper on top.",
+}
 const BODY_LABELS := {"female": "Girl", "male": "Boy"}
 
 var _cat: PartCatalog
@@ -19,7 +28,9 @@ var _tab: int = 0
 var _toast: Label
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _save_enabled: bool = true
-var _board_view: String = "under"
+var _board_view: String = "top"
+var _info: Label
+var _info_title: Label
 
 
 ## wallet / loadout default to the saved ones. Tests and screenshots may pass their own.
@@ -78,6 +89,18 @@ func _build_layout() -> void:
 	_rows_box.add_theme_constant_override("separation", 8)
 	_rows_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(_rows_box)
+	var card: PanelContainer = MenuKit.panel(SkateThemeBuilder.PNL_NAVY)
+	card.custom_minimum_size = Vector2(0, 118)
+	col.add_child(card)
+	var ccol: VBoxContainer = VBoxContainer.new()
+	ccol.add_theme_constant_override("separation", 2)
+	card.add_child(ccol)
+	_info_title = UiStyle.label("", UiStyle.SIZE_BODY, UiStyle.SUNSHINE, false)
+	ccol.add_child(_info_title)
+	_info = UiStyle.label("", UiStyle.SIZE_SMALL, UiStyle.WHITE, false)
+	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ccol.add_child(_info)
 	var foot: HBoxContainer = HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 10)
 	col.add_child(foot)
@@ -158,6 +181,7 @@ func _rebuild_rows(focus_index: int) -> void:
 		0: _build_body_rows()
 		1: _build_clothes_rows()
 		2: _build_board_rows()
+	_info_title.get_parent().get_parent().visible = _rows_box.get_child_count() <= 7  # no room on the long tabs
 	if _rows_box.get_child_count() > 0:
 		var row: Control = _rows_box.get_child(clampi(focus_index, 0, _rows_box.get_child_count() - 1)) as Control
 		_grab_focus.call_deferred(row)
@@ -168,8 +192,11 @@ func _grab_focus(c: Control) -> void:
 		c.grab_focus()
 
 
-func _add_row(title_: String, value: String, swatch: Color, on_step: Callable, board_view: String = "") -> void:
+func _add_row(title_: String, value: String, swatch: Color, on_step: Callable, board_view: String = "", info: String = "") -> void:
 	var row: StepRow = StepRow.new().setup(title_, value, swatch)
+	row.focus_entered.connect(func() -> void:
+		_info_title.text = title_
+		_info.text = info if info != "" else str(ROW_TIPS.get(title_, "Left / Right to change.")))
 	if board_view != "":
 		row.focus_entered.connect(func() -> void: _board_view = board_view; _refresh_preview())
 	row.stepped.connect(func(dir: int) -> void:
@@ -203,15 +230,16 @@ func _build_clothes_rows() -> void:
 
 
 func _build_board_rows() -> void:
-	_add_item_rows("deck", "Deck", "Graphic")
-	_add_item_rows("truck", "Trucks", "Truck colour")
-	_add_item_rows("wheel", "Wheels", "Wheel colour")
-	_add_row("Bearings", _item_name(_lo.bearing_id), Color(0, 0, 0, 0), func(d: int) -> void: _step_item("bearing", d), "under")
-	_add_item_rows("griptape", "Griptape", "Grip colour", "top")
+	_add_item_rows("deck", "Deck", "Graphic", "display")
+	_add_item_rows("truck", "Trucks", "Truck colour", "top")
+	_add_item_rows("wheel", "Wheels", "Wheel colour", "top")
+	_add_row("Bearings", _item_name(_lo.bearing_id), Color(0, 0, 0, 0), func(d: int) -> void: _step_item("bearing", d), "top")
+	_add_item_rows("griptape", "Griptape", "Grip colour", "grip")
 
 
-func _add_item_rows(slot: String, title_: String, color_title: String, view: String = "under") -> void:
-	_add_row(title_, _item_name(_lo.item_id(slot)), Color(0, 0, 0, 0), func(d: int) -> void: _step_item(slot, d), view)
+func _add_item_rows(slot: String, title_: String, color_title: String, view: String = "") -> void:
+	var desc: String = str(_cat.item(_lo.item_id(slot)).get("desc", ""))
+	_add_row(title_, _item_name(_lo.item_id(slot)), Color(0, 0, 0, 0), func(d: int) -> void: _step_item(slot, d), view, desc)
 	_add_color_row(slot, color_title, view)
 
 
@@ -290,7 +318,7 @@ func _refresh_preview() -> void:
 	if _tab == 2:
 		_preview.show_board(_lo, _board_view)
 	else:
-		_preview.show_skater(_lo)
+		_preview.show_skater(_lo, "face" if _tab == 0 else "body")
 
 
 # Footer

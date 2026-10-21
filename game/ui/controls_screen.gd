@@ -1,6 +1,6 @@
 class_name ControlsScreen
 extends Control
-## Full-screen controls help. Lists each player action with its PlayStation button and keyboard key,
+## Full-screen controls help. Lists each player action with its PlayStation / Xbox button names and keyboard key,
 ## read from the InputMap that game/autoload/controls.gd fills, then six short tips for kids.
 ## Back, ui_cancel or pause emit closed. Showing and hiding the screen is up to the owner (see open_screen).
 
@@ -12,7 +12,7 @@ const CTRL_KEY_INK := Color("#00758F")  ## teal deep enough to read on cream
 const CTRL_BACK_MIN := Vector2(320, 72)
 const CTRL_COLUMN_GAP := 48
 const CTRL_NAME_MIN := 200
-const CTRL_BUTTON_MIN := 300
+const CTRL_BUTTON_MIN := 330
 const CTRL_TIP_WIDTH := 580  ## three equal tip cards across the screen
 
 ## [heading, [[label, action], ...]]. "move" stands for the four move_* actions. Balance rides the move stick.
@@ -69,7 +69,9 @@ func _ctrl_is_circle(event: InputEvent) -> bool:
 
 
 func _build() -> void:
-	add_child(SkyBackdrop.new())
+	var sky: SkyBackdrop = SkyBackdrop.new()
+	sky.sparkles = false
+	add_child(sky)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -207,21 +209,21 @@ func _key_text(action: String) -> String:
 func _button_name(b: int) -> String:
 	match b:
 		JOY_BUTTON_A:
-			return "Cross"
+			return "Cross / A"
 		JOY_BUTTON_X:
-			return "Square"
+			return "Square / X"
 		JOY_BUTTON_B:
-			return "Circle"
+			return "Circle / B"
 		JOY_BUTTON_Y:
-			return "Triangle"
+			return "Triangle / Y"
 		JOY_BUTTON_LEFT_SHOULDER:
-			return "L1"
+			return "L1 / LB"
 		JOY_BUTTON_RIGHT_SHOULDER:
-			return "R1"
+			return "R1 / RB"
 		JOY_BUTTON_START:
-			return "Start"
+			return "Start / Menu"
 		JOY_BUTTON_BACK:
-			return "Select"
+			return "Select / View"
 		JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT:
 			return "D-pad"
 	return ""
@@ -230,9 +232,9 @@ func _button_name(b: int) -> String:
 func _axis_name(a: int) -> String:
 	match a:
 		JOY_AXIS_TRIGGER_RIGHT:
-			return "R2"
+			return "R2 / RT"
 		JOY_AXIS_TRIGGER_LEFT:
-			return "L2"
+			return "L2 / LT"
 		JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y:
 			return "Left stick"
 	return ""

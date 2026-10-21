@@ -1,6 +1,7 @@
 class_name GoalsPanel
 extends CanvasLayer
-## Run timer (top centre) and a short goal list (right side, under the gaps counter). Shows the next few
+## Run timer (top centre) and a goal list (right side, under the gaps counter): one line (count and the next goal)
+## during play, the full list while paused or while Tab is held. Shows the next few
 ## unfinished goals with progress, ticks finished ones off, and says "Time's up!" when the run ends.
 ## Pure formatting lives in static functions for unit tests.
 
@@ -15,6 +16,7 @@ var clock: Callable  ## returns the caller's current time in seconds, the same c
 var _timer: Label
 var _count: Label
 var _rows: VBoxContainer
+var _expanded: bool = false
 var _box: PanelContainer
 var _was_active: bool = false
 var _list_key: String = ""
@@ -55,6 +57,7 @@ func bind(g: Goals, now: Callable) -> void:
 
 func _ready() -> void:
 	layer = 5
+	process_mode = Node.PROCESS_MODE_ALWAYS  # so the list can open while the game is paused
 	_timer = UiStyle.label("2:00", UiStyle.SIZE_BIG, UiStyle.WHITE)
 	_timer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_timer.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -66,6 +69,7 @@ func _ready() -> void:
 	_box = PanelContainer.new()
 	_box.theme_type_variation = SkateThemeBuilder.PNL_NAVY
 	_box.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_box.offset_right = -MARGIN
 	_box.offset_top = LIST_TOP
@@ -73,7 +77,7 @@ func _ready() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 4)
 	_box.add_child(col)
-	_count = UiStyle.label("Goals", UiStyle.SIZE_BODY, UiStyle.SUNSHINE)
+	_count = UiStyle.label("Goals", UiStyle.SIZE_SMALL + 2, UiStyle.SUNSHINE)
 	col.add_child(_count)
 	_rows = VBoxContainer.new()
 	col.add_child(_rows)
@@ -92,6 +96,10 @@ func _process(_delta: float) -> void:
 		_timer.text = "Time's up!"
 		_timer.label_settings.font_color = UiStyle.SUNSHINE
 	_was_active = active
+	var want: bool = get_tree().paused or Input.is_physical_key_pressed(KEY_TAB)
+	if want != _expanded:
+		_expanded = want
+		_list_key = ""
 	_refresh_list()
 
 
@@ -106,6 +114,9 @@ func _refresh_list() -> void:
 		return
 	_list_key = key
 	_count.text = count_line(done.size(), all.size())
+	_rows.visible = _expanded
+	if not _expanded:
+		_count.text += "  -  " + (row_text(str(shown[0].get("title", "")), goals.progress(str(shown[0].get("id", "")))) if not shown.is_empty() else "All done!")
 	for c: Node in _rows.get_children():
 		c.queue_free()
 	if shown.is_empty():

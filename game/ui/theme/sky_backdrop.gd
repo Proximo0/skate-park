@@ -5,6 +5,7 @@ extends Control
 ## the decorations (the title screen draws them over its 3D scene).
 
 var overlay: bool = false
+var sparkles: bool = true  ## off for text-dense screens (controls)
 var _time: float = 0.0
 var _sparkles: PackedVector2Array = PackedVector2Array()
 
@@ -41,7 +42,7 @@ func _draw() -> void:
 			Color(SkateThemeBuilder.TEAL, 0.9), SkateThemeBuilder.CREAM, 6.0)
 	SkateDeco.wave(self, 0.0, r.size.x, base + 26.0, r.size.y, 9.0, 260.0, -_time * 0.9 + 1.0,
 			SkateThemeBuilder.NAVY, SkateThemeBuilder.TEAL.lightened(0.25), 4.0)
-	for i: int in _sparkles.size():
+	for i: int in (_sparkles.size() if sparkles else 0):
 		var s: Vector2 = _sparkles[i]
 		var tw: float = 0.5 + 0.5 * sin(_time * 2.4 + float(i) * 1.9)
 		var col: Color = SkateThemeBuilder.SUN if i % 3 != 0 else SkateThemeBuilder.CREAM

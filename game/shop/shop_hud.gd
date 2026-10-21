@@ -91,12 +91,23 @@ func _process(_delta: float) -> void:
 		var scale_k: Vector2 = _root.size / Vector2(get_viewport().get_visible_rect().size)
 		p *= scale_k
 		b.position = Vector2(clampf(p.x - b.size.x * 0.5, 16.0, _root.size.x - b.size.x - 16.0),
-				clampf(p.y - b.size.y - 24.0, 16.0, _root.size.y - b.size.y - 16.0))
+				clampf(p.y - b.size.y - 44.0, 16.0, _root.size.y - b.size.y - 16.0))
 		b.modulate.a = clampf(npc.bubble_left / 0.4, 0.0, 1.0)
 
 
+## Cream sticker bubble with a small navy-outlined tail pointing down at the speaker.
+class Bubble extends PanelContainer:
+	func _draw() -> void:
+		var cx: float = size.x * 0.5
+		var y: float = size.y - 2.0
+		var outline: PackedVector2Array = [Vector2(cx - 24.0, y), Vector2(cx + 24.0, y), Vector2(cx, y + 38.0)]
+		draw_colored_polygon(outline, SkateThemeBuilder.NAVY)
+		var fill: PackedVector2Array = [Vector2(cx - 14.0, y + 6.0), Vector2(cx + 14.0, y + 6.0), Vector2(cx, y + 24.0)]
+		draw_colored_polygon(fill, SkateThemeBuilder.CREAM)
+
+
 func _make_bubble(npc: ShopNpc) -> PanelContainer:
-	var b: PanelContainer = PanelContainer.new()
+	var b: PanelContainer = Bubble.new()
 	b.theme_type_variation = SkateThemeBuilder.PNL_CREAM
 	var l: Label = MenuKit.text("", UiStyle.SIZE_SMALL + 2)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

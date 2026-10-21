@@ -34,6 +34,7 @@ class Arrow extends Control:
 func _init() -> void:
 	custom_minimum_size = Vector2(0, ROW_HEIGHT)
 	focus_mode = Control.FOCUS_ALL
+	set_meta(&"no_fx", true)  # full-width rows: no grow/tilt, it bled past the panel edge
 	alignment = HORIZONTAL_ALIGNMENT_LEFT
 	var box: HBoxContainer = HBoxContainer.new()
 	box.set_anchors_preset(Control.PRESET_FULL_RECT)

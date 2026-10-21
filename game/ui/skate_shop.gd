@@ -23,6 +23,9 @@ var _name_label: Label
 var _desc_label: Label
 var _price_label: Label
 var _message: Label
+var _stock_title: Label
+var _stock_bar: ProgressBar
+var _stock_note: Label
 var _action: Button
 
 
@@ -80,6 +83,21 @@ func _build_layout() -> void:
 	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rows.add_theme_constant_override("separation", 8)
 	_scroll.add_child(_rows)
+	var card: PanelContainer = MenuKit.panel(SkateThemeBuilder.PNL_NAVY)
+	card.custom_minimum_size = Vector2(0, 150)
+	col.add_child(card)
+	var ccol: VBoxContainer = VBoxContainer.new()
+	ccol.add_theme_constant_override("separation", 6)
+	card.add_child(ccol)
+	_stock_title = UiStyle.label("", UiStyle.SIZE_BODY, UiStyle.SUNSHINE, false)
+	ccol.add_child(_stock_title)
+	_stock_bar = ProgressBar.new()
+	_stock_bar.show_percentage = false
+	_stock_bar.custom_minimum_size = Vector2(0, 26)
+	ccol.add_child(_stock_bar)
+	_stock_note = UiStyle.label("", UiStyle.SIZE_SMALL, UiStyle.WHITE, false)
+	_stock_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ccol.add_child(_stock_note)
 	var hint: Label = MenuKit.text("Q / E or LB / RB: category    Left / Right: colour", UiStyle.SIZE_SMALL, UiStyle.MUTED)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(hint)
@@ -224,6 +242,23 @@ func _refresh_row(i: int) -> void:
 
 func _refresh_coins() -> void:
 	_coins_label.text = "COINS  %d" % _wallet.coins
+	var owned: int = 0
+	var cheapest: int = -1
+	for it: Dictionary in _items:
+		if _wallet.owns(str(it["id"])):
+			owned += 1
+		else:
+			var pr: int = int(it["price"])
+			cheapest = pr if cheapest < 0 else mini(cheapest, pr)
+	_stock_title.text = "OWNED  %d / %d" % [owned, _items.size()]
+	_stock_bar.max_value = maxf(float(_items.size()), 1.0)
+	_stock_bar.value = float(owned)
+	if cheapest < 0:
+		_stock_note.text = "You own everything here. Nice."
+	elif _wallet.coins >= cheapest:
+		_stock_note.text = "You can afford something new. Up / Down to browse."
+	else:
+		_stock_note.text = "Next unlock costs %d coins. Land combos and finish goals to earn more." % cheapest
 
 
 func _select(i: int) -> void:
@@ -261,7 +296,7 @@ func _update_preview() -> void:
 	var look: SkaterLoadout = _lo.duplicate_loadout()
 	look.set_item(slot, id, _color_of_pick(id))
 	if slot in SkaterLoadout.BOARD_SLOTS:
-		_preview.show_board(look, "top" if slot == "griptape" else "under")
+		_preview.show_board(look, "grip" if slot == "griptape" else ("display" if slot == "deck" else "top"))
 	else:
 		_preview.show_skater(look)
 
