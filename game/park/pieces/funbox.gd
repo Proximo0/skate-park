@@ -12,6 +12,9 @@ const TRIM_HEIGHT: float = 0.02
 const RAIL_HEIGHT: float = 0.45  ## mid rail sits this far above the top
 const RAIL_RADIUS: float = 0.04
 const POST_SIZE: float = 0.08
+const BANK_AMBER := Color("e9a03a")  ## banks: a deeper amber than RAMP_WOOD, which clipped to yellow once lit
+const CREST := Color("fff0cf")  ## cream coping strip across each bank's crest and foot, so the edges read from a distance
+const CREST_WIDTH: float = 0.12
 const ZONE_DEPTH: float = 1.5
 const ZONE_HEIGHT: float = 2.5
 
@@ -27,11 +30,11 @@ static func build(width: float = 4.0, top_length: float = 5.0, bank_length: floa
 
 	# Banks: solid wedges, inset between the side panels.
 	var up_prof := PackedVector2Array([Vector2(0.0, 0.0), Vector2(height, bank_end), Vector2(0.0, bank_end)])  # (y, z)
-	var bank_up: StaticBody3D = PieceKit.body(PieceKit.extrude_profile(up_prof, inner_w), PieceKit.RAMP_WOOD, "BankUp")
+	var bank_up: StaticBody3D = PieceKit.body(PieceKit.extrude_profile(up_prof, inner_w), BANK_AMBER, "BankUp")
 	bank_up.position.x = SIDE_THICK
 	root.add_child(bank_up)
 	var down_prof := PackedVector2Array([Vector2(height, top_end), Vector2(0.0, total_z), Vector2(0.0, top_end)])
-	var bank_down: StaticBody3D = PieceKit.body(PieceKit.extrude_profile(down_prof, inner_w), PieceKit.RAMP_WOOD, "BankDown")
+	var bank_down: StaticBody3D = PieceKit.body(PieceKit.extrude_profile(down_prof, inner_w), BANK_AMBER, "BankDown")
 	bank_down.position.x = SIDE_THICK
 	root.add_child(bank_down)
 
@@ -65,6 +68,17 @@ static func build(width: float = 4.0, top_length: float = 5.0, bank_length: floa
 		pb.collision_layer = 0
 		root.add_child(pb)
 	root.add_child(PieceKit.round_rail(Vector3(mid_x, rail_y, post_z0), Vector3(mid_x, rail_y, post_z1), RAIL_RADIUS, PieceKit.METAL, "MidRail"))
+
+	# Cream crest strips where each bank meets the flat top (visual only).
+	for crest: Array in [[bank_end - CREST_WIDTH * 0.5, "CrestUp"], [top_end + CREST_WIDTH * 0.5, "CrestDown"]]:
+		var cm := BoxMesh.new()
+		cm.size = Vector3(inner_w, 0.03, CREST_WIDTH)
+		var cmi := MeshInstance3D.new()
+		cmi.name = str(crest[1])
+		cmi.mesh = cm
+		cmi.position = Vector3(width * 0.5, height - 0.005, float(crest[0]))
+		cmi.material_override = Toon.material(CREST, false)
+		root.add_child(cmi)
 
 	# Gap zones over the bottom end of each bank.
 	root.add_child(PieceKit.gap_zone(zone_prefix + "_a", Vector3(0.0, 0.0, 0.0), Vector3(width, ZONE_HEIGHT, ZONE_DEPTH)))

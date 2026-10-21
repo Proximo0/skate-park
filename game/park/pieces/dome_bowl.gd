@@ -10,7 +10,13 @@ extends RefCounted
 ## (visual metal pipe along the coping) and the gap zone "<zone_prefix>_air" over the hole, from 1.5 m above the rim.
 
 const MARGIN: float = 1.5
-const TILE_BLUE: Color = Color("7fd3f5")
+const TILE_BLUE: Color = Color("5fc0e6")
+## The pale cream concrete washed out to white in full sun: a warmer, darker deck and a cooler shell, with an amber coping to read the rim.
+const DECK: Color = Color("a3a2a6")
+const SHELL: Color = Color("97a3ae")
+const COPING: Color = Color("f2a33a")
+const TARGET_YELLOW: Color = Color("e9a63a")
+const TARGET_RED: Color = Color("e8544e")
 const PIPE_RADIUS: float = 0.05
 const PIPE_SIDES: int = 8
 ## The tile band runs from just under the rim down to BAND_BOTTOM_Y.
@@ -42,14 +48,14 @@ static func build(radius: float = 8.0, depth_ratio: float = 0.85, rings: int = 1
 
 	var colours: Array[Color] = []
 	var shell_mesh: ArrayMesh = _dome_mesh(rs, yc, theta_max, half, nr, n, colours)
-	var shell: StaticBody3D = PieceKit.body(shell_mesh, PieceKit.CONCRETE, "Shell", true)
+	var shell: StaticBody3D = PieceKit.body(shell_mesh, SHELL, "Shell", true)
 	var shell_mi: MeshInstance3D = shell.get_node("Mesh") as MeshInstance3D
 	shell_mi.material_override = null
 	for k: int in colours.size():
 		shell_mi.set_surface_override_material(k, Toon.material(colours[k]))
 	root.add_child(shell)
 
-	root.add_child(PieceKit.body(_deck_mesh(a, d, half, n), PieceKit.CONCRETE, "Deck"))
+	root.add_child(PieceKit.body(_deck_mesh(a, d, half, n), DECK, "Deck"))
 
 	var loop := PackedVector3Array()
 	for j: int in n + 1:
@@ -59,7 +65,7 @@ static func build(radius: float = 8.0, depth_ratio: float = 0.85, rings: int = 1
 	var pipe := MeshInstance3D.new()
 	pipe.name = "CopingPipe"
 	pipe.mesh = _pipe_mesh(a, half, n)
-	pipe.material_override = Toon.material(PieceKit.METAL)
+	pipe.material_override = Toon.material(COPING)
 	root.add_child(pipe)
 
 	# The air zone covers the whole hole from GAP_FLOOR above the rim up: an air off the wall goes up near the rim (the
@@ -83,7 +89,7 @@ static func _inward(theta: float, phi: float) -> Vector3:
 ## The riding surface, split into surfaces: 0 concrete, 1 tile band, 2 yellow target, 3 red target. Only the
 ## surfaces with faces are committed; `colours` receives the colour of each committed surface, in order.
 static func _dome_mesh(rs: float, yc: float, theta_max: float, half: float, nr: int, n: int, colours: Array[Color]) -> ArrayMesh:
-	var palette: Array[Color] = [PieceKit.CONCRETE, TILE_BLUE, PieceKit.PAINT_YELLOW, PieceKit.PAINT_RED]
+	var palette: Array[Color] = [SHELL, TILE_BLUE, TARGET_YELLOW, TARGET_RED]
 	var sts: Array[SurfaceTool] = []
 	var counts: Array[int] = []
 	for k: int in palette.size():

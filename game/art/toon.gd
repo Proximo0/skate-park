@@ -18,13 +18,17 @@ static var outlines_enabled: bool = false
 
 ## Toon material for a flat colour. With outline (and outlines_enabled), the ink outline pass is its next_pass.
 ## Cached per colour: the same colour and outline flag return the same instance.
-static func material(color: Color, outline: bool = true) -> ShaderMaterial:
+static func material(color: Color, outline: bool = true, tex: Texture2D = null) -> ShaderMaterial:
 	var key: String = "%s|%s" % [color.to_html(true), str(outline)]
+	if tex != null:
+		key = "%s|t%d|%s" % [color.to_html(true), tex.get_instance_id(), str(outline)]
 	if _cache.has(key):
 		return _cache[key] as ShaderMaterial
 	var mat: ShaderMaterial = ShaderMaterial.new()
 	mat.shader = TOON_SHADER
 	mat.set_shader_parameter("albedo", color)
+	if tex != null:
+		mat.set_shader_parameter("albedo_tex", tex)
 	if outline and outlines_enabled:
 		mat.next_pass = _shared_outline()
 	_cache[key] = mat
@@ -90,6 +94,33 @@ static func sky_environment() -> Environment:
 	return env
 
 
+const SKY_SHADER: Shader = preload("res://game/art/sky.gdshader")
+
+
+## The park's sky: the title-screen sunset palette (coral and sunny yellow at the horizon, aqua, then the bright blue), a sun disc
+## with cel glow rings in `sun_dir` (the direction TO the sun: the key light's +Z axis), cel-shaded cumulus, a slightly warm ambient
+## and a light peach haze so far scenery fades into the horizon band instead of a white fog line. Same neutral-ambient, linear
+## tonemap contract as sky_environment().
+static func park_sky_environment(sun_dir: Vector3) -> Environment:
+	var sky_mat: ShaderMaterial = ShaderMaterial.new()
+	sky_mat.shader = SKY_SHADER
+	sky_mat.set_shader_parameter("sun_dir", sun_dir.normalized())
+	var sky: Sky = Sky.new()
+	sky.sky_material = sky_mat
+	var env: Environment = Environment.new()
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(1.0, 0.93, 0.9, 1.0)
+	env.ambient_light_energy = 0.22
+	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	env.fog_enabled = true
+	env.fog_light_color = Color(1.0, 0.84, 0.68, 1.0)
+	env.fog_density = 0.0007
+	env.fog_sky_affect = 0.0
+	return env
+
+
 static func _shared_outline() -> ShaderMaterial:
 	if _outline_material == null:
 		_outline_material = ShaderMaterial.new()
@@ -105,7 +136,9 @@ static func _apply_one(mi: MeshInstance3D, outline: bool) -> bool:
 	if src == null and mi.mesh != null and mi.mesh.get_surface_count() > 0:
 		src = mi.get_active_material(0)
 	var color: Color = Color.WHITE
+	var tex: Texture2D = null
 	if src is StandardMaterial3D:
 		color = (src as StandardMaterial3D).albedo_color
-	mi.material_override = material(color, outline)
+		tex = (src as StandardMaterial3D).albedo_texture
+	mi.material_override = material(color, outline, tex)
 	return true

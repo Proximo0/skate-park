@@ -5,13 +5,13 @@ extends RefCounted
 ## cone carry collision; everything else is visual. Every prop stays under about 600 triangles.
 
 const TRUNK: Color = Color("a0673c")
-const LEAF: Color = Color("4cc96a")
-const LEAF_LIGHT: Color = Color("7ddc83")
+const LEAF: Color = Color("3f9a4a")
+const LEAF_LIGHT: Color = Color("5fb25c")
 const PALM_TRUNK: Color = Color("c48a52")
-const FROND: Color = Color("3fbf6a")
-const FROND_DARK: Color = Color("2f9e57")
+const FROND: Color = Color("2f9a58")
+const FROND_DARK: Color = Color("24804a")
 const COCONUT: Color = Color("8a5a2b")
-const BUSH_GREEN: Color = Color("3dbb63")
+const BUSH_GREEN: Color = Color("38a05a")
 const BIN: Color = Color("4fa3e0")
 const BIN_LID: Color = Color("3a506b")
 const CONE_ORANGE: Color = Color("ff7a1a")

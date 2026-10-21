@@ -121,6 +121,9 @@ static func build(placed: Array) -> Node3D:
 	var wall_node: Node3D = walls()
 	root.add_child(wall_node)
 	counts["walls"] = wall_node.get_child_count()
+	var furn: Node3D = furniture()
+	root.add_child(furn)
+	counts["furniture"] = furn.get_child_count()
 	var avoid: Array[Rect2] = footprints(placed)
 	for c: Node in cans.get_children():
 		var n3: Node3D = c as Node3D
@@ -222,6 +225,160 @@ static func _collect_aabbs(node: Node, xf: Transform3D, out: Array[AABB]) -> voi
 			if c is MeshInstance3D and (c as MeshInstance3D).mesh != null:
 				out.append(t * (c as MeshInstance3D).mesh.get_aabb())
 			_collect_aabbs(c, t, out)
+
+
+# ------------------------------------------------------------------------------------------------------------- street furniture
+
+const NAVY := Color("2c3050")
+const CORAL := Color("e8665a")
+const TEAL := Color("1f9db8")
+const SUNNY := Color("e0a030")
+const CREAM := Color("d9cfbd")
+const FOLIAGE := Color("4a8a3a")
+const TRUNK_BROWN := Color("7a5636")
+## Clusters along the sidewalk outside each fence: at these offsets along the side (m from its middle).
+const SIDEWALK_U: Array = [-60.0, -34.0, -8.0, 18.0, 44.0, 66.0]
+## The inside west-edge cluster, tight against the fence and clear of every piece and skate line. Visual only: a solid one became a snag-sweep target.
+const WEST_CLUSTER_X: float = -73.4
+
+
+## Benches, planters with trees, bike racks and light poles in clusters: a run along the sidewalk outside each fence (visual only, outside the
+## invisible boundary walls) and one small visual-only cluster inside, at the west edge. Each group is a Node3D child "Cluster*".
+static func furniture() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Furniture"
+	for side: int in 4:
+		var n: Vector3 = [Vector3(0, 0, -1), Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(-1, 0, 0)][side]
+		var t: Vector3 = Vector3(-n.z, 0.0, n.x)
+		var yaw: float = atan2(-n.x, -n.z)
+		for k: int in SIDEWALK_U.size():
+			var cl := Node3D.new()
+			cl.name = "Cluster%d_%d" % [side, k]
+			cl.position = n * (PARK_HALF + 2.6) + t * float(SIDEWALK_U[k])
+			cl.rotation.y = yaw
+			root.add_child(cl)
+			match (side + k) % 4:
+				0:
+					_bench(cl, Vector3(-1.6, 0.0, 0.0), false)
+					_planter_tree(cl, Vector3(1.4, 0.0, 0.2), 0.9, false)
+					_lamp(cl, Vector3(3.6, 0.0, 0.8))
+				1:
+					_bike_rack(cl, Vector3(-1.0, 0.0, 0.0), 5, false)
+					_lamp(cl, Vector3(-4.0, 0.0, 0.8))
+				2:
+					_planter_tree(cl, Vector3(-2.2, 0.0, 0.2), 1.0, false)
+					_bench(cl, Vector3(0.4, 0.0, 0.0), false)
+					_bench(cl, Vector3(3.0, 0.0, 0.0), false)
+				_:
+					_lamp(cl, Vector3(-3.0, 0.0, 0.8))
+					_bike_rack(cl, Vector3(0.0, 0.0, 0.0), 4, false)
+					_planter_tree(cl, Vector3(3.4, 0.0, 0.2), 0.8, false)
+	# inside, west edge, facing +X (the park)
+	var west := Node3D.new()
+	west.name = "ClusterWestInside"
+	west.position = Vector3(WEST_CLUSTER_X, 0.0, -10.0)
+	west.rotation.y = PI * 0.5
+	root.add_child(west)
+	_bench(west, Vector3(-4.0, 0.0, 0.0), false)
+	_planter_tree(west, Vector3(-1.0, 0.0, 0.3), 1.0, false)
+	_bike_rack(west, Vector3(1.8, 0.0, 0.0), 4, false)
+	_lamp(west, Vector3(5.2, 0.0, 0.8))
+	return root
+
+
+static func _vbox(parent: Node3D, centre: Vector3, size: Vector3, colour: Color, solid: bool, node_name: String) -> void:
+	if solid:
+		parent.add_child(PieceKit.box(centre - size * 0.5, size, colour, node_name))
+		return
+	var m := BoxMesh.new()
+	m.size = size
+	var mi := MeshInstance3D.new()
+	mi.name = node_name
+	mi.mesh = m
+	mi.position = centre
+	mi.material_override = Toon.material(colour, false)
+	parent.add_child(mi)
+
+
+## A park bench, 1.8 m long, seat facing local +Z.
+static func _bench(parent: Node3D, at: Vector3, solid: bool) -> void:
+	var b := Node3D.new()
+	b.name = "Bench"
+	b.position = at
+	parent.add_child(b)
+	_vbox(b, Vector3(0.0, 0.45, 0.0), Vector3(1.8, 0.07, 0.5), CORAL, solid, "Seat")
+	_vbox(b, Vector3(0.0, 0.8, -0.22), Vector3(1.8, 0.4, 0.06), CORAL, solid, "Back")
+	for x: float in [-0.8, 0.8]:
+		_vbox(b, Vector3(x, 0.22, 0.0), Vector3(0.08, 0.44, 0.45), NAVY, solid, "Leg")
+
+
+static func _planter_tree(parent: Node3D, at: Vector3, size: float, solid: bool) -> void:
+	var p := Node3D.new()
+	p.name = "PlanterTree"
+	p.position = at
+	parent.add_child(p)
+	_vbox(p, Vector3(0.0, 0.3, 0.0), Vector3(size, 0.6, size), CREAM, solid, "Box")
+	_vbox(p, Vector3(0.0, 0.62, 0.0), Vector3(size + 0.1, 0.06, size + 0.1), TEAL, false, "Cap")
+	var trunk := CylinderMesh.new()
+	trunk.top_radius = 0.1
+	trunk.bottom_radius = 0.14
+	trunk.height = 1.8
+	trunk.radial_segments = 6
+	trunk.rings = 1
+	var tm := MeshInstance3D.new()
+	tm.name = "Trunk"
+	tm.mesh = trunk
+	tm.position = Vector3(0.0, 1.5, 0.0)
+	tm.material_override = Toon.material(TRUNK_BROWN, false)
+	p.add_child(tm)
+	for k: int in 2:
+		var crown := SphereMesh.new()
+		crown.radius = 0.95 - 0.25 * float(k)
+		crown.height = crown.radius * 2.0
+		crown.radial_segments = 8
+		crown.rings = 4
+		var cm := MeshInstance3D.new()
+		cm.name = "Crown%d" % k
+		cm.mesh = crown
+		cm.position = Vector3(0.0, 2.7 + 0.8 * float(k), 0.0)
+		cm.material_override = Toon.material(FOLIAGE, false)
+		p.add_child(cm)
+
+
+## A row of inverted-U bike hoops along local X.
+static func _bike_rack(parent: Node3D, at: Vector3, hoops: int, solid: bool) -> void:
+	var r := Node3D.new()
+	r.name = "BikeRack"
+	r.position = at
+	parent.add_child(r)
+	for i: int in hoops:
+		var x: float = float(i) * 0.7
+		_vbox(r, Vector3(x, 0.4, -0.15), Vector3(0.05, 0.8, 0.05), TEAL, solid, "HoopL")
+		_vbox(r, Vector3(x, 0.4, 0.15), Vector3(0.05, 0.8, 0.05), TEAL, solid, "HoopR")
+		_vbox(r, Vector3(x, 0.8, 0.0), Vector3(0.05, 0.05, 0.35), TEAL, false, "HoopTop")
+	_vbox(r, Vector3(float(hoops - 1) * 0.35, 0.02, 0.0), Vector3(float(hoops) * 0.7, 0.03, 0.5), NAVY, false, "Pad")
+
+
+## A tall light pole with a bracket arm and a warm lamp head.
+static func _lamp(parent: Node3D, at: Vector3) -> void:
+	var l := Node3D.new()
+	l.name = "LightPole"
+	l.position = at
+	parent.add_child(l)
+	var pole := CylinderMesh.new()
+	pole.top_radius = 0.07
+	pole.bottom_radius = 0.1
+	pole.height = 4.6
+	pole.radial_segments = 6
+	pole.rings = 1
+	var pm := MeshInstance3D.new()
+	pm.name = "Pole"
+	pm.mesh = pole
+	pm.position = Vector3(0.0, 2.3, 0.0)
+	pm.material_override = Toon.material(NAVY, false)
+	l.add_child(pm)
+	_vbox(l, Vector3(0.0, 4.55, 0.35), Vector3(0.1, 0.08, 0.8), NAVY, false, "Arm")
+	_vbox(l, Vector3(0.0, 4.45, 0.75), Vector3(0.4, 0.14, 0.3), Color("ffe6a6"), false, "Head")
 
 
 # --------------------------------------------------------------------------------------------------------------- graffiti

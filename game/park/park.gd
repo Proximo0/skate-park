@@ -50,9 +50,12 @@ func _ready() -> void:
 	_outer_north()
 	_drop_in_pads()
 	_fences()
+	_fence_wall()
 	_boundary()
 	_decor()
 	_dressing()
+	_backdrop()
+	_apron()
 	_collectibles()
 
 
@@ -66,24 +69,50 @@ func _put(node: Node3D, pos: Vector3, yaw_deg: float = 0.0, node_name: String = 
 	return node
 
 
+## The key light's rotation. The sky's sun disc sits in the opposite direction (the light's +Z axis), so the two always agree.
+## Steeper than the old -52 so flat ground sits well inside the lit band instead of on its edge.
+const SUN_ROTATION := Vector3(-58.0, 35.0, 0.0)
+const SUN_COLOR := Color(1.0, 0.95, 0.86)
+
+
 func _environment() -> void:
 	var env := WorldEnvironment.new()
 	env.name = "Environment"
-	env.environment = Toon.sky_environment()
+	var sun_dir: Vector3 = Basis.from_euler(SUN_ROTATION * (PI / 180.0)) * Vector3(0.0, 0.0, 1.0)
+	env.environment = Toon.park_sky_environment(sun_dir)
 	add_child(env)
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-52.0, 35.0, 0.0)
+	sun.rotation_degrees = SUN_ROTATION
+	sun.light_color = SUN_COLOR
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 150.0
 	add_child(sun)
 
 
 ## Darker than PieceKit.CONCRETE: a big flat slab in full sun reads as white at the lighter grey.
-const GROUND := Color("7f8a96")
+const GROUND := Color("7a8ca0")
+const GROUND_SHADER: Shader = preload("res://game/art/ground.gdshader")
+const GRASS := Color("86a057")
+const CURB := Color("d8d0c2")
+## The lighter apron round each piece: a mask over this world rect, one texel about 0.35 m.
+const APRON_RECT := Rect2(-90.0, -90.0, 180.0, 180.0)
+const APRON_TEXELS: int = 512
+const APRON_MARGIN: float = 1.8
+var _ground_mat: ShaderMaterial = null
 
 
 func _ground() -> void:
+	_ground_mat = ShaderMaterial.new()
+	_ground_mat.shader = GROUND_SHADER
+	_ground_mat.set_shader_parameter("albedo", GROUND)
+	_ground_mat.set_shader_parameter("walk_from", HALF + 0.8)
+	_ground_mat.set_shader_parameter("walk_to", HALF + 5.4)
+	var grass_mat := ShaderMaterial.new()
+	grass_mat.shader = GROUND_SHADER
+	grass_mat.set_shader_parameter("albedo", GRASS)
+	grass_mat.set_shader_parameter("grass", 1.0)
+	grass_mat.set_shader_parameter("grass_color", GRASS)
 	# Concrete slab with holes for the sunken bowls; each bowl brings its own deck frame. A hole is Rect2(x, z, w, d).
 	var holes: Array[Rect2] = [
 		Rect2(22.0, -38.0, 14.0, 10.0),  # the core bowl
@@ -110,19 +139,73 @@ func _ground() -> void:
 		var z: float = -outer
 		for c: Vector2 in cuts:
 			if c.x > z + 0.001:
-				add_child(PieceKit.box(Vector3(x0, y, z), Vector3(x1 - x0, 1.0, c.x - z), GROUND, "Ground%d" % n))
+				add_child(_ground_box(Vector3(x0, y, z), Vector3(x1 - x0, 1.0, c.x - z), _ground_mat, GROUND, "Ground%d" % n))
 				n += 1
 			z = c.y
 		if outer > z + 0.001:
-			add_child(PieceKit.box(Vector3(x0, y, z), Vector3(x1 - x0, 1.0, outer - z), GROUND, "Ground%d" % n))
+			add_child(_ground_box(Vector3(x0, y, z), Vector3(x1 - x0, 1.0, outer - z), _ground_mat, GROUND, "Ground%d" % n))
 			n += 1
-	# a grassy ring outside the slab, in four pieces so nothing covers the bowl holes
-	var g: float = 300.0
-	var grass := Color("8ad16b")
-	add_child(PieceKit.box(Vector3(-g, -1.05, -g), Vector3(g * 2.0, 1.0, g - outer), grass, "GrassN"))
-	add_child(PieceKit.box(Vector3(-g, -1.05, outer), Vector3(g * 2.0, 1.0, g - outer), grass, "GrassS"))
-	add_child(PieceKit.box(Vector3(-g, -1.05, -outer), Vector3(g - outer, 1.0, outer * 2.0), grass, "GrassW"))
-	add_child(PieceKit.box(Vector3(outer, -1.05, -outer), Vector3(g - outer, 1.0, outer * 2.0), grass, "GrassE"))
+	# a grassy ring outside the slab, in four pieces so nothing covers the bowl holes; it runs out far beyond the hills
+	var g: float = 1500.0
+	add_child(_ground_box(Vector3(-g, -1.05, -g), Vector3(g * 2.0, 1.0, g - outer), grass_mat, GRASS, "GrassN"))
+	add_child(_ground_box(Vector3(-g, -1.05, outer), Vector3(g * 2.0, 1.0, g - outer), grass_mat, GRASS, "GrassS"))
+	add_child(_ground_box(Vector3(-g, -1.05, -outer), Vector3(g - outer, 1.0, outer * 2.0), grass_mat, GRASS, "GrassW"))
+	add_child(_ground_box(Vector3(outer, -1.05, -outer), Vector3(g - outer, 1.0, outer * 2.0), grass_mat, GRASS, "GrassE"))
+	_curb(outer)
+
+
+## A ground slab: PieceKit.box for the collision, the world-space ground shader for the look, no shadow casting (it is
+## only ever a receiver; a one-metre slab as a caster fed the shadow map its widest, flattest polygon).
+func _ground_box(min_corner: Vector3, size: Vector3, mat: ShaderMaterial, colour: Color, node_name: String) -> StaticBody3D:
+	var sb: StaticBody3D = PieceKit.box(min_corner, size, colour, node_name)
+	var mi: MeshInstance3D = sb.get_node("Mesh") as MeshInstance3D
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return sb
+
+
+## A low raised curb round the slab edge (visual only; it is outside the invisible boundary walls).
+func _curb(outer: float) -> void:
+	var t: float = 0.5
+	var h: float = 0.2
+	var mat: ShaderMaterial = Toon.material(CURB, false)
+	var strips: Array = [
+		[Vector3(0.0, h * 0.5, -outer + t * 0.5), Vector3(outer * 2.0, h, t)],
+		[Vector3(0.0, h * 0.5, outer - t * 0.5), Vector3(outer * 2.0, h, t)],
+		[Vector3(-outer + t * 0.5, h * 0.5, 0.0), Vector3(t, h, outer * 2.0 - t * 2.0)],
+		[Vector3(outer - t * 0.5, h * 0.5, 0.0), Vector3(t, h, outer * 2.0 - t * 2.0)],
+	]
+	var curb := Node3D.new()
+	curb.name = "Curb"
+	add_child(curb)
+	for i: int in strips.size():
+		var m := BoxMesh.new()
+		m.size = strips[i][1] as Vector3
+		var mi := MeshInstance3D.new()
+		mi.name = "Curb%d" % i
+		mi.mesh = m
+		mi.position = strips[i][0] as Vector3
+		mi.material_override = mat
+		curb.add_child(mi)
+
+
+## The lighter apron round every piece: bakes the pieces' footprints (grown by APRON_MARGIN) into the ground shader's mask.
+## Called after everything is placed.
+func _apron() -> void:
+	var img := Image.create(APRON_TEXELS, APRON_TEXELS, false, Image.FORMAT_L8)
+	img.fill(Color.BLACK)
+	var k: float = float(APRON_TEXELS) / APRON_RECT.size.x
+	for r: Rect2 in ParkDressing.footprints(placed):
+		var g: Rect2 = r.grow(APRON_MARGIN)
+		var px := Rect2i(int((g.position.x - APRON_RECT.position.x) * k), int((g.position.y - APRON_RECT.position.y) * k), int(g.size.x * k) + 1, int(g.size.y * k) + 1)
+		img.fill_rect(px, Color.WHITE)
+	_ground_mat.set_shader_parameter("apron_mask", ImageTexture.create_from_image(img))
+	_ground_mat.set_shader_parameter("apron_rect", Vector4(APRON_RECT.position.x, APRON_RECT.position.y, APRON_RECT.size.x, APRON_RECT.size.y))
+
+
+## Hills, tree line, skyline and banded mountains in the distance (game/park/pieces/backdrop.gd).
+func _backdrop() -> void:
+	add_child(ParkBackdrop.build())
 
 
 func _north() -> void:
@@ -280,14 +363,65 @@ func _drop_in_pads() -> void:
 		add_child(pad)
 
 
+const FENCE_HEIGHT := 2.3
+
+
 func _fences() -> void:
 	var n: int = int(round(HALF * 2.0 / 10.0))
 	for i: int in n:
 		var x: float = -HALF + i * 10.0
-		_fence(Walls.fence(10.0, 1.4), Vector3(x, 0.0, -HALF - 0.6), 0.0, "FenceN%d" % i)
-		_fence(Walls.fence(10.0, 1.4), Vector3(x + 10.0, 0.0, HALF + 0.6), 180.0, "FenceS%d" % i)
-		_fence(Walls.fence(10.0, 1.4), Vector3(-HALF - 0.6, 0.0, x + 10.0), 90.0, "FenceW%d" % i)
-		_fence(Walls.fence(10.0, 1.4), Vector3(HALF + 0.6, 0.0, x), -90.0, "FenceE%d" % i)
+		_fence(Walls.fence(10.0, FENCE_HEIGHT), Vector3(x, 0.0, -HALF - 0.6), 0.0, "FenceN%d" % i)
+		_fence(Walls.fence(10.0, FENCE_HEIGHT), Vector3(x + 10.0, 0.0, HALF + 0.6), 180.0, "FenceS%d" % i)
+		_fence(Walls.fence(10.0, FENCE_HEIGHT), Vector3(-HALF - 0.6, 0.0, x + 10.0), 90.0, "FenceW%d" % i)
+		_fence(Walls.fence(10.0, FENCE_HEIGHT), Vector3(HALF + 0.6, 0.0, x), -90.0, "FenceE%d" % i)
+
+
+## A low footing wall with a navy cap along the outside of every fence, and a tall floodlight mast at each corner, so the
+## perimeter has a bold silhouette against the hills. Visual only (outside the invisible boundary walls).
+func _fence_wall() -> void:
+	var wall := Node3D.new()
+	wall.name = "PerimeterWall"
+	add_child(wall)
+	var c: float = HALF + 1.15
+	var run: float = (HALF + 1.6) * 2.0
+	var h: float = 0.7
+	var sides: Array = [
+		[Vector3(0.0, h * 0.5, -c), Vector3(run, h, 0.4)],
+		[Vector3(0.0, h * 0.5, c), Vector3(run, h, 0.4)],
+		[Vector3(-c, h * 0.5, 0.0), Vector3(0.4, h, run - 0.8)],
+		[Vector3(c, h * 0.5, 0.0), Vector3(0.4, h, run - 0.8)],
+	]
+	for i: int in sides.size():
+		var centre: Vector3 = sides[i][0] as Vector3
+		var size: Vector3 = sides[i][1] as Vector3
+		wall.add_child(_wall_mesh(centre, size, CURB, "Footing%d" % i))
+		wall.add_child(_wall_mesh(centre + Vector3(0.0, h * 0.5 + 0.04, 0.0), Vector3(size.x + 0.1, 0.08, size.z + 0.1), Color("2c3050"), "Cap%d" % i))
+	var mast := CylinderMesh.new()
+	mast.top_radius = 0.14
+	mast.bottom_radius = 0.22
+	mast.height = 8.0
+	mast.radial_segments = 6
+	mast.rings = 1
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			var m := MeshInstance3D.new()
+			m.name = "Mast"
+			m.mesh = mast
+			m.position = Vector3(sx * (HALF + 1.15), 4.0, sz * (HALF + 1.15))
+			m.material_override = Toon.material(Color("2c3050"), false)
+			wall.add_child(m)
+			wall.add_child(_wall_mesh(m.position + Vector3(-sx * 0.5, 4.1, -sz * 0.5), Vector3(1.4, 0.35, 1.4), Color("ffe6a6"), "Light"))
+
+
+func _wall_mesh(centre: Vector3, size: Vector3, colour: Color, node_name: String) -> MeshInstance3D:
+	var m := BoxMesh.new()
+	m.size = size
+	var mi := MeshInstance3D.new()
+	mi.name = node_name
+	mi.mesh = m
+	mi.position = centre
+	mi.material_override = Toon.material(colour, false)
+	return mi
 
 
 ## A fence segment: placed like a piece but not tracked as a rideable one.
@@ -366,16 +500,6 @@ func _decor() -> void:
 	for i: int in 6:
 		crowd.append(Vector3(-HALF - 4.0, 0.0, -36.0 + i * 1.6))
 	Props.scatter(decor, "crowd_kid", crowd, 11)
-	var mountains := PackedVector3Array()
-	for i: int in 9:
-		var t: float = float(i) / 9.0 * TAU + 0.3
-		mountains.append(Vector3(cos(t) * 260.0, 0.0, sin(t) * 260.0))
-	Props.scatter(decor, "mountain", mountains, 12)
-	var clouds := PackedVector3Array()
-	for i: int in 10:
-		var t: float = float(i) / 10.0 * TAU
-		clouds.append(Vector3(cos(t) * 150.0, 38.0 + (i % 3) * 6.0, sin(t) * 150.0))
-	Props.scatter(decor, "cloud", clouds, 13)
 
 
 ## A point on the square of half-size `half`, f = 0..1 once around, starting at the north-west corner.
