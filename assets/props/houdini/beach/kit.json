@@ -359,6 +359,132 @@
     ]
    },
    "collision": "mesh"
+  },
+  {
+   "name": "ocean_plane",
+   "file": "ocean_plane.glb",
+   "tris": 1360,
+   "bounds": {
+    "min": [
+     -80.0,
+     0.0,
+     0.0
+    ],
+    "max": [
+     80.0,
+     0.0,
+     180.0
+    ]
+   },
+   "collision": []
+  },
+  {
+   "name": "shoreline_foam",
+   "file": "shoreline_foam.glb",
+   "tris": 960,
+   "bounds": {
+    "min": [
+     -80.0,
+     0.03,
+     -1.393
+    ],
+    "max": [
+     80.0,
+     0.03,
+     3.393
+    ]
+   },
+   "collision": []
+  },
+  {
+   "name": "wave_crest",
+   "file": "wave_crest.glb",
+   "tris": 2112,
+   "bounds": {
+    "min": [
+     -12.0,
+     0.0,
+     -4.0
+    ],
+    "max": [
+     12.0,
+     3.05,
+     5.0
+    ]
+   },
+   "collision": []
+  },
+  {
+   "name": "headland_left",
+   "file": "headland_left.glb",
+   "tris": 864,
+   "bounds": {
+    "min": [
+     -37.563,
+     0.0,
+     -26.133
+    ],
+    "max": [
+     36.272,
+     29.451,
+     25.272
+    ]
+   },
+   "collision": "mesh"
+  },
+  {
+   "name": "headland_right",
+   "file": "headland_right.glb",
+   "tris": 864,
+   "bounds": {
+    "min": [
+     -29.089,
+     0.0,
+     -22.535
+    ],
+    "max": [
+     30.822,
+     23.982,
+     22.633
+    ]
+   },
+   "collision": "mesh"
+  },
+  {
+   "name": "distant_island",
+   "file": "distant_island.glb",
+   "tris": 192,
+   "bounds": {
+    "min": [
+     -60.03,
+     0.0,
+     -27.423
+    ],
+    "max": [
+     58.067,
+     14.219,
+     26.115
+    ]
+   },
+   "collision": []
+  },
+  {
+   "name": "sailboat",
+   "file": "sailboat.glb",
+   "tris": 152,
+   "bounds": {
+    "min": [
+     -0.856,
+     0.295,
+     -2.853
+    ],
+    "max": [
+     0.856,
+     7.3,
+     2.853
+    ]
+   },
+   "collision": []
   }
  ]
 }

@@ -15,6 +15,8 @@ MATS = {
     "towel_blue": (0.3, 0.5, 0.9), "board_orange": (0.98, 0.55, 0.2), "board_teal": (0.2, 0.7, 0.68),
     "board_white": (0.96, 0.96, 0.93), "board_pink": (0.95, 0.5, 0.7), "metal": (0.6, 0.62, 0.65),
     "sign": (0.98, 0.95, 0.85), "cooler": (0.2, 0.45, 0.85),
+    "ocean": (1.0, 1.0, 1.0), "foam": (1.0, 1.0, 1.0), "wave": (1.0, 1.0, 1.0), "cliff": (1.0, 1.0, 1.0),
+    "sail": (0.97, 0.96, 0.92), "hull": (0.92, 0.3, 0.25),
 }
 
 # Python SOP: a curved, tapered trunk with alternating vertex-colour bands, then fronds (double-sided, drooping
@@ -270,16 +272,213 @@ def rocks(b):
     return "mesh"
 
 
+# --- ocean and view ------------------------------------------------------------------------------------------------
+# The sea pieces share one frame: the waterline runs along X at z = 0 and the sea extends toward +Z. Vertex colours
+# carry the look (shallow turquoise to deep blue, white foam); UVs are laid out for a scrolling wave shader in Godot
+# (the motion itself is a shader, not baked here).
+
+OCEAN = """
+geo = hou.pwd().geometry()
+geo.addAttrib(hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
+geo.addAttrib(hou.attribType.Vertex, "uv", (0.0, 0.0, 0.0))
+W, xs = 160.0, 41
+zs = [0.0, 1.0, 2.0, 3.5, 5.0, 7.0, 9.5, 12.5, 16.0, 20.0, 26.0, 34.0, 45.0, 60.0, 80.0, 105.0, 140.0, 180.0]
+shallow, mid, deep = (0.3, 0.85, 0.8), (0.12, 0.6, 0.78), (0.06, 0.28, 0.6)
+grid = []
+for z in zs:
+    t = min(1.0, z / 40.0)
+    if t <= 0.5:
+        c = [shallow[i] + (mid[i] - shallow[i]) * t * 2 for i in range(3)]
+    else:
+        c = [mid[i] + (deep[i] - mid[i]) * (t - 0.5) * 2 for i in range(3)]
+    row = []
+    for i in range(xs):
+        p = geo.createPoint()
+        p.setPosition((-W / 2 + W * i / (xs - 1), 0.0, z))
+        p.setAttribValue("Cd", c)
+        row.append(p)
+    grid.append(row)
+for a, b in zip(grid, grid[1:]):
+    for i in range(xs - 1):
+        poly = geo.createPolygon()
+        for p in (a[i], a[i + 1], b[i + 1], b[i]):  # faces up
+            q = p.position()
+            poly.addVertex(p).setAttribValue("uv", (q[0] / 8.0, q[2] / 8.0, 0.0))
+"""
+
+FOAM = """
+import math
+geo = hou.pwd().geometry()
+geo.addAttrib(hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
+geo.addAttrib(hou.attribType.Vertex, "uv", (0.0, 0.0, 0.0))
+W, n = 160.0, 161
+rows = [(-0.6, 0.0), (0.4, 1.0), (1.6, 0.55), (2.6, 0.0)]  # (z offset, foam density)
+grid = []
+for zo, dens in rows:
+    row = []
+    for i in range(n):
+        x = -W / 2 + W * i / (n - 1)
+        wob = 0.5 * math.sin(x * 0.37) + 0.3 * math.sin(x * 1.13 + 1.7)
+        p = geo.createPoint()
+        p.setPosition((x, 0.03, zo + wob))
+        v = 0.55 + 0.45 * dens
+        p.setAttribValue("Cd", (v, min(1.0, v + 0.04), min(1.0, v + 0.06)))
+        row.append(p)
+    grid.append(row)
+for r, (a, b) in enumerate(zip(grid, grid[1:])):
+    for i in range(n - 1):
+        poly = geo.createPolygon()
+        for p, (u, w) in ((a[i], (i, r)), (a[i + 1], (i + 1, r)), (b[i + 1], (i + 1, r + 1)), (b[i], (i, r + 1))):
+            poly.addVertex(p).setAttribValue("uv", (u / 4.0, w / 3.0, 0.0))
+"""
+
+# A breaking wave, swept along X and dying out at both ends: the body rises from the water on the shore side (-Z) up
+# a concave face to the crest and slopes back down out to sea; a separate lip pitches forward over the face. Colour
+# runs from the sea's turquoise at the waterline to white at the crest and lip. Two-sided. Origin at its base centre.
+WAVE = """
+import math
+geo = hou.pwd().geometry()
+geo.addAttrib(hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
+geo.addAttrib(hou.attribType.Vertex, "uv", (0.0, 0.0, 0.0))
+L, n = 24.0, 49
+body = [((-4.0, 0.0), (0.12, 0.6, 0.78)), ((-2.2, 0.3), (0.16, 0.68, 0.8)), ((-1.1, 0.9), (0.22, 0.76, 0.82)),
+        ((-0.55, 1.7), (0.35, 0.84, 0.86)), ((-0.4, 2.4), (0.6, 0.92, 0.94)), ((-0.1, 3.0), (0.97, 0.99, 1.0)),
+        ((0.8, 2.7), (0.5, 0.8, 0.88)), ((2.4, 1.4), (0.14, 0.55, 0.75)), ((5.0, 0.0), (0.1, 0.45, 0.7))]
+lip = [((-0.1, 3.0), (0.97, 0.99, 1.0)), ((-0.9, 3.05), (1.0, 1.0, 1.0)), ((-1.6, 2.7), (0.95, 0.98, 1.0)),
+       ((-1.9, 2.1), (0.85, 0.94, 0.97))]
+def strip(prof, vofs):
+    rows = []
+    for (z, y), c in prof:
+        row = []
+        for i in range(n):
+            x = -L / 2 + L * i / (n - 1)
+            taper = math.sin(math.pi * i / (n - 1)) ** 0.6
+            p = geo.createPoint()
+            p.setPosition((x, y * taper, z * (0.4 + 0.6 * taper)))
+            p.setAttribValue("Cd", c)
+            row.append(p)
+        rows.append(row)
+    for k, (a, b) in enumerate(zip(rows, rows[1:])):
+        for i in range(n - 1):
+            for quad in ((a[i], b[i], b[i + 1], a[i + 1]), (a[i + 1], b[i + 1], b[i], a[i])):
+                poly = geo.createPolygon()
+                for p in quad:
+                    q = p.position()
+                    poly.addVertex(p).setAttribValue("uv", (q[0] / 6.0, (k + vofs) / 12.0, 0.0))
+strip(body, 0)
+strip(lip, 8)
+"""
+
+CLIFF = "int s = %d; vector n = noise(@P * 0.06 + s); @P += (n - 0.5) * set(14, 9, 14); @P.y = max(@P.y, 0);"
+CLIFF_COLOUR = """vector n = normalize(v@N);
+float grass = smooth(0.55, 0.8, n.y) * smooth(4.0, 9.0, @P.y);
+v@Cd = lerp(set(0.55, 0.47, 0.4), set(0.36, 0.62, 0.3), grass) * fit(noise(@P * 0.3), 0.3, 0.7, 0.85, 1.05);
+"""
+
+
+def ocean_plane(b):
+    # 160 m along the shore x 180 m out to sea, denser near the waterline (where the shader's waves show most).
+    hlib.python_part(b, "ocean", OCEAN, "ocean", "ocean")
+    return []
+
+
+def shoreline_foam(b):
+    # A 160 m foam band along the waterline, wavy edge, uv.x along the shore for a scrolling foam texture.
+    hlib.python_part(b, "foam", FOAM, "foam", "foam")
+    return []
+
+
+def wave_crest(b):
+    hlib.python_part(b, "wave", WAVE, "wave", "wave")
+    return []
+
+
+def coloured_rock(b, src):
+    nrm = b.net.createNode("normal", "n_for_colour")
+    nrm.setInput(0, src)
+    nrm.parm("type").set("typepoint")
+    b.tag(b.wrangle(nrm, CLIFF_COLOUR, name="rock_and_grass"), "cliff", "body")
+
+
+def headland(seed, size):
+    def fn(b):
+        # Backdrop cliff mass with grassy tops (vertex colour), for either end of the bay.
+        box = b.net.createNode("box", "mass")
+        for k, v in (("type", "polymesh"), ("sizex", size[0]), ("sizey", size[1]), ("sizez", size[2]),
+                     ("ty", size[1] / 2), ("divrate1", 13), ("divrate2", 7), ("divrate3", 9)):
+            box.parm(k).set(v)
+        coloured_rock(b, b.wrangle(box, CLIFF % seed + " @P.y *= 1 - 0.35 * smooth(0, %f, abs(@P.x));" % (size[0] / 2),
+                                   name="erode"))
+        return "mesh"
+    return fn
+
+
+def distant_island(b):
+    # A low green island for the horizon, 120 x 14 x 56 m.
+    s = b.net.createNode("sphere", "mound")
+    for k, v in (("type", "polymesh"), ("rows", 8), ("cols", 16), ("radx", 60.0), ("rady", 14.0), ("radz", 28.0)):
+        s.parm(k).set(v)
+    coloured_rock(b, b.wrangle(s, CLIFF % 11, name="erode"))
+    return []
+
+
+def sailboat(b):
+    # 6 m dinghy for the view: hull, deck, mast, mainsail and jib; bow toward -Z.
+    hlib.sphere(b, "hull", (0.9, 0.45, 3.0), (0, 0.3, 0), "hull", "body", rows=6, cols=12,
+                snippet="@P.y = max(@P.y, 0.3); @P.x *= 1 - 0.6 * smooth(0.0, 3.0, -@P.z);")
+    b.box("deck", (1.5, 0.05, 4.8), (0, 0.32, 0.3), "wood_light", "body")
+    b.cyl("mast", 0.06, 7.0, (0, 3.8, -0.6), "metal", "body", orient="y", cols=6, rows=1)
+    b.box("main", (0.02, 5.8, 2.6), (0, 3.6, 0.7), "sail", "body", taper=(1.0, 0.05, -1.25))
+    b.box("jib", (0.02, 4.6, 1.8), (0, 3.0, -1.5), "sail", "body", taper=(1.0, 0.05, 0.85))
+    return []
+
+
 PIECES = [
     ("palm_tree_a", palm(7.0, 0.8, 8, 2.4, 1)), ("palm_tree_b", palm(8.5, -1.3, 9, 2.7, 2)),
     ("palm_tree_c", palm(5.5, 0.4, 7, 2.1, 3)), ("lifeguard_tower", lifeguard_tower), ("pier_section", pier_section),
     ("boardwalk_planks", boardwalk), ("food_stand", food_stand), ("surfboard_rack", surfboard_rack),
     ("umbrella_towel_set", umbrella_set), ("rocks", rocks),
+    ("ocean_plane", ocean_plane), ("shoreline_foam", shoreline_foam), ("wave_crest", wave_crest),
+    ("headland_left", headland(5, (70.0, 28.0, 45.0))), ("headland_right", headland(9, (55.0, 22.0, 40.0))),
+    ("distant_island", distant_island), ("sailboat", sailboat),
 ]
+
+# The view shot (--view): pieces placed as a bay seen from the sand, previews/beach_view.png.
+VIEW = {
+    "ocean_plane": (0, 0, 0, 0), "shoreline_foam": (0, 0, 0, 0), "wave_crest": (-8, 0, 30, 0),
+    "headland_left": (-80, 0, 30, 20), "headland_right": (75, 0, 45, -25), "distant_island": (40, -2, 175, 0),
+    "sailboat": (-22, 0, 70, 60), "palm_tree_a": (-7, 0, -8, 0), "palm_tree_b": (9, 0, -12, 0),
+    "palm_tree_c": (14, 0, -5, 0), "lifeguard_tower": (3, 0, -6, 180), "umbrella_towel_set": (-3, 0, -3, 0),
+    "surfboard_rack": (-12, 0, -9, 160), "rocks": (20, 0, 1, 30),
+}
+
+
+def view():
+    hlib.MATERIALS.update(MATS)
+    hlib.MATERIALS["concrete"] = (0.93, 0.85, 0.66)  # the preview ground plays the sand
+    hlib.ensure_materials()
+    for name, fn in PIECES:
+        if name not in VIEW:
+            continue
+        sub, _ = hlib.build_piece("beach", name, fn)
+        x, y, z, ry = VIEW[name]
+        obj = sub.parent()
+        obj.parmTuple("t").set((x, y, z))
+        obj.parm("ry").set(ry)
+    focus = hou.node("/obj/beach_ocean_plane/ocean_plane")
+    hlib.preview(focus, os.path.join(hlib.PREVIEWS, "beach_view.png"), res=(1600, 800), azimuth=0.0, elevation=6.0,
+                 radius=26.0, center=(0, 4.0, 22.0))
+
 
 if __name__ == "__main__":
     import os
     import sys
+
+    import hou
+    if "--view" in sys.argv:
+        view()
+        sys.stdout.flush()
+        os._exit(0)
     hlib.run_kit("beach", PIECES, MATS)
     sys.stdout.flush()
     os._exit(0)

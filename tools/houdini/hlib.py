@@ -411,6 +411,10 @@ def run_kit(level, pieces, materials):
 
 def kit_preview(level, nodes, cols=5):
     """All pieces of a kit in a grid (spaced by their footprints), one OpenGL render."""
+    big = [n for n in nodes if max(n.geometry().boundingBox().sizevec()[0], n.geometry().boundingBox().sizevec()[2]) > 30]
+    nodes = [n for n in nodes if n not in big]  # sea, backdrop and road pieces would dwarf the rest
+    for n in big:
+        n.parent().setDisplayFlag(False)
     geo = hou.node("/obj").createNode("geo", "kit_preview_" + level)
     m = geo.createNode("merge")
     sizes = [n.geometry().boundingBox().sizevec() for n in nodes]
