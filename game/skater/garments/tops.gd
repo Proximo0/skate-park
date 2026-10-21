@@ -9,8 +9,8 @@ const GROW_TIGHT: float = 0.0045
 const GROW_LOOSE: float = 0.008
 const TOP_DEFAULT: Color = Color(0.07, 0.66, 0.7)
 const TRIM_DEFAULT: Color = Color(1.0, 0.5, 0.4)
-const CUP_BOTTOM_V: float = -1.2  ## overlaps the under-band, no gap
-const CUP_TOP_V: float = 0.64  ## bust-field v of the cup's top point (about 1.19 m)
+const CUP_EDGE_LIFT: float = 0.003  ## the cup comes down to this lift at its edges, under the piping
+const CUP_PIPING_R: float = 0.003
 
 
 static func builders() -> Dictionary:
@@ -30,7 +30,8 @@ static func covers(id: String, body_type: String) -> PackedStringArray:
 		torso.append_array(["bust_L", "bust_R"])
 	match id:
 		"top_bikini":
-			return PackedStringArray() if body_type != AnimeOutfit.MALE else covers("top_surf_tee", body_type)
+			# The cups enclose the bust skin under them (same pivot), so it is hidden: nothing can poke through.
+			return PackedStringArray(["bust_L", "bust_R"]) if body_type != AnimeOutfit.MALE else covers("top_surf_tee", body_type)
 		"top_surf_tee":
 			return torso + PackedStringArray(["shoulder_L", "shoulder_R", "upper_arm_L", "upper_arm_R"])
 		"top_rash_guard":
@@ -52,8 +53,10 @@ static func _mats(mats: Dictionary) -> void:
 # --- bikini ---------------------------------------------------------------------------------------------------
 
 ## Sporty bralette: a triangle cup over each bust form (under the same BodySway pivot, following the bust field
-## CUP_GROW outside the skin everywhere), coral piping round the cups and the under-band, and straps over the
-## shoulders to the back band. The male body has no bust, so it gets the surf tee.
+## CUP_GROW outside the skin, easing in to CUP_EDGE_LIFT at its edges), coral piping along the cup edges and the
+## under-band, and straps over the shoulders to the back band. The cup outline is AnimeOutfit.cup_span(), the same
+## line the bust skin is split on, and the skin under the cup is hidden (covers()). The male body has no bust, so it
+## gets the surf tee.
 static func bikini(rig: Dictionary, body_type: String, mats: Dictionary) -> void:
 	if body_type == AnimeOutfit.MALE or not rig.has("BodySway_BustL"):
 		surf_tee(rig, body_type, mats)
@@ -67,25 +70,21 @@ static func bikini(rig: Dictionary, body_type: String, mats: Dictionary) -> void
 		var side: String = "L" if s < 0.0 else "R"
 		var pivot: Node3D = rig["BodySway_Bust" + side]
 		var origin: Vector3 = AnimeOutfit.bust_pivot(s)
-		var span: Callable = func(v: float) -> Vector2:
-			var k: float = clampf((v + 1.06) / 1.7, 0.0, 1.0)  ## full width up to the bottom of the form
-			var half: float = lerpf(1.06, 0.05, pow(k, 1.1))
-			var uc: float = 0.2 * k
-			return Vector2(uc - half, uc + half * 0.84)  ## the outer side stays on the front of the ribs
-		var rows: Array = AnimeOutfit.bust_rows(s, AnimeOutfit.CUP_GROW, CUP_BOTTOM_V, CUP_TOP_V, 40, 24, span)
-		SkaterParts.part(pivot, "BikiniCup" + side + "Mesh", SkaterParts.facing_grid(AnimeOutfit.rows_to_local(rows, origin),
-				Vector3.FORWARD), Vector3.ZERO, mats, "top")
-		var trim_rows: Array = AnimeOutfit.bust_rows(s, AnimeOutfit.CUP_GROW + 0.0014, CUP_BOTTOM_V, CUP_TOP_V, 40, 24, span)
+		var rows: Array = _cup_rows(s, 0.0, 40, 24)
+		SkaterParts.part(pivot, "BikiniCup" + side + "Mesh", _front_grid(AnimeOutfit.rows_to_local(rows, origin), origin), Vector3.ZERO,
+				mats, "top")
+		# Piping along both edges, from the band piping up to the strap point and back down.
+		var trim_rows: Array = _cup_rows(s, CUP_PIPING_R * 0.45, 40, 24)
 		var pts: PackedVector3Array = PackedVector3Array()
-		var first: int = 5  ## the rows below the form's rim lie under the band: no piping there
+		var first: int = 1
 		for i: int in range(first, trim_rows.size()):
 			pts.append((trim_rows[i] as PackedVector3Array)[0] - origin)
-		for i: int in range(trim_rows.size() - 1, first - 1, -1):
+		for i: int in range(trim_rows.size() - 2, first - 1, -1):
 			var row: PackedVector3Array = trim_rows[i]
 			pts.append(row[row.size() - 1] - origin)
 		var radii: PackedFloat32Array = PackedFloat32Array()
 		radii.resize(pts.size())
-		radii.fill(0.0032)
+		radii.fill(CUP_PIPING_R)
 		SkaterParts.part(pivot, "BikiniCupTrim" + side + "Mesh", SkaterParts.tube_capped(pts, radii, 6), Vector3.ZERO, mats, "top_trim")
 		var top_row: PackedVector3Array = rows[rows.size() - 1]
 		tops[s] = top_row[top_row.size() / 2]
@@ -112,6 +111,57 @@ static func bikini(rig: Dictionary, body_type: String, mats: Dictionary) -> void
 		radii.fill(0.0055)
 		SkaterParts.part(chest, ("Left" if s < 0.0 else "Right") + "BikiniStrapMesh", SkaterParts.tube_capped(pts, radii, 8),
 				Vector3.ZERO, mats, "top")
+
+
+## Open grid over rows (in a node's space whose body-space origin is `origin`) facing out from the body's vertical axis,
+## each triangle wound on its own (the cup wraps round to face the side at its outer edge) and slivers dropped.
+static func _front_grid(rows: Array, origin: Vector3) -> ArrayMesh:
+	var st: SurfaceTool = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i: int in rows.size() - 1:
+		var r0: PackedVector3Array = rows[i]
+		var r1: PackedVector3Array = rows[i + 1]
+		for k: int in r0.size() - 1:
+			for tri: Array in [[r0[k], r0[k + 1], r1[k]], [r0[k + 1], r1[k + 1], r1[k]]]:
+				var a: Vector3 = tri[0]
+				var b: Vector3 = tri[1]
+				var c: Vector3 = tri[2]
+				var n: Vector3 = (b - a).cross(c - a)
+				if n.length_squared() < 1e-13:  ## (also float32 slivers)
+					continue
+				var out: Vector3 = Vector3(a.x + origin.x, 0.0, a.z + origin.z)
+				if n.dot(out) > 0.0:  ## Godot's front faces wind clockwise
+					st.add_vertex(a)
+					st.add_vertex(c)
+					st.add_vertex(b)
+				else:
+					st.add_vertex(a)
+					st.add_vertex(b)
+					st.add_vertex(c)
+	st.index()
+	st.generate_normals()
+	return st.commit()
+
+
+## Body-space rows of the cup of side s over the bust field (AnimeOutfit.cup_span outline, n rows by cols columns),
+## lifted CUP_GROW off the skin in the middle and CUP_EDGE_LIFT at the edges, plus `extra`.
+static func _cup_rows(s: float, extra: float, n: int, cols: int) -> Array:
+	var rows: Array = []
+	for i: int in n + 1:
+		var v: float = lerpf(AnimeOutfit.CUP_BOTTOM_V, AnimeOutfit.CUP_TOP_V, float(i) / float(n))
+		var uu: Vector2 = AnimeOutfit.cup_span(v)
+		var row: PackedVector3Array = PackedVector3Array()
+		for k: int in cols + 1:
+			var t: float = float(k) / float(cols)
+			var u: float = lerpf(uu.x, uu.y, t)
+			var edge: float = minf(t, 1.0 - t) * absf(uu.y - uu.x)  ## distance to the nearer edge, in u
+			var x: float = AnimeOutfit.bust_x(u, s)
+			var y: float = AnimeOutfit.bust_y(v)
+			var side: float = AnimeOutfit.side_factor(AnimeOutfit.chest_skin(x, y)[1] as Vector3)
+			var lift: float = lerpf(CUP_EDGE_LIFT, AnimeOutfit.CUP_GROW, smoothstep(0.0, 0.35, edge)) + extra
+			row.append(AnimeOutfit.chest_front_point(x, y, lift + AnimeOutfit.SIDE_SINK * side))
+		rows.append(row)
+	return rows
 
 
 # --- shirts ---------------------------------------------------------------------------------------------------

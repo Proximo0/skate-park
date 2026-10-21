@@ -26,8 +26,8 @@ const PELVIS: Array = [
 const WAIST: Array = [
 	[0.9, 0.07, 0.05, 0.05, 1.0, 0.0], [0.925, 0.124, 0.08, 0.079, 0.92, -0.003],
 	[0.96, 0.108, 0.076, 0.071, 1.0, -0.006], [0.99, 0.102, 0.074, 0.067, 1.0, -0.006],
-	[1.04, 0.106, 0.077, 0.069, 1.0, -0.004], [1.075, 0.092, 0.064, 0.06, 1.0, -0.002],
-	[1.11, 0.05, 0.035, 0.035, 1.0, 0.0],
+	[1.04, 0.098, 0.062, 0.064, 1.0, -0.004], [1.075, 0.074, 0.04, 0.05, 1.0, -0.002],
+	[1.11, 0.04, 0.025, 0.03, 1.0, 0.0],
 ]
 ## Ribcage, shoulders and neck base, on the Chest joint. Narrow ribs (about 70% of the hips), flat back, sloped
 ## trapezius from the shoulder line up into the neck.
@@ -75,19 +75,30 @@ const NECK_M: Array = [
 
 # --- bust (female) ----------------------------------------------------------------------------------------------
 # Each bust form is a smooth height field over the ribcage's front surface, so it rises out of the skin with no seam:
-# height BUST_HEIGHT at the apex, falling to zero (and a hair under the skin) at its rim. The rim reaches up under
-# the collarbones in a long shallow slope; the lower half is fuller and rounder. Each form hangs under its own
-# BodySway_BustL/R pivot so secondary motion can sway it; the bikini cups follow the same field.
-const BUST_APEX: Vector2 = Vector2(0.066, 1.13)  ## body space (x on the +x side, y)
-const BUST_R_IN: float = 0.05  ## rim distance toward the centre line
-const BUST_R_OUT: float = 0.06  ## rim distance toward the arm
-const BUST_R_DOWN: float = 0.052
-const BUST_R_UP: float = 0.1  ## long upper slope, up under the collarbones
-const BUST_HEIGHT: float = 0.05
-const BUST_SINK: float = 0.0015  ## the rim sits this far under the skin, so the patch edge never shows
-const BUST_PIVOT_Y: float = 1.15  ## pivot height (body space): sway hinges near the upper root
+# height BUST_HEIGHT at the apex, falling to zero (and a hair under the skin) at its rim. The rim's top reaches up to
+# about 5 cm under the collarbones in a long soft slope (no shelf); the lower pole is fuller and rounder, ending in a
+# soft crease on the under-band line. The forms stay on the front of the ribcage (outer rim inside the ribs' side)
+# with a small gap between them. Each form hangs under its own BodySway_BustL/R pivot so secondary motion can sway
+# it; the bikini cups follow the same field.
+const BUST_APEX: Vector2 = Vector2(0.064, 1.142)  ## body space (x on the +x side, y)
+const BUST_R_IN: float = 0.047  ## rim distance toward the centre line
+const BUST_R_OUT: float = 0.05  ## rim distance toward the arm
+const BUST_R_DOWN: float = 0.077  ## under-bust crease at about 1.065
+const BUST_R_UP: float = 0.122  ## long upper slope, its top about 5 cm under the collarbones
+const BUST_HEIGHT: float = 0.048
+const BUST_SINK: float = 0.0025  ## the rim sits this far under the skin, so the patch edge never shows
+const BUST_PIVOT_Y: float = 1.165  ## pivot height (body space): sway hinges above the apex, toward the upper root
 const CUP_GROW: float = 0.0045
-const TOP_BAND: Vector2 = Vector2(1.04, 1.074)  ## bralette under-band, body y
+const SIDE_SINK: float = 0.004  ## extra sink of the bust skin's rim (and lift of the cups) toward the ribs' side
+const TOP_BAND: Vector2 = Vector2(1.034, 1.066)  ## bralette under-band, body y (its top on the under-bust crease)
+## Triangle cup outline in bust-field coordinates (shared by the skin split and the bikini cups): rows from
+## CUP_BOTTOM_V (on the under-band) to CUP_TOP_V (the strap point), each row spanning cup_span(v).
+const CUP_BOTTOM_V: float = -1.03
+const CUP_TOP_V: float = 0.6
+const CUP_TIP_U: float = 0.12
+## Bust skin under the cup stops this far (in u) inside the cup's inner (x) and outer (y) edges; the visible skin
+## outside runs on under the cup edge to meet it. More on the inside, where the form's wall is steep.
+const CUP_SKIN_INSET: Vector2 = Vector2(0.15, 0.05)
 
 static var _front_cache: Dictionary = {}
 
@@ -244,8 +255,18 @@ static func bust_height(x_abs: float, y: float) -> float:
 	var d2: float = u * u + v * v
 	if d2 >= 1.0:
 		return -BUST_SINK
-	var e: float = 0.9 + 1.3 * smoothstep(-0.25, 0.55, v)  ## full and round below, a long soft slope above
+	var e: float = 0.78 + 1.5 * smoothstep(-0.3, 0.75, v)  ## full and round below, a long soft slope above
 	return BUST_HEIGHT * pow(1.0 - d2, e) - BUST_SINK
+
+
+## Cup outline at bust-field row v: Vector2(u at the inner edge, u at the outer edge). A rounded triangle: full width
+## over the lower pole and the outer flank (the whole form below the apex is covered), narrowing to the strap point.
+static func cup_span(v: float) -> Vector2:
+	var k: float = clampf((v - CUP_BOTTOM_V) / (CUP_TOP_V - CUP_BOTTOM_V), 0.0, 1.0)
+	var ko: float = clampf((v + 0.2) / (CUP_TOP_V + 0.2), 0.0, 1.0)  ## the outer side arcs round the flank to the tip
+	var tip_l: float = CUP_TIP_U - 0.03  ## the tip keeps a little width (the strap's), so no row collapses to a point
+	var tip_r: float = CUP_TIP_U + 0.03
+	return Vector2(lerpf(-1.03, tip_l, pow(k, 1.5)), tip_r + (1.04 - tip_r) * sqrt(1.0 - ko * ko))
 
 
 ## Body-space x of the bust field at rim coordinate u (signed: + toward the arm) on side s.
@@ -309,6 +330,42 @@ static func _full_span(_v: float) -> Vector2:
 	return Vector2(-1.04, 1.04)
 
 
+static func _span_inner(v: float) -> Vector2:
+	var c: Vector2 = _skin_cut(v)
+	return Vector2(-1.04, c.x)
+
+
+static func _span_cup(v: float) -> Vector2:
+	return _skin_cut(v)
+
+
+static func _span_outer(v: float) -> Vector2:
+	var c: Vector2 = _skin_cut(v)
+	return Vector2(c.y, 1.04)
+
+
+## Where the bust skin splits at row v: the cup outline moved CUP_SKIN_INSET inward (collapsing at the tip).
+static func _skin_cut(v: float) -> Vector2:
+	var cs: Vector2 = cup_span(v)
+	var mid: float = (cs.x + cs.y) * 0.5
+	var shut: float = (cs.y - cs.x) * 0.5 * smoothstep(CUP_TOP_V - 0.45, CUP_TOP_V - 0.2, v)  ## closes below the tip
+	return Vector2(minf(cs.x + CUP_SKIN_INSET.x + shut, mid), maxf(cs.y - CUP_SKIN_INSET.y - shut, mid))
+
+
+## 0 on the front of the ribs, 1 where the ribcage's normal turns to the side (|n.x| from 0.35 to 0.8).
+static func side_factor(rib_normal: Vector3) -> float:
+	return smoothstep(0.35, 0.8, absf(rib_normal.x))
+
+
+## Outward unit normal of the bust skin (the height field over the ribs) at bust-field (u, v) on side s, body space.
+static func bust_normal(u: float, v: float, s: float) -> Vector3:
+	var e: float = 0.01
+	var pu: Vector3 = chest_front_point(bust_x(u + e, s), bust_y(v), 0.0) - chest_front_point(bust_x(u - e, s), bust_y(v), 0.0)
+	var pv: Vector3 = chest_front_point(bust_x(u, s), bust_y(v + e), 0.0) - chest_front_point(bust_x(u, s), bust_y(v - e), 0.0)
+	var n: Vector3 = pu.cross(pv).normalized()
+	return -n if n.z > 0.0 else n
+
+
 ## Rows moved from body space into a node's space given that node's body-space origin.
 static func rows_to_local(rows: Array, origin: Vector3) -> Array:
 	var out: Array = []
@@ -320,15 +377,72 @@ static func rows_to_local(rows: Array, origin: Vector3) -> Array:
 	return out
 
 
-## Bust forms: a height-field patch over each side of the ribcage, under its BodySway_Bust pivot.
+## Bust forms: a height-field patch over each side of the ribcage, under its BodySway_Bust pivot, in four pieces that
+## share their edges and their (analytic) normals, so the bare form is one smooth surface: the part under the bikini
+## cup (region "bust_L"/"bust_R", which the bikini hides), the skin beside the cup on the inside and the outside, and
+## the upper slope above the strap point (region "chest": a top that covers the chest covers them too).
 static func _bust(chest: Node3D, chest_y: float, mats: Dictionary) -> void:
 	for s: float in [-1.0, 1.0]:
 		var side: String = "L" if s < 0.0 else "R"
 		var root: Vector3 = bust_pivot(s)
 		var pivot: Node3D = SkaterParts.joint(chest, "BodySway_Bust" + side, root - Vector3(0.0, chest_y, 0.0))
-		var rows: Array = bust_rows(s, 0.0, -1.04, 1.04, 26, 24, _full_span)
-		SkaterParts.tag_region(SkaterParts.part(pivot, "Bust" + side + "Mesh", SkaterParts.facing_grid(rows_to_local(rows, root),
-				Vector3.FORWARD), Vector3.ZERO, mats, "skin"), "bust_" + side)
+		var v0: float = -1.04
+		var vt: float = CUP_TOP_V
+		var pieces: Array = [
+			["Bust" + side + "Mesh", "bust_" + side, v0, vt, 48, 28, _span_cup],
+			["Bust" + side + "InnerMesh", "chest", v0, vt, 48, 10, _span_inner],
+			["Bust" + side + "OuterMesh", "chest", v0, vt, 48, 8, _span_outer],
+			["Bust" + side + "TopMesh", "chest", vt, 1.04, 14, 24, _full_span],
+		]
+		for pc: Array in pieces:
+			var mesh: ArrayMesh = _bust_patch(s, root, float(pc[2]), float(pc[3]), int(pc[4]), int(pc[5]), pc[6])
+			SkaterParts.tag_region(SkaterParts.part(pivot, str(pc[0]), mesh, Vector3.ZERO, mats, "skin"), str(pc[1]))
+
+
+## One piece of a bust form: rows v0..v1 (n rows), each from span(v).x to span(v).y (cols columns), in the pivot's
+## space (origin = the pivot's body-space position), facing out, with the field's analytic normals.
+static func _bust_patch(s: float, origin: Vector3, v0: float, v1: float, n: int, cols: int, span: Callable) -> ArrayMesh:
+	var pts: Array = []
+	var nrm: Array = []
+	for i: int in n + 1:
+		var v: float = lerpf(v0, v1, float(i) / float(n))
+		var uu: Vector2 = span.call(v)
+		var pr: PackedVector3Array = PackedVector3Array()
+		var nr: PackedVector3Array = PackedVector3Array()
+		for k: int in cols + 1:
+			var u: float = lerpf(uu.x, uu.y, float(k) / float(cols))
+			var x: float = bust_x(u, s)
+			var y: float = bust_y(v)
+			var sn: Array = chest_skin(x, y)
+			# Toward the ribs' side the form's flank runs almost along the ribs: sink its rim deeper there so it meets
+			# them cleanly, and where it comes out of the ribs give it their normal, so the meeting line shades as one
+			# surface (no flecks along it).
+			var sink: float = SIDE_SINK * side_factor(sn[1] as Vector3)
+			pr.append(chest_front_point(x, y, -sink) - origin)
+			var above: float = maxf(bust_height(absf(x), y), -BUST_SINK) - sink
+			nr.append((sn[1] as Vector3).lerp(bust_normal(u, v, s), smoothstep(0.0, 0.006, above)).normalized())
+		pts.append(pr)
+		nrm.append(nr)
+	var st: SurfaceTool = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i: int in n:
+		for k: int in cols:
+			var quad: Array = [[i, k], [i, k + 1], [i + 1, k], [i, k + 1], [i + 1, k + 1], [i + 1, k]]
+			for t: int in 2:
+				var tri: Array = quad.slice(t * 3, t * 3 + 3)
+				var a: Vector3 = (pts[tri[0][0]] as PackedVector3Array)[tri[0][1]]
+				var b: Vector3 = (pts[tri[1][0]] as PackedVector3Array)[tri[1][1]]
+				var c: Vector3 = (pts[tri[2][0]] as PackedVector3Array)[tri[2][1]]
+				if (b - a).cross(c - a).length_squared() < 1e-14:
+					continue  ## the cup piece closes to zero width below the strap point
+				var order: Array = tri
+				var fn: Vector3 = (b - a).cross(c - a)
+				if fn.dot((nrm[tri[0][0]] as PackedVector3Array)[tri[0][1]]) > 0.0:  ## Godot's front faces wind clockwise
+					order = [tri[0], tri[2], tri[1]]
+				for ik: Array in order:
+					st.set_normal((nrm[ik[0]] as PackedVector3Array)[ik[1]])
+					st.add_vertex((pts[ik[0]] as PackedVector3Array)[ik[1]])
+	return st.commit()
 
 
 ## Smoothed sections cut to [y0, y1], with exact end sections.

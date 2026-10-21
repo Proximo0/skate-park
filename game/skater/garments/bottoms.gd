@@ -1,10 +1,14 @@
 class_name GarmentBottoms
 extends RefCounted
 ## Bottom garments (slot "bottom"). Contract and registration: see Wardrobe (game/skater/wardrobe.gd).
-## Built: bottom_bikini (female; the male body gets board shorts), bottom_board_shorts.
-## Palette keys: "bottom" (main fabric) and "bottom_trim" (piping, waistband, side stripe, drawstring).
+## Built: bottom_bikini (female; the male body gets board shorts), bottom_board_shorts, bottom_cargo_shorts (knee-length,
+## pockets with flaps, belt), bottom_skate_jeans (baggy denim, stacked hem, knee fade) and bottom_joggers (tapered,
+## cuffed, drawstring, side stripe).
+## Palette keys: "bottom" (main fabric) and "bottom_trim" (piping, side stripe, drawstring, belt, stitching). The jeans'
+## knee fade is "bottom_fade" (made from the bottom colour when the palette has no such key), the belt buckle is
+## "bottom_metal".
 
-const STUBS: PackedStringArray = ["bottom_cargo_shorts", "bottom_skate_jeans", "bottom_joggers"]
+const STUBS: PackedStringArray = []
 const BOTTOM_DEFAULT: Color = Color(0.07, 0.66, 0.7)
 const TRIM_DEFAULT: Color = Color(1.0, 0.5, 0.4)
 ## Bikini: leg-cut height (body y) over the hips and at the front and back centre, and the waistband height.
@@ -25,9 +29,9 @@ static func builders() -> Dictionary:
 	return {
 		"bottom_bikini": GarmentBottoms.bikini,
 		"bottom_board_shorts": GarmentBottoms.board_shorts,
-		"bottom_cargo_shorts": GarmentBottoms._stub.bind("bottom_cargo_shorts"),
-		"bottom_skate_jeans": GarmentBottoms._stub.bind("bottom_skate_jeans"),
-		"bottom_joggers": GarmentBottoms._stub.bind("bottom_joggers"),
+		"bottom_cargo_shorts": GarmentBottoms.cargo_shorts,
+		"bottom_skate_jeans": GarmentBottoms.skate_jeans,
+		"bottom_joggers": GarmentBottoms.joggers,
 	}
 
 
@@ -40,12 +44,15 @@ static func covers(id: String, body_type: String) -> PackedStringArray:
 		"bottom_board_shorts":
 			return PackedStringArray(["pelvis", "hip_band", "waist_low", "thigh_top_L", "thigh_top_R", "thigh_upper_L",
 					"thigh_upper_R"])
+		"bottom_cargo_shorts":
+			return covers("bottom_board_shorts", body_type)
+		"bottom_skate_jeans":
+			return PackedStringArray(["pelvis", "hip_band", "waist_low", "thigh_top_L", "thigh_top_R", "thigh_upper_L",
+					"thigh_upper_R", "thigh_lower_L", "thigh_lower_R", "knee_L", "knee_R", "calf_L", "calf_R"])
+		"bottom_joggers":  ## the jeans' hem and the cuff end over the shoe collar, above the tongue: calf_low stays skin (or sock)
+			return PackedStringArray(["pelvis", "hip_band", "waist_low", "thigh_top_L", "thigh_top_R", "thigh_upper_L",
+					"thigh_upper_R", "thigh_lower_L", "thigh_lower_R", "knee_L", "knee_R", "calf_L", "calf_R"])
 	return PackedStringArray()
-
-
-static func _stub(rig: Dictionary, body_type: String, mats: Dictionary, id: String) -> void:
-	var fallback: Callable = GarmentBottoms.board_shorts if body_type == AnimeOutfit.MALE else GarmentBottoms.bikini
-	Wardrobe.stub(rig, body_type, mats, "bottom", id, fallback)
 
 
 static func _mats(mats: Dictionary) -> void:
@@ -237,3 +244,456 @@ static func board_shorts(rig: Dictionary, body_type: String, mats: Dictionary) -
 			right.append(p + Vector3(0.0, 0.0, 0.013))
 		SkaterParts.part(upper, side + "BoardShortsStripeMesh", SkaterParts.facing_grid([left, right], Vector3(s, 0.0, 0.0)),
 				Vector3.ZERO, mats, "bottom_trim")
+
+
+# --- shared: waist, loose legs --------------------------------------------------------------------------------
+
+## Closed rounded end of a knee piece (metres past the knee joint).
+const KNEE_E: float = 0.055
+const BELT_LOOP_ANGLES: Array = [0.8, -0.8, 2.15, -2.15, PI]
+const METAL_DEFAULT: Color = Color(0.82, 0.78, 0.62)
+## Cargo pocket on the outer-front thigh (thigh-space y, centre angle, half angle, bulge); flap above it.
+const POCKET_Y0: float = -0.125
+const POCKET_Y1: float = -0.285
+const POCKET_A: float = 1.2
+const POCKET_HA: float = 0.5
+const POCKET_BULGE: float = 0.024
+## Leg profiles: rows [d, grow, floor half width, floor depth]. d = metres down the leg from the hip joint; the
+## cloth section is the skin section plus grow, but at least the floor (baggy cut).
+const CARGO_PROF: Array = [
+	[-0.1, 0.012, 0.0, 0.0], [0.0, 0.018, 0.085, 0.092], [0.2, 0.02, 0.09, 0.098], [0.4, 0.024, 0.093, 0.1],
+]
+const JEANS_PROF: Array = [
+	[-0.1, 0.012, 0.0, 0.0], [0.0, 0.016, 0.085, 0.09], [0.2, 0.018, 0.088, 0.094], [0.4, 0.024, 0.088, 0.094],
+	[0.5, 0.03, 0.085, 0.092], [0.62, 0.03, 0.08, 0.088], [0.74, 0.03, 0.078, 0.086],
+]
+const JOGGER_PROF: Array = [
+	[-0.1, 0.012, 0.0, 0.0], [0.0, 0.016, 0.0, 0.0], [0.2, 0.02, 0.0, 0.0], [0.4, 0.024, 0.0, 0.0],
+	[0.5, 0.026, 0.0, 0.0], [0.57, 0.03, 0.0, 0.0], [0.62, 0.028, 0.0, 0.0], [0.655, 0.0115, 0.0, 0.0],
+]
+
+
+## Fabric metrics at distance d: [grow, floor half width, floor depth], linear between the rows of `p`.
+static func _prof(p: Array, d: float) -> Array:
+	var first: Array = p[0]
+	if d <= float(first[0]):
+		return [first[1], first[2], first[3]]
+	for i: int in p.size() - 1:
+		var a: Array = p[i]
+		var b: Array = p[i + 1]
+		if d <= float(b[0]):
+			var t: float = (d - float(a[0])) / (float(b[0]) - float(a[0]))
+			return [lerpf(float(a[1]), float(b[1]), t), lerpf(float(a[2]), float(b[2]), t), lerpf(float(a[3]), float(b[3]), t)]
+	var last: Array = p[p.size() - 1]
+	return [last[1], last[2], last[3]]
+
+
+## Point of a loose leg's cloth at LowerLeg/UpperLeg-space height y and angle a (0 = front). thigh: the piece hangs on
+## the UpperLeg (y runs down to and past the knee); else on the LowerLeg (y up to +KNEE_E above the knee). Past the
+## knee the cloth closes in a rounded end. extra stands the point off the cloth.
+static func _leg_pt(secs: Array, thigh: bool, ul: float, prof: Array, y: float, a: float, extra: float = 0.0) -> Vector3:
+	var over: float = (-y - ul) if thigh else y
+	var d: float = -y if thigh else ul - y
+	var sec: Array = (SkaterParts.section_at(secs, y if thigh else minf(y, 0.0)) as Array).duplicate()
+	var pr: Array = _prof(prof, d)
+	var lift: float = smoothstep(-0.08, 0.04, d)
+	sec[1] = maxf(float(sec[1]) + float(pr[0]), float(pr[1]) * lift)
+	sec[2] = maxf(float(sec[2]) + float(pr[0]), float(pr[2]) * lift)
+	sec[3] = maxf(float(sec[3]) + float(pr[0]), float(pr[2]) * lift)
+	var p: Vector3 = SkaterParts.section_point(sec, a, extra)
+	if over > 0.0:
+		var k: float = sqrt(maxf(1.0 - pow(over / KNEE_E, 2.0), 0.0))
+		p.x = lerpf(float(sec[6]), p.x, k)
+		p.z = lerpf(float(sec[5]), p.z, k)
+	return Vector3(p.x, y, p.z)
+
+
+## Closed grid of a loose leg piece. Row heights are Callables(a) -> y, listed top to bottom.
+static func _leg_mesh(secs: Array, thigh: bool, ul: float, prof: Array, rows_y: Array, cols: int, extra: float) -> ArrayMesh:
+	var rows: Array = []
+	for fn: Callable in rows_y:
+		var ring: PackedVector3Array = PackedVector3Array()
+		for k: int in cols:
+			var a: float = TAU * float(k) / float(cols)
+			ring.append(_leg_pt(secs, thigh, ul, prof, float(fn.call(a)), a, extra))
+		rows.append(ring)
+	rows.reverse()
+	return SkaterParts.grid(rows, true)
+
+
+static func _const_y(y: float) -> Callable:
+	return func(_a: float) -> float: return y
+
+
+static func _lerp_y(y0: float, hem: Callable, f: float) -> Callable:
+	return func(a: float) -> float: return lerpf(y0, float(hem.call(a)), f)
+
+
+## Rows from y_top down to the knee (UpperLeg space) and then the rounded end past the knee.
+static func _thigh_rows(ul: float, y_top: float, n: int) -> Array:
+	var rows: Array = []
+	for i: int in n + 1:
+		rows.append(_const_y(lerpf(y_top, -ul, float(i) / float(n))))
+	for o: float in [0.4, 0.75, 0.93, 0.995]:
+		rows.append(_const_y(-ul - KNEE_E * o))
+	return rows
+
+
+## Rows of the lower leg: the rounded end above the knee, then down to the hem.
+static func _calf_rows(hem: Callable, n: int) -> Array:
+	var rows: Array = []
+	for o: float in [0.995, 0.93, 0.75, 0.4]:
+		rows.append(_const_y(KNEE_E * o))
+	for i: int in n + 1:
+		rows.append(_lerp_y(0.0, hem, float(i) / float(n)))
+	return rows
+
+
+## Closed polyline round a loose leg piece at heights y_of(a) (for hems and folds).
+static func _leg_line(secs: Array, thigh: bool, ul: float, prof: Array, y_of: Callable, extra: float, cols: int = 36) -> PackedVector3Array:
+	var pts: PackedVector3Array = PackedVector3Array()
+	for k: int in cols + 1:
+		var a: float = TAU * float(k) / float(cols)
+		pts.append(_leg_pt(secs, thigh, ul, prof, float(y_of.call(a)), a, extra))
+	return pts
+
+
+static func _tube_part(parent: Node3D, part_name: String, pts: PackedVector3Array, r: float, mats: Dictionary, key: String) -> void:
+	var radii: PackedFloat32Array = PackedFloat32Array()
+	radii.resize(pts.size())
+	radii.fill(r)
+	SkaterParts.part(parent, part_name, SkaterParts.tube(pts, radii, 6), Vector3.ZERO, mats, key)
+
+
+## Seat over the pelvis (Hips) up to top_y with a waistband of band_h in band_key, and a lining round the low waist
+## (Spine) so a bent spine never shows skin. Same construction as the board shorts.
+static func _waist(rig: Dictionary, mats: Dictionary, prefix: String, top_y: float, grow: float, band_h: float, band_key: String) -> void:
+	var hips: Node3D = rig["Hips"]
+	var base: float = float(rig["rest_y"]["Hips"])
+	var pelvis: Array = rig["sections"]["pelvis"]
+	var seat: Array = AnimeOutfit.clip(pelvis, float(pelvis[0][0]), top_y - base)
+	var gusset: Array = (seat[0] as Array).duplicate()
+	gusset[0] = float(gusset[0]) - 0.008
+	seat.push_front(gusset)
+	SkaterParts.part(hips, prefix + "SeatMesh", SkaterParts.loft(seat, 36, grow), Vector3.ZERO, mats, "bottom")
+	SkaterParts.part(hips, prefix + "WaistbandMesh", SkaterParts.loft(AnimeOutfit.clip(pelvis, top_y - band_h - base, top_y - base),
+			36, grow + 0.003), Vector3.ZERO, mats, band_key)
+	var spine_y: float = float(rig["rest_y"]["Spine"])
+	var waist: Array = rig["sections"]["waist"]
+	var band_low: float = top_y - band_h - spine_y
+	SkaterParts.part(rig["Spine"], prefix + "WaistMesh", SkaterParts.loft(AnimeOutfit.clip(waist, float(waist[0][0]), band_low), 32,
+			grow + 0.001), Vector3.ZERO, mats, "bottom")
+	SkaterParts.part(rig["Spine"], prefix + "WaistBandLiningMesh", SkaterParts.loft(AnimeOutfit.clip(waist, band_low, top_y - spine_y),
+			32, grow + 0.001), Vector3.ZERO, mats, band_key)
+
+
+## Belt loops: short rods standing proud of the waistband at the given angles.
+static func _loops(rig: Dictionary, mats: Dictionary, prefix: String, top_y: float, grow: float, key: String) -> void:
+	var base: float = float(rig["rest_y"]["Hips"])
+	var pelvis: Array = rig["sections"]["pelvis"]
+	for i: int in BELT_LOOP_ANGLES.size():
+		var pts: PackedVector3Array = PackedVector3Array()
+		for j: int in 3:
+			var y: float = top_y + 0.002 - 0.034 * float(j) / 2.0
+			pts.append(SkaterParts.section_point(SkaterParts.section_at(pelvis, y - base), float(BELT_LOOP_ANGLES[i]), grow))
+		var rr: PackedFloat32Array = PackedFloat32Array([0.0045, 0.0045, 0.0045])
+		SkaterParts.part(rig["Hips"], "%sBeltLoop%dMesh" % [prefix, i], SkaterParts.tube_capped(pts, rr, 6), Vector3.ZERO, mats, key)
+
+
+## Outer thigh point row for a flat patch: width across z at the outer side line.
+static func _side_line(secs: Array, thigh: bool, ul: float, prof: Array, s: float, y0: float, y1: float, n: int, extra: float) -> PackedVector3Array:
+	var pts: PackedVector3Array = PackedVector3Array()
+	for i: int in n + 1:
+		pts.append(_leg_pt(secs, thigh, ul, prof, lerpf(y0, y1, float(i) / float(n)), s * PI * 0.5, extra))
+	return pts
+
+
+## A stripe lying on the outer side of a leg piece, half_w wide.
+static func _side_stripe(parent: Node3D, part_name: String, pts: PackedVector3Array, s: float, half_w: float, mats: Dictionary, key: String) -> void:
+	var left: PackedVector3Array = PackedVector3Array()
+	var right: PackedVector3Array = PackedVector3Array()
+	for p: Vector3 in pts:
+		left.append(p + Vector3(0.0, 0.0, -half_w))
+		right.append(p + Vector3(0.0, 0.0, half_w))
+	SkaterParts.part(parent, part_name, SkaterParts.facing_grid([left, right], Vector3(s, 0.0, 0.0)), Vector3.ZERO, mats, key)
+
+
+# --- cargo shorts ---------------------------------------------------------------------------------------------
+
+## Edge distance (m) of the cargo pocket at thigh-space y and angle a on side s: 0 on the outline, grows inwards.
+static func _pocket_edge(y: float, a: float, s: float) -> float:
+	var da: float = absf(a - s * POCKET_A)
+	var across: float = (1.0 - da / POCKET_HA) * 0.05
+	return minf(across, minf(y - POCKET_Y1, POCKET_Y0 - y))
+
+
+static func _pocket_bulge(y: float, a: float, s: float) -> float:
+	return POCKET_BULGE * smoothstep(0.0, 1.0, clampf(_pocket_edge(y, a, s) / 0.009, 0.0, 1.0))
+
+
+## Knee-length roomy cargo shorts: seat with a belt and belt loops, straight wide legs to the knee with a turned hem,
+## and on each outer thigh a bellows pocket with a flap (pointed, stitched, buttoned).
+static func cargo_shorts(rig: Dictionary, _body_type: String, mats: Dictionary) -> void:
+	_mats(mats)
+	Wardrobe.mat(mats, "bottom_metal", METAL_DEFAULT)
+	var hips: Node3D = rig["Hips"]
+	var base: float = float(rig["rest_y"]["Hips"])
+	var pelvis: Array = rig["sections"]["pelvis"]
+	_waist(rig, mats, "Cargo", SHORTS_TOP_Y, SHORTS_GROW, 0.026, "bottom")
+	# Belt in the trim colour over the waistband, loops over it, a buckle with a tail at the front.
+	var belt_g: float = SHORTS_GROW + 0.0075
+	SkaterParts.part(hips, "CargoBeltMesh", SkaterParts.loft(AnimeOutfit.clip(pelvis, SHORTS_TOP_Y - 0.03 - base, SHORTS_TOP_Y - 0.006 - base),
+			36, belt_g), Vector3.ZERO, mats, "bottom_trim")
+	_loops(rig, mats, "Cargo", SHORTS_TOP_Y, belt_g + 0.0025, "bottom")
+	var front: Array = SkaterParts.section_at(pelvis, SHORTS_TOP_Y - 0.018 - base)
+	SkaterParts.part(hips, "CargoBuckleMesh", SkaterParts.box(Vector3(0.03, 0.026, 0.006)),
+			SkaterParts.section_point(front, 0.0, belt_g + 0.003), mats, "bottom_metal")
+	SkaterParts.part(hips, "CargoBuckleHoleMesh", SkaterParts.box(Vector3(0.018, 0.014, 0.004)),
+			SkaterParts.section_point(front, 0.0, belt_g + 0.0065), mats, "bottom_trim")
+	var tail: PackedVector3Array = PackedVector3Array()
+	for i: int in 6:
+		var t: float = float(i) / 5.0
+		tail.append(SkaterParts.section_point(SkaterParts.section_at(pelvis, SHORTS_TOP_Y - 0.018 - base), 0.13 + 0.3 * t, belt_g + 0.0045))
+	var tr: PackedFloat32Array = PackedFloat32Array([0.0042, 0.0042, 0.0042, 0.0042, 0.0042, 0.0042])
+	SkaterParts.part(hips, "CargoBeltTailMesh", SkaterParts.tube_capped(tail, tr, 6), Vector3.ZERO, mats, "bottom_trim")
+	# Legs.
+	var secs: Array = rig["sections"]["thigh"]
+	var ul: float = float(rig["lengths"]["upper_leg"])
+	var y_hem: float = -0.965 * ul
+	for sd: Array in Wardrobe.sides():
+		var side: String = sd[0]
+		var s: float = sd[1]
+		var upper: Node3D = rig[side + "UpperLeg"]
+		var rows: Array = []
+		for i: int in 17:
+			rows.append(_const_y(lerpf(0.2 * ul, y_hem, float(i) / 16.0)))
+		SkaterParts.part(upper, side + "CargoLegMesh", _leg_mesh(secs, true, ul, CARGO_PROF, rows, 32, 0.0), Vector3.ZERO, mats, "bottom")
+		var hem: PackedVector3Array = _leg_line(secs, true, ul, CARGO_PROF, _const_y(y_hem), 0.002)
+		_tube_part(upper, side + "CargoHemMesh", hem, 0.0052, mats, "bottom")
+		_tube_part(upper, side + "CargoHemStitchMesh", _leg_line(secs, true, ul, CARGO_PROF, _const_y(y_hem + 0.017), 0.0016), 0.0017,
+				mats, "bottom_trim")
+		_cargo_pocket(upper, side, s, secs, ul, mats)
+
+
+static func _cargo_pocket(upper: Node3D, side: String, s: float, secs: Array, ul: float, mats: Dictionary) -> void:
+	var prof: Array = CARGO_PROF
+	var ac: float = s * POCKET_A
+	# Pocket bag: a patch on the leg that swells into a box with rounded edges.
+	var rows: Array = []
+	var nv: int = 14
+	var nu: int = 14
+	for i: int in nv + 1:
+		var y: float = lerpf(POCKET_Y0, POCKET_Y1, float(i) / float(nv))
+		var row: PackedVector3Array = PackedVector3Array()
+		for j: int in nu + 1:
+			var a: float = ac + POCKET_HA * (2.0 * float(j) / float(nu) - 1.0)
+			row.append(_leg_pt(secs, true, ul, prof, y, a, 0.0012 + _pocket_bulge(y, a, s)))
+		rows.append(row)
+	SkaterParts.part(upper, side + "CargoPocketMesh", SkaterParts.facing_grid(rows, Vector3(s, 0.0, 0.0)), Vector3.ZERO, mats, "bottom")
+	# Flap: from the pocket's top edge, a pointed lower edge.
+	var f_top: float = POCKET_Y0 + 0.004
+	var f_ha: float = POCKET_HA + 0.03
+	var flap_y: Callable = func(a: float) -> float:
+		return POCKET_Y0 - 0.058 - 0.02 * (1.0 - clampf(absf(a - ac) / f_ha, 0.0, 1.0))
+	var frows: Array = []
+	for i: int in 7:
+		var f: float = float(i) / 6.0
+		var row2: PackedVector3Array = PackedVector3Array()
+		for j: int in 17:
+			var a2: float = ac + f_ha * (2.0 * float(j) / 16.0 - 1.0)
+			var y2: float = lerpf(f_top, float(flap_y.call(a2)), f)
+			row2.append(_leg_pt(secs, true, ul, prof, y2, a2, 0.0016 + _pocket_bulge(clampf(y2, POCKET_Y1, POCKET_Y0), a2, s) + 0.0042))
+		frows.append(row2)
+	SkaterParts.part(upper, side + "CargoFlapMesh", SkaterParts.facing_grid(frows, Vector3(s, 0.0, 0.0)), Vector3.ZERO, mats, "bottom")
+	var edge: PackedVector3Array = PackedVector3Array()
+	for j: int in 25:
+		var a3: float = ac + f_ha * (2.0 * float(j) / 24.0 - 1.0)
+		var y3: float = float(flap_y.call(a3))
+		edge.append(_leg_pt(secs, true, ul, prof, y3, a3, 0.0016 + _pocket_bulge(clampf(y3, POCKET_Y1, POCKET_Y0), a3, s) + 0.0048))
+	_tube_part(upper, side + "CargoFlapEdgeMesh", edge, 0.0022, mats, "bottom_trim")
+	var bp: Vector3 = _leg_pt(secs, true, ul, prof, POCKET_Y0 - 0.062, ac, 0.0016 + _pocket_bulge(POCKET_Y0 - 0.062, ac, s) + 0.0075)
+	SkaterParts.part(upper, side + "CargoButtonMesh", SkaterParts.sphere_small(0.0055), bp, mats, "bottom_trim")
+
+
+# --- skate jeans ----------------------------------------------------------------------------------------------
+
+## Jeans hem height (LowerLeg y) at angle a: lower at the sides, riding up over the shoe at the front and back.
+static func _jeans_hem(a: float) -> float:
+	var c: float = cos(a)
+	return -0.338 + 0.09 * pow(maxf(c, 0.0), 1.8) + 0.05 * pow(maxf(-c, 0.0), 3.0)
+
+
+## Back-pocket outline point: u across (0..1), v down (0..1), centred at x = xc on the pelvis at the back.
+static func _back_pocket_pt(pelvis: Array, base: float, xc: float, u: float, v: float, grow: float) -> Vector3:
+	var y_top: float = 0.945
+	var y_bot: float = 0.862 - 0.016 * (1.0 - absf(2.0 * u - 1.0))
+	var y: float = lerpf(y_top, y_bot, v)
+	var sec: Array = SkaterParts.section_at(pelvis, y - base)
+	var x: float = xc + 0.05 * (2.0 * u - 1.0) * lerpf(1.0, 0.92, v)
+	return SkaterParts.section_point(sec, SkaterParts.section_angle_for_x(sec, x, false), grow)
+
+
+## Baggy straight-leg jeans (90s skate): low-slung waistband with belt loops, a button and fly stitching, patch back
+## pockets with stitching, wide straight legs that stack in ruffles over the shoe, and a faded patch on each knee
+## (a second, lighter material band, "bottom_fade").
+static func skate_jeans(rig: Dictionary, _body_type: String, mats: Dictionary) -> void:
+	_mats(mats)
+	var base_col: Color = (mats["bottom"] as StandardMaterial3D).albedo_color
+	Wardrobe.mat(mats, "bottom_fade", base_col.lerp(Color(0.85, 0.9, 1.0), 0.2))
+	Wardrobe.mat(mats, "bottom_metal", METAL_DEFAULT)
+	var hips: Node3D = rig["Hips"]
+	var base: float = float(rig["rest_y"]["Hips"])
+	var pelvis: Array = rig["sections"]["pelvis"]
+	var top_y: float = SHORTS_TOP_Y
+	_waist(rig, mats, "Jeans", top_y, SHORTS_GROW, 0.03, "bottom")
+	_loops(rig, mats, "Jeans", top_y, SHORTS_GROW + 0.0075, "bottom")
+	var g: float = SHORTS_GROW + 0.003
+	var rail: PackedVector3Array = PackedVector3Array()
+	for k: int in 37:
+		var a: float = TAU * float(k) / 36.0
+		rail.append(SkaterParts.section_point(SkaterParts.section_at(pelvis, top_y - 0.027 - base), a, g + 0.0012))
+	_tube_part(hips, "JeansWaistStitchMesh", rail, 0.0015, mats, "bottom_trim")
+	var front: Array = SkaterParts.section_at(pelvis, top_y - 0.015 - base)
+	SkaterParts.part(hips, "JeansButtonMesh", SkaterParts.sphere_small(0.0072), SkaterParts.section_point(front, 0.0, g + 0.004), mats,
+			"bottom_metal")
+	# Fly: a J stitch from the button down the front, and the front pocket arcs.
+	var fly: PackedVector3Array = PackedVector3Array()
+	for i: int in 9:
+		var t: float = float(i) / 8.0
+		var y: float = lerpf(top_y - 0.03, top_y - 0.125, t)
+		fly.append(SkaterParts.section_point(SkaterParts.section_at(pelvis, y - base), 0.085 * pow(t, 2.2), g + 0.0012))
+	_tube_part(hips, "JeansFlyStitchMesh", fly, 0.0013, mats, "bottom_trim")
+	for s: float in [-1.0, 1.0]:
+		var arc: PackedVector3Array = PackedVector3Array()
+		for i: int in 11:
+			var t: float = float(i) / 10.0
+			var y: float = lerpf(top_y - 0.03, top_y - 0.1, sin(t * PI * 0.5))
+			arc.append(SkaterParts.section_point(SkaterParts.section_at(pelvis, y - base), s * lerpf(0.5, 1.05, 1.0 - cos(t * PI * 0.5)), g + 0.0012))
+		_tube_part(hips, ("Left" if s < 0.0 else "Right") + "JeansPocketArcMesh", arc, 0.0013, mats, "bottom_trim")
+		# Back pocket and its stitching.
+		var xc: float = s * 0.062
+		var rows: Array = []
+		for i: int in 7:
+			var row: PackedVector3Array = PackedVector3Array()
+			for j: int in 9:
+				row.append(_back_pocket_pt(pelvis, base, xc, float(j) / 8.0, float(i) / 6.0, SHORTS_GROW + 0.0028))
+			rows.append(row)
+		var side_name: String = "Left" if s < 0.0 else "Right"
+		SkaterParts.part(hips, side_name + "JeansBackPocketMesh", SkaterParts.facing_grid(rows, Vector3(0.0, 0.0, 1.0)), Vector3.ZERO, mats, "bottom")
+		var outline: PackedVector3Array = PackedVector3Array()
+		for j: int in 9:
+			outline.append(_back_pocket_pt(pelvis, base, xc, 0.0, float(j) / 8.0, SHORTS_GROW + 0.0042))
+		for j: int in 9:
+			var u: float = float(j) / 8.0
+			outline.append(_back_pocket_pt(pelvis, base, xc, u, 1.0, SHORTS_GROW + 0.0042))
+		for j: int in 9:
+			outline.append(_back_pocket_pt(pelvis, base, xc, 1.0, 1.0 - float(j) / 8.0, SHORTS_GROW + 0.0042))
+		_tube_part(hips, side_name + "JeansBackPocketStitchMesh", outline, 0.0013, mats, "bottom_trim")
+	# Legs.
+	var thigh: Array = rig["sections"]["thigh"]
+	var calf: Array = rig["sections"]["calf"]
+	var ul: float = float(rig["lengths"]["upper_leg"])
+	var hem: Callable = GarmentBottoms._jeans_hem
+	for sd: Array in Wardrobe.sides():
+		var side: String = sd[0]
+		var upper: Node3D = rig[side + "UpperLeg"]
+		var lower: Node3D = rig[side + "LowerLeg"]
+		SkaterParts.part(upper, side + "JeansThighMesh", _leg_mesh(thigh, true, ul, JEANS_PROF, _thigh_rows(ul, 0.2 * ul, 12), 32, 0.0),
+				Vector3.ZERO, mats, "bottom")
+		SkaterParts.part(lower, side + "JeansShinMesh", _leg_mesh(calf, false, ul, JEANS_PROF, _calf_rows(hem, 13), 32, 0.002),
+				Vector3.ZERO, mats, "bottom")
+		_knee_ball(lower, side + "JeansKneeMesh", calf, ul, JEANS_PROF, mats)
+		# Hem fold and two stacked ruffles above it, wobbling a little round the leg.
+		_tube_part(lower, side + "JeansHemMesh", _leg_line(calf, false, ul, JEANS_PROF, hem, 0.0035), 0.0085, mats, "bottom")
+		_tube_part(lower, side + "JeansHemStitchMesh", _leg_line(calf, false, ul, JEANS_PROF, func(a: float) -> float: return _jeans_hem(a) + 0.014,
+				0.0078), 0.0013, mats, "bottom_trim")
+		for r: int in 2:
+			var rise: float = 0.034 + 0.034 * float(r)
+			var ph: float = 1.3 * float(r) + (0.7 if side == "Left" else 0.0)
+			_tube_part(lower, "%sJeansStack%dMesh" % [side, r], _leg_line(calf, false, ul, JEANS_PROF,
+					func(a: float) -> float: return _jeans_hem(a) + rise + 0.007 * sin(3.0 * a + ph), 0.0055), 0.0082, mats, "bottom")
+		# Knee fade band, lighter fabric lying on the front of the knee and shin top.
+		var fade: Array = []
+		for i: int in 9:
+			var v: float = float(i) / 8.0
+			var y: float = lerpf(0.008, -0.1, v)
+			var half: float = 0.62 * sqrt(maxf(sin(v * PI), 0.0)) + 0.04
+			var row: PackedVector3Array = PackedVector3Array()
+			for j: int in 13:
+				var a: float = half * (2.0 * float(j) / 12.0 - 1.0)
+				row.append(_leg_pt(calf, false, ul, JEANS_PROF, y, a, 0.0045))
+			fade.append(row)
+		SkaterParts.part(lower, side + "JeansKneeFadeMesh", SkaterParts.facing_grid(fade, Vector3(0.0, 0.0, -1.0)), Vector3.ZERO, mats,
+				"bottom_fade")
+
+
+## A ball at the knee joint (a little smaller than the legs) so a bent knee never opens the cloth.
+static func _knee_ball(lower: Node3D, part_name: String, calf: Array, ul: float, prof: Array, mats: Dictionary) -> void:
+	var sec: Array = (SkaterParts.section_at(calf, 0.0) as Array).duplicate()
+	var pr: Array = _prof(prof, ul)
+	var hw: float = maxf(float(sec[1]) + float(pr[0]), float(pr[1]))
+	var dp: float = maxf(float(sec[2]) + float(pr[0]), float(pr[2]))
+	var ball: MeshInstance3D = SkaterParts.part(lower, part_name, SkaterParts.sphere(1.0), Vector3(0.0, 0.0, float(sec[5])), mats, "bottom")
+	ball.scale = Vector3(hw * 0.97, minf(hw, dp) * 0.97, dp * 0.97)
+
+
+# --- joggers --------------------------------------------------------------------------------------------------
+
+## Tapered joggers: soft elastic waistband with a drawstring, roomy thighs narrowing to a blouse above the ankle cuff,
+## ribbed cuffs, and a side stripe down each leg.
+static func joggers(rig: Dictionary, _body_type: String, mats: Dictionary) -> void:
+	_mats(mats)
+	var hips: Node3D = rig["Hips"]
+	var base: float = float(rig["rest_y"]["Hips"])
+	var pelvis: Array = rig["sections"]["pelvis"]
+	_waist(rig, mats, "Jogger", SHORTS_TOP_Y + 0.004, SHORTS_GROW, 0.04, "bottom")
+	var top_y: float = SHORTS_TOP_Y + 0.004
+	for yo: float in [0.012, 0.024]:
+		var seam: PackedVector3Array = PackedVector3Array()
+		for k: int in 37:
+			seam.append(SkaterParts.section_point(SkaterParts.section_at(pelvis, top_y - yo - base), TAU * float(k) / 36.0, SHORTS_GROW + 0.0045))
+		_tube_part(hips, "JoggerWaistRib%dMesh" % int(yo * 100.0), seam, 0.0016, mats, "bottom")
+	# Drawstring knot and tails at the front.
+	var front: Array = SkaterParts.section_at(pelvis, top_y - 0.02 - base)
+	SkaterParts.part(hips, "JoggerKnotMesh", SkaterParts.sphere_small(0.0058), SkaterParts.section_point(front, 0.0, SHORTS_GROW + 0.0075), mats,
+			"bottom_trim")
+	for s: float in [-1.0, 1.0]:
+		var tail: PackedVector3Array = PackedVector3Array()
+		for i: int in 6:
+			var t: float = float(i) / 5.0
+			var sec: Array = SkaterParts.section_at(pelvis, top_y - 0.02 - 0.075 * pow(t, 1.1) - base)
+			tail.append(SkaterParts.section_point(sec, s * (0.04 + 0.1 * t), SHORTS_GROW + 0.0075))
+		var tr: PackedFloat32Array = PackedFloat32Array([0.0026, 0.0026, 0.0026, 0.0025, 0.0024, 0.0023])
+		SkaterParts.part(hips, ("Left" if s < 0.0 else "Right") + "JoggerStringMesh", SkaterParts.tube_capped(tail, tr, 6), Vector3.ZERO, mats,
+				"bottom_trim")
+	# Legs.
+	var thigh: Array = rig["sections"]["thigh"]
+	var calf: Array = rig["sections"]["calf"]
+	var ul: float = float(rig["lengths"]["upper_leg"])
+	var y_end: float = -0.255  ## the cuff clears the shoe tongue (0.034 above the ankle joint at -0.33)
+	var cuff_lo: float = -0.275
+	var hem: Callable = _const_y(y_end)
+	for sd: Array in Wardrobe.sides():
+		var side: String = sd[0]
+		var s: float = sd[1]
+		var upper: Node3D = rig[side + "UpperLeg"]
+		var lower: Node3D = rig[side + "LowerLeg"]
+		SkaterParts.part(upper, side + "JoggerThighMesh", _leg_mesh(thigh, true, ul, JOGGER_PROF, _thigh_rows(ul, 0.2 * ul, 12), 32, 0.0),
+				Vector3.ZERO, mats, "bottom")
+		SkaterParts.part(lower, side + "JoggerShinMesh", _leg_mesh(calf, false, ul, JOGGER_PROF, _calf_rows(hem, 12), 32, 0.002),
+				Vector3.ZERO, mats, "bottom")
+		_knee_ball(lower, side + "JoggerKneeMesh", calf, ul, JOGGER_PROF, mats)
+		# Ribbed ankle cuff: a short band below the gathered leg, in rings.
+		var cuff_rows: Array = []
+		for i: int in 4:
+			cuff_rows.append(_const_y(lerpf(y_end + 0.006, cuff_lo, float(i) / 3.0)))
+		SkaterParts.part(lower, side + "JoggerCuffMesh", _leg_mesh(calf, false, ul, JOGGER_PROF, cuff_rows, 32, 0.0045), Vector3.ZERO, mats,
+				"bottom")
+		for y: float in [-0.257, -0.2655, -0.274]:
+			_tube_part(lower, "%sJoggerCuffRib%dMesh" % [side, int(-y * 1000.0)], _leg_line(calf, false, ul, JOGGER_PROF, _const_y(y), 0.0065),
+					0.0036, mats, "bottom")
+		# Side stripe: thigh piece down to the knee, then the shin piece to the cuff.
+		_side_stripe(upper, side + "JoggerStripeUpperMesh", _side_line(thigh, true, ul, JOGGER_PROF, s, 0.03, -ul, 16, 0.0016), s, 0.0105, mats,
+				"bottom_trim")
+		_side_stripe(lower, side + "JoggerStripeLowerMesh", _side_line(calf, false, ul, JOGGER_PROF, s, 0.0, y_end + 0.004, 14, 0.0046), s, 0.0105,
+				mats, "bottom_trim")

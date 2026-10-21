@@ -193,6 +193,8 @@ func _step_hair(p: Pivot, eff_local: Vector3) -> void:
 	var d: int = mini(p.depth, CHAIN_BACK.size() - 1)
 	var back: float = SIDE_BACK if p.side != 0.0 else CHAIN_BACK[d]
 	var fwd: float = SIDE_FWD if p.side != 0.0 else CHAIN_FWD[d]
+	if p.node.has_meta("sway_fwd_limit_deg"):  # a hair part that would swing into the body (long hair on the back)
+		fwd = minf(fwd, float(p.node.get_meta("sway_fwd_limit_deg")))
 	p.pos.x = clampf(p.pos.x, -deg_to_rad(back), deg_to_rad(fwd))
 	var rz_min: float = -deg_to_rad(CHAIN_SIDE[d])
 	var rz_max: float = deg_to_rad(CHAIN_SIDE[d])

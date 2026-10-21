@@ -261,9 +261,8 @@ func test_hair_styles_build_on_both_heads() -> void:
 
 
 func test_stub_falls_back_to_reference_garment() -> void:
-	var body: Node3D = PlaceholderSkater.build_body({}, {"body": "male", "top": "top_hoodie", "bottom": "bottom_joggers"})
+	var body: Node3D = PlaceholderSkater.build_body({}, {"body": "male", "top": "top_hoodie"})
 	assert_true(body.find_child("SurfTeeChestMesh", true, false) != null, "stub top draws the reference tee")
-	assert_true(body.find_child("BoardShortsSeatMesh", true, false) != null, "stub bottom draws the reference shorts")
 	body.free()
 
 
