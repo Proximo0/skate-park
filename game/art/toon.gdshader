@@ -17,9 +17,11 @@ uniform float band_softness : hint_range(0.0, 0.2) = 0.02;
 uniform vec4 rim_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 uniform float rim_strength : hint_range(0.0, 1.0) = 0.22;
 uniform float rim_power : hint_range(0.5, 8.0) = 3.0;
+// 1 multiplies the albedo by the mesh's vertex colour (and a MultiMesh instance colour): weathering, can prints. 0 ignores it.
+uniform float vertex_color_amount : hint_range(0.0, 1.0) = 0.0;
 
 void fragment() {
-	ALBEDO = albedo.rgb;
+	ALBEDO = albedo.rgb * mix(vec3(1.0), COLOR.rgb, vertex_color_amount);
 	ROUGHNESS = 1.0;
 	METALLIC = 0.0;
 	SPECULAR = 0.0;

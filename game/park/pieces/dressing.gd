@@ -1,19 +1,18 @@
 class_name ParkDressing
 extends RefCounted
-## Lived-in dressing for the park: graffiti decals, trash cans and dumpsters, scattered litter and parked cars.
+## Lived-in dressing for the park: graffiti decals and graffiti walls, trash bins and dumpsters, scattered litter and parked cars.
 ## `build(placed)` returns one Node3D ("Dressing") to add to the park; `placed` is Park.placed, used only to keep litter off
-## the pieces. Everything here is built from boxes, cylinders and lofted profiles, with the Toon look.
+## the pieces. Cars, bins, litter and walls are the Houdini glbs in assets/props/houdini/ (see houdini_props.gd), converted to the
+## Toon look; the dumpsters and the parking strips are built from boxes.
 ##
-## Collision: cans, dumpsters and cars are StaticBodies on layer 1 (world) with simple box or cylinder shapes. Graffiti decals,
-## litter and the painted parking strips are meshes only. The props sit at the park edges, by the shop backs and along two
+## Collision: bins, dumpsters, walls and cars are StaticBodies on layer 1 (world) with simple box or cylinder shapes (the cars' and
+## bins' sized from the mesh AABB). Graffiti decals, litter and the painted parking strips are meshes only. The props sit at the park edges, by the shop backs and along two
 ## parking strips, away from the bot's lines and the pieces' approach lanes.
 
 const DECAL_LIFT: float = 0.015
 const LITTER_SEED: int = 4242
 const PARK_HALF: float = 75.0
-const GLASS := Color("33465e")
 const TYRE := Color("2a2a35")
-const CHROME := Color("d5dde6")
 const DARK := Color("3a3a4a")
 
 const DECAL_SHADER_CODE: String = """
@@ -72,17 +71,17 @@ const GRAFFITI: Array = [
 	["throw_yuzu", Vector3(-33.0, 2.4, -40.015), 180.0, 4.2],
 ]
 
-## Parking strips (x centre, z from, z to, yaw degrees the cars face), cars as [kind, colour] in nose-to-tail order.
+## Parking strips (x centre, z from, z to), cars as [kind, palette index] in order along the strip. Kinds: "hatch", "pickup", "van" (the surf van).
 const STRIP_WEST_X: float = -72.6
 const STRIP_EAST_X: float = 72.6
-const CARS_WEST: Array = [["kei", "a8e6cf"], ["hatch", "ffb199"], ["van", "7ec8e3"], ["pickup", "ffe066"]]
-const CARS_EAST: Array = [["hatch", "4fd1c5"], ["pickup", "ff6b5e"], ["kei", "fff1d6"]]
+const CARS_WEST: Array = [["hatch", 0], ["van", 4], ["pickup", 1], ["hatch", 2]]
+const CARS_EAST: Array = [["van", 3], ["pickup", 9], ["hatch", 7]]
 const WEST_START_Z: float = 24.0
 const EAST_START_Z: float = 28.0
-const WEST_DEPTH: float = 22.0
-const EAST_DEPTH: float = 16.0
+const WEST_DEPTH: float = 23.0
+const EAST_DEPTH: float = 18.0
 
-## Trash cans: [kind, x, z, yaw]; kinds "metal", "wheelie", "over_metal", "over_wheelie".
+## Trash bins: [kind, x, z, yaw]; kinds "metal", "wheelie" (both the Houdini bin, in different plastic) and "over_metal", "over_wheelie" (lid open, heaped).
 const CANS: Array = [
 	["metal", -17.0, -42.8, 15.0], ["metal", 11.0, -42.8, -20.0],
 	["metal", 72.6, 6.0, 0.0], ["metal", 0.5, 54.5, 30.0], ["metal", -70.0, 38.8, 0.0],
@@ -93,6 +92,15 @@ const CANS: Array = [
 ## Dumpsters: [x, z, yaw, graffiti id].
 const DUMPSTERS: Array = [
 	[73.3, -12.0, -90.0, "tag_drip"], [-73.3, 47.5, 90.0, "sticker_smile"], [73.2, 25.0, -90.0, "throw_yuzu"],
+]
+## Graffiti walls (the Houdini wall, 6.1 x 3.1 x 0.42 m) with their backs flush to the north boundary, facing into the park: [x, z, yaw (0 faces -Z, 180 +Z,
+## 90 -X), decals as [texture id, x offset on the wall, y, width]]. They stand clear of every piece and skate line.
+const WALL_LEN: float = 6.12
+const WALL_FRONT_Z: float = -0.15  ## the wall's painted face, in its own frame
+const WALLS: Array = [
+	[1.0, -75.29, 180.0, [["chibi_cap", -1.6, 1.5, 2.2], ["tag_koi", 1.1, 1.0, 3.0]]],
+	[-38.0, -75.29, 180.0, [["throw_mochi", -0.9, 1.55, 4.2], ["sticker_star", 2.2, 0.7, 0.8]]],
+	[-8.0, -75.29, 180.0, [["motif_wave", -1.4, 1.5, 2.8], ["tag_drip", 1.4, 1.3, 2.4]]],
 ]
 
 
@@ -110,10 +118,16 @@ static func build(placed: Array) -> Node3D:
 	var cars_node: Node3D = cars()
 	root.add_child(cars_node)
 	counts["cars"] = cars_node.get_child_count()
+	var wall_node: Node3D = walls()
+	root.add_child(wall_node)
+	counts["walls"] = wall_node.get_child_count()
 	var avoid: Array[Rect2] = footprints(placed)
 	for c: Node in cans.get_children():
 		var n3: Node3D = c as Node3D
 		avoid.append(Rect2(n3.position.x - 0.7, n3.position.z - 0.7, 1.4, 1.4))
+	for w: Node in wall_node.get_children():
+		var wp: Vector3 = (w as Node3D).position
+		avoid.append(Rect2(wp.x - 3.4, wp.z - 3.4, 6.8, 6.8))
 	avoid.append(Rect2(STRIP_WEST_X - 2.4, WEST_START_Z - 1.0, 4.8, WEST_DEPTH + 1.0))
 	avoid.append(Rect2(STRIP_EAST_X - 2.4, EAST_START_Z - 1.0, 4.8, EAST_DEPTH + 1.0))
 	var lit: Node3D = litter(avoid, LITTER_SEED)
@@ -252,79 +266,49 @@ static func graffiti() -> Node3D:
 
 # -------------------------------------------------------------------------------------------------------------- trash cans
 
-## A city litter bin: steel drum with bands, a lid and a knob. Collision: a cylinder. Origin at the ground, centred.
-static func metal_can(color: Color = Color("7f95a8")) -> StaticBody3D:
-	var sb: StaticBody3D = _body("MetalCan")
-	sb.add_child(_mesh(_cyl(0.27, 0.25, 0.82, 14), color, Vector3(0, 0.45, 0), "Drum"))
-	for i: int in 3:
-		sb.add_child(_mesh(_cyl(0.272, 0.272, 0.035, 14), color.darkened(0.3), Vector3(0, 0.18 + 0.22 * float(i), 0), "Band%d" % i))
-	sb.add_child(_mesh(_cyl(0.3, 0.3, 0.05, 14), DARK, Vector3(0, 0.88, 0), "LidRim"))
-	sb.add_child(_mesh(_cyl(0.12, 0.27, 0.1, 14), color.darkened(0.45), Vector3(0, 0.95, 0), "LidDome"))
-	sb.add_child(_mesh(_sphere(0.045, 8, 4), DARK, Vector3(0, 1.02, 0), "Knob"))
-	sb.add_child(_mesh(_cyl(0.28, 0.28, 0.04, 14), DARK, Vector3(0, 0.03, 0), "Foot"))
+## The Houdini trash bin (0.6 x 1 x 0.7 m), plastic tinted `color`, front facing -Z. `lid_open` swings the lid up about its hinge at
+## the back. Collision: one cylinder sized from the mesh.
+static func bin(color: Color, lid_open: bool = false) -> StaticBody3D:
+	var sb: StaticBody3D = _body("TrashBin")
+	var model: Node3D = HoudiniProps.instance("trash_bin", color)
+	model.name = "Model"
+	sb.add_child(model)
+	var lid: Node3D = model.get_node("lid") as Node3D
+	if lid_open:
+		lid.rotation_degrees = Vector3(72.0, 0.0, 0.0)
+	var bb: AABB = HoudiniProps.aabb_of(model)
+	if lid_open:
+		bb = bb.merge(AABB(Vector3(-0.3, 0.0, -0.36), Vector3(0.6, 0.95, 0.72)))
+	# a cylinder (like the old can), so a skater clipping a corner glances off; it covers the bin's 0.6 x 0.7 m footprint
 	var cs := CollisionShape3D.new()
 	cs.name = "Collision"
 	var shape := CylinderShape3D.new()
-	shape.radius = 0.3
-	shape.height = 1.0
+	shape.radius = 0.36
+	shape.height = minf(bb.size.y, 1.0)
 	cs.shape = shape
-	cs.position = Vector3(0, 0.5, 0)
+	cs.position = Vector3(bb.get_center().x, shape.height * 0.5, bb.get_center().z)
 	sb.add_child(cs)
 	return sb
 
 
-## A plastic wheelie bin: tapered tub, hinged lid, two wheels and a back handle. Front faces +Z. Collision: a box.
-static func wheelie_bin(color: Color = Color("2f6f9f"), lid_open: bool = false) -> StaticBody3D:
-	var sb: StaticBody3D = _body("WheelieBin")
-	sb.add_child(_mesh(_box(Vector3(0.58, 0.9, 0.66)), color, Vector3(0, 0.5, 0), "Tub"))
-	sb.add_child(_mesh(_box(Vector3(0.64, 0.06, 0.72)), color.darkened(0.15), Vector3(0, 0.15, 0.0), "Skirt"))
-	var lid: MeshInstance3D = _mesh(_box(Vector3(0.66, 0.06, 0.74)), color.darkened(0.25), Vector3(0, 0.97, 0.0), "Lid")
-	if lid_open:
-		lid.position = Vector3(0, 1.12, -0.42)
-		lid.rotation_degrees = Vector3(-70.0, 0.0, 0.0)
-	else:
-		lid.rotation_degrees = Vector3(-3.0, 0.0, 0.0)
-	sb.add_child(lid)
-	sb.add_child(_mesh(_box(Vector3(0.5, 0.05, 0.06)), color.darkened(0.3), Vector3(0, 0.8, 0.38), "Handle"))
-	for sgn: float in [-1.0, 1.0]:
-		sb.add_child(_mesh(_cyl(0.1, 0.1, 0.06, 10), TYRE, Vector3(sgn * 0.31, 0.1, -0.22), "Wheel", Vector3(0, 0, PI * 0.5)))
-	sb.add_child(_mesh(_box(Vector3(0.22, 0.14, 0.02)), Color("fff4df"), Vector3(0, 0.62, 0.335), "Label"))
-	sb.add_child(_shape_box(Vector3(0.66, 1.0, 0.72), Vector3(0, 0.5, 0)))
-	return sb
-
-
-## A can or bin heaped with bags and crushed cans, lid ajar.
-static func overflowing_can(wheelie: bool, seed_value: int = 1) -> StaticBody3D:
+## A bin heaped with bags and crushed cans, lid ajar.
+static func overflowing_bin(seed_value: int = 1) -> StaticBody3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
-	var sb: StaticBody3D
-	var top: float
-	if wheelie:
-		sb = wheelie_bin(Color("3f8f6f"), true)
-		sb.name = "OverflowWheelie"
-		top = 0.98
-	else:
-		sb = metal_can(Color("6f8aa0"))
-		sb.name = "OverflowCan"
-		top = 0.9
-		var lid_rim: Node = sb.get_node("LidRim")
-		var dome: Node = sb.get_node("LidDome")
-		var knob: Node = sb.get_node("Knob")
-		(lid_rim as Node3D).position = Vector3(0.14, top + 0.1, -0.12)
-		(lid_rim as Node3D).rotation_degrees = Vector3(-35.0, 0.0, 12.0)
-		dome.queue_free()
-		knob.queue_free()
+	var sb: StaticBody3D = bin(HoudiniProps.palette_colour(seed_value * 5 + 2), true)
+	sb.name = "OverflowBin"
+	var top: float = 0.9
 	var bag_cols: Array[Color] = [Color("f4f0e6"), Color("ff9ec0"), Color("3a3a4a"), Color("a8d8ff")]
 	for i: int in 5:
-		var m: MeshInstance3D = _mesh(_sphere(0.23, 8, 4), bag_cols[i % bag_cols.size()], Vector3(rng.randf_range(-0.14, 0.14), top + 0.08 + rng.randf_range(0.0, 0.14), rng.randf_range(-0.12, 0.12)), "Bag%d" % i)
+		var m: MeshInstance3D = _mesh(_sphere(0.2, 8, 4), bag_cols[i % bag_cols.size()], Vector3(rng.randf_range(-0.12, 0.12), top + 0.08 + rng.randf_range(0.0, 0.14), rng.randf_range(-0.1, 0.12)), "Bag%d" % i)
 		m.scale = Vector3(1.0, 0.8, 1.0)
 		sb.add_child(m)
 	for i: int in 3:
-		sb.add_child(_mesh(_cyl(0.035, 0.035, 0.12, 8), [Color("ff5a5f"), Color("c9d3dd"), Color("5ad1e6")][i], Vector3(rng.randf_range(-0.15, 0.15), top + 0.25 + rng.randf_range(0.0, 0.08), rng.randf_range(-0.12, 0.12)), "Can%d" % i, Vector3(rng.randf_range(-1.0, 1.0), 0.0, rng.randf_range(-1.0, 1.0))))
+		sb.add_child(_mesh(_cyl(0.035, 0.035, 0.12, 8), [Color("ff5a5f"), Color("c9d3dd"), Color("5ad1e6")][i], Vector3(rng.randf_range(-0.15, 0.15), top + 0.2 + rng.randf_range(0.0, 0.08), rng.randf_range(-0.12, 0.12)), "Can%d" % i, Vector3(rng.randf_range(-1.0, 1.0), 0.0, rng.randf_range(-1.0, 1.0))))
 	# a few things that fell out, on the ground (no collision)
 	for i: int in 4:
 		var a: float = rng.randf_range(0.0, TAU)
-		var d: float = rng.randf_range(0.4, 0.75)
+		var d: float = rng.randf_range(0.5, 0.8)
 		sb.add_child(_mesh(_box(Vector3(0.14, 0.02, 0.1)), bag_cols[(i + 1) % bag_cols.size()], Vector3(cos(a) * d, 0.012, sin(a) * d), "Spill%d" % i, Vector3(0.0, a, 0.0)))
 	return sb
 
@@ -355,6 +339,7 @@ static func dumpster(color: Color = Color("3a7a9a"), graffiti_id: String = "") -
 	return sb
 
 
+## The bins and dumpsters.
 static func trash_cans() -> Node3D:
 	var root := Node3D.new()
 	root.name = "TrashCans"
@@ -364,13 +349,11 @@ static func trash_cans() -> Node3D:
 		var can: StaticBody3D
 		match kind:
 			"metal":
-				can = metal_can([Color("7f95a8"), Color("5f7f6f"), Color("8a7fa8")][n % 3])
+				can = bin([Color("7f95a8"), Color("5f9f7f"), Color("8a7fa8")][n % 3])
 			"wheelie":
-				can = wheelie_bin([Color("2f6f9f"), Color("3f8f6f"), Color("7a7f8a")][n % 3])
-			"over_metal":
-				can = overflowing_can(false, n + 1)
+				can = bin([Color("2f8fcf"), Color("3fbf7f"), Color("e0a030")][n % 3])
 			_:
-				can = overflowing_can(true, n + 1)
+				can = overflowing_bin(n + 1)
 		can.position = Vector3(float(c[1]), 0.0, float(c[2]))
 		can.rotation_degrees = Vector3(0, float(c[3]), 0)
 		can.name = "%s_%d" % [kind, n]
@@ -390,230 +373,41 @@ static func trash_cans() -> Node3D:
 
 # ------------------------------------------------------------------------------------------------------------------- cars
 
-## A flat quad, wound so it faces `outward`. Corners in order around the polygon.
-static func _quad_mesh(a: Vector3, b: Vector3, c: Vector3, d: Vector3, outward: Vector3) -> ArrayMesh:
-	var n: Vector3 = (b - a).cross(c - a)
-	var pts := PackedVector3Array([a, b, c, a, c, d])
-	if n.dot(outward) < 0.0:
-		pts = PackedVector3Array([a, c, b, a, d, c])
-	return PieceKit.mesh_from_triangles(pts)
+## Houdini glb per car kind, and the collision shape of each as fractions of its mesh AABB: [belt height m (top of the low body box),
+## cabin z range from the tail to the nose as fractions of the length, 0 = tail, 1 = nose].
+const CAR_GLB: Dictionary = {"hatch": "car_hatchback", "pickup": "car_pickup", "van": "car_surfvan"}
+const CAR_CABIN: Dictionary = {"hatch": [0.95, 0.02, 0.74], "pickup": [1.04, 0.42, 0.70], "van": [1.2, 0.04, 0.92]}
 
 
-## Lofted car side profile: extruded across the car's width and centred on x.
-static func _profile_mesh(prof: PackedVector2Array, width: float) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	mi.mesh = PieceKit.extrude_profile(prof, width)
-	mi.position = Vector3(-width * 0.5, 0.0, 0.0)
-	return mi
-
-
-## One side window (a trapezoid on each side of the car) from y/z corners: [belt y, front z at belt, roof y, front z at roof,
-## rear z at roof, rear z at belt]. A body-coloured pillar splits it at `pillar_z` (skip with INF).
-static func _side_glass(root: Node3D, w: float, g: Array, body_col: Color, pillar_z: float) -> void:
-	for sgn: float in [-1.0, 1.0]:
-		var x: float = sgn * (w * 0.5 + 0.012)
-		var out := Vector3(sgn, 0, 0)
-		var q: ArrayMesh = _quad_mesh(Vector3(x, g[0], g[1]), Vector3(x, g[2], g[3]), Vector3(x, g[2], g[4]), Vector3(x, g[0], g[5]), out)
-		var mi := MeshInstance3D.new()
-		mi.name = "SideGlass"
-		mi.mesh = q
-		mi.material_override = Toon.material(GLASS, false)
-		root.add_child(mi)
-		if pillar_z != INF:
-			root.add_child(_mesh(_box(Vector3(0.02, g[2] - g[0], 0.09)), body_col, Vector3(x + sgn * 0.004, (g[0] + g[2]) * 0.5, pillar_z), "Pillar"))
-		# a pale streak so the glass reads as glass
-		var mid_z: float = (g[3] + g[4]) * 0.5
-		root.add_child(_mesh(_box(Vector3(0.02, 0.05, absf(g[3] - g[4]) * 0.35)), Color("7f9fbf"), Vector3(x + sgn * 0.006, g[2] - 0.1, mid_z), "Glint"))
-
-
-## Slanted windscreen or rear glass between two (y, z) points, `half_w` either side of centre, pushed out along `out_yz`.
-static func _slope_glass(root: Node3D, p0: Vector2, p1: Vector2, half_w: float, out_yz: Vector2, split: bool = false) -> void:
-	var lift: Vector2 = out_yz.normalized() * 0.012
-	var a := Vector3(-half_w, p0.x + lift.x, p0.y + lift.y)
-	var b := Vector3(-half_w, p1.x + lift.x, p1.y + lift.y)
-	var c := Vector3(half_w, p1.x + lift.x, p1.y + lift.y)
-	var d := Vector3(half_w, p0.x + lift.x, p0.y + lift.y)
-	var mi := MeshInstance3D.new()
-	mi.name = "Glass"
-	mi.mesh = _quad_mesh(a, b, c, d, Vector3(0, out_yz.x, out_yz.y))
-	mi.material_override = Toon.material(GLASS, false)
-	root.add_child(mi)
-	if split:
-		var m: Vector2 = (p0 + p1) * 0.5 + lift + out_yz.normalized() * 0.004
-		root.add_child(_mesh(_box(Vector3(0.06, 0.03, 0.03)), DARK, Vector3(0, m.x, m.y), "Split"))
-
-
-static func _wheel(root: Node3D, x: float, y: float, z: float, r: float, w: float, hub: Color) -> void:
-	var rot := Vector3(0, 0, PI * 0.5)
-	root.add_child(_mesh(_cyl(r, r, w, 14), TYRE, Vector3(x, y, z), "Wheel", rot))
-	var sgn: float = signf(x)
-	root.add_child(_mesh(_cyl(r * 0.46, r * 0.46, w + 0.03, 12), hub, Vector3(x + sgn * 0.005, y, z), "Hub", rot))
-	root.add_child(_mesh(_cyl(r * 0.2, r * 0.2, w + 0.05, 8), DARK, Vector3(x + sgn * 0.01, y, z), "Cap", rot))
-
-
-## A stylised parked car. kind: "kei" (tiny boxy), "hatch", "van" (surf van with a board on its roof rack) or "pickup".
-## Faces +Z, origin at the ground, centred. Collision: a low body box plus a cabin box (StaticBody3D, layer 1).
+## A parked car: the Houdini model with its body painted `color`, wheels and all. kind: "hatch", "pickup" or "van" (surf van with a
+## board on the roof). The model's nose (-Z) points along the body's -Z, like the glb. Origin at the ground, centred.
+## Collision: a low body box plus a cabin box, sized from the mesh AABB (StaticBody3D, layer 1).
 static func car(kind: String, color: Color) -> StaticBody3D:
 	var sb: StaticBody3D = _body("Car_" + kind)
-	var pts: PackedVector2Array
-	var w: float
-	var len: float
-	var wheel_r: float
-	var wheel_z: float
-	var cab_y: float
-	var cab_z0: float  # rear end of the cabin (z)
-	var cab_z1: float  # front end of the cabin (z)
-	var roof_y: float
-	match kind:
-		"kei":
-			w = 1.42
-			len = 3.1
-			wheel_r = 0.26
-			wheel_z = 1.0
-			pts = PackedVector2Array([Vector2(0.2, -1.5), Vector2(0.2, 1.5), Vector2(0.3, 1.56), Vector2(0.66, 1.56), Vector2(0.8, 1.3), Vector2(0.88, 0.85), Vector2(1.6, 0.55), Vector2(1.67, 0.4), Vector2(1.67, -1.1), Vector2(1.56, -1.42), Vector2(0.9, -1.54), Vector2(0.4, -1.56), Vector2(0.28, -1.5)])
-			cab_y = 0.88
-			cab_z0 = -1.4
-			cab_z1 = 0.7
-			roof_y = 1.67
-		"van":
-			w = 1.82
-			len = 4.3
-			wheel_r = 0.33
-			wheel_z = 1.35
-			pts = PackedVector2Array([Vector2(0.25, -2.1), Vector2(0.25, 2.0), Vector2(0.38, 2.12), Vector2(0.85, 2.15), Vector2(1.05, 2.1), Vector2(1.2, 2.0), Vector2(1.86, 1.76), Vector2(1.98, 1.5), Vector2(2.03, 1.0), Vector2(2.03, -1.6), Vector2(1.95, -1.95), Vector2(1.4, -2.13), Vector2(0.5, -2.14), Vector2(0.33, -2.06)])
-			cab_y = 1.2
-			cab_z0 = -2.0
-			cab_z1 = 1.8
-			roof_y = 2.03
-		"pickup":
-			w = 1.84
-			len = 4.9
-			wheel_r = 0.36
-			wheel_z = 1.55
-			pts = PackedVector2Array([Vector2(0.28, -2.45), Vector2(0.28, 2.4), Vector2(0.42, 2.47), Vector2(0.78, 2.47), Vector2(0.96, 2.0), Vector2(1.04, 1.5), Vector2(1.04, -2.4), Vector2(0.6, -2.47), Vector2(0.4, -2.45)])
-			cab_y = 1.04
-			cab_z0 = -0.4
-			cab_z1 = 1.0
-			roof_y = 1.78
-		_:
-			w = 1.68
-			len = 3.95
-			wheel_r = 0.29
-			wheel_z = 1.2
-			pts = PackedVector2Array([Vector2(0.2, -1.9), Vector2(0.2, 1.9), Vector2(0.34, 1.97), Vector2(0.62, 1.97), Vector2(0.8, 1.55), Vector2(0.9, 0.95), Vector2(1.44, 0.3), Vector2(1.49, 0.0), Vector2(1.46, -0.9), Vector2(1.0, -1.88), Vector2(0.4, -1.97), Vector2(0.28, -1.93)])
-			cab_y = 0.95
-			cab_z0 = -1.9
-			cab_z1 = 0.95
-			roof_y = 1.49
-	# main body (a pickup's cab is separate; its lower body is this profile)
-	var body_mi: MeshInstance3D = _profile_mesh(pts, w)
-	body_mi.name = "Body"
-	body_mi.material_override = Toon.material(color, false)
-	sb.add_child(body_mi)
-	var front_z: float = len * 0.5
-	match kind:
-		"kei":
-			_side_glass(sb, w, [0.98, 0.78, 1.57, 0.53, -1.1, -1.28], color, -0.3)
-			_slope_glass(sb, Vector2(0.92, 0.84), Vector2(1.6, 0.56), w * 0.5 - 0.12, Vector2(0.5, 0.85), false)
-			_slope_glass(sb, Vector2(1.56, -1.4), Vector2(0.98, -1.52), w * 0.5 - 0.15, Vector2(0.2, -1.0), false)
-		"hatch":
-			_side_glass(sb, w, [1.0, 0.82, 1.4, 0.33, -0.8, -1.55], color, -0.35)
-			_slope_glass(sb, Vector2(0.95, 0.93), Vector2(1.43, 0.31), w * 0.5 - 0.12, Vector2(0.6, 0.65), false)
-			_slope_glass(sb, Vector2(1.44, -0.93), Vector2(1.02, -1.86), w * 0.5 - 0.15, Vector2(0.45, -0.45), false)
-		"van":
-			# two-tone: cream roof band above the belt line, wrapped over the cabin
-			var cream := Color("fff4df")
-			var roof_pts: PackedVector2Array = _clip_above(pts, 1.28)
-			var roof_mi: MeshInstance3D = _profile_mesh(roof_pts, w + 0.03)
-			roof_mi.name = "RoofBand"
-			roof_mi.material_override = Toon.material(cream, false)
-			sb.add_child(roof_mi)
-			_side_glass(sb, w + 0.03, [1.34, 1.72, 1.86, 1.46, -1.7, -1.85], cream, 0.55)
-			_slope_glass(sb, Vector2(1.26, 2.02), Vector2(1.84, 1.78), w * 0.5 - 0.1, Vector2(0.4, 0.9), true)
-			# roof rack and the board
-			for z: float in [-0.9, 0.0, 0.9]:
-				sb.add_child(_mesh(_box(Vector3(w - 0.2, 0.04, 0.05)), CHROME, Vector3(0, 2.1, z), "RackBar"))
-			for sgn: float in [-1.0, 1.0]:
-				sb.add_child(_mesh(_box(Vector3(0.04, 0.04, 2.2)), CHROME, Vector3(sgn * (w * 0.5 - 0.12), 2.1, 0.0), "RackRail"))
-			var board: MeshInstance3D = _mesh(_sphere(0.5, 12, 6), Color("ff6b8a"), Vector3(0.12, 2.24, -0.1), "Surfboard")
-			board.scale = Vector3(0.52, 0.1, 2.3)
-			sb.add_child(board)
-			var stripe: MeshInstance3D = _mesh(_sphere(0.5, 12, 6), Color("fff4df"), Vector3(0.12, 2.27, -0.1), "BoardStripe")
-			stripe.scale = Vector3(0.12, 0.1, 2.0)
-			sb.add_child(stripe)
-			# round headlamps and a V on the nose
-			for sgn: float in [-1.0, 1.0]:
-				sb.add_child(_mesh(_cyl(0.13, 0.13, 0.06, 12), Color("fff6c8"), Vector3(sgn * 0.6, 0.78, front_z + 0.0), "Lamp", Vector3(PI * 0.5, 0, 0)))
-			sb.add_child(_mesh(_box(Vector3(0.05, 0.4, 0.05)), CHROME, Vector3(-0.1, 0.82, front_z + 0.03), "VL", Vector3(0, 0, -0.4)))
-			sb.add_child(_mesh(_box(Vector3(0.05, 0.4, 0.05)), CHROME, Vector3(0.1, 0.82, front_z + 0.03), "VR", Vector3(0, 0, 0.4)))
-		"pickup":
-			# the cab, then the open bed with a liner and tail gate
-			var cab: PackedVector2Array = PackedVector2Array([Vector2(1.04, 1.0), Vector2(1.76, 0.5), Vector2(1.79, 0.3), Vector2(1.79, -0.3), Vector2(1.04, -0.4)])
-			var cab_mi: MeshInstance3D = _profile_mesh(cab, w - 0.04)
-			cab_mi.name = "Cab"
-			cab_mi.material_override = Toon.material(color, false)
-			sb.add_child(cab_mi)
-			_side_glass(sb, w - 0.04, [1.12, 0.78, 1.7, 0.47, -0.22, -0.3], color, 0.18)
-			_slope_glass(sb, Vector2(1.08, 0.96), Vector2(1.72, 0.49), w * 0.5 - 0.14, Vector2(0.65, 0.75), false)
-			sb.add_child(_mesh(_box(Vector3(w - 0.4, 0.4, 0.02)), GLASS, Vector3(0, 1.4, -0.412), "RearGlass"))
-			sb.add_child(_mesh(_box(Vector3(w - 0.3, 0.03, 1.9)), Color("2c2c3a"), Vector3(0, 1.055, -1.45), "Liner"))
-			for sgn: float in [-1.0, 1.0]:
-				sb.add_child(_mesh(_box(Vector3(0.07, 0.4, 1.95)), color, Vector3(sgn * (w * 0.5 - 0.035), 1.22, -1.42), "BedWall"))
-			sb.add_child(_mesh(_box(Vector3(w, 0.4, 0.07)), color, Vector3(0, 1.22, -2.43), "TailGate"))
-			sb.add_child(_mesh(_box(Vector3(w - 0.3, 0.4, 0.07)), color, Vector3(0, 1.22, -0.5), "BedFront"))
-			# a crate in the back
-			sb.add_child(_mesh(_box(Vector3(0.6, 0.4, 0.5)), Color("c98f5a"), Vector3(-0.3, 1.27, -1.8), "Crate"))
-	# bumpers, lights, grille, plates, mirrors, door seams
-	sb.add_child(_mesh(_box(Vector3(w + 0.04, 0.14, 0.1)), CHROME if kind == "van" else DARK, Vector3(0, 0.36, front_z + 0.02), "BumperF"))
-	sb.add_child(_mesh(_box(Vector3(w + 0.04, 0.14, 0.1)), CHROME if kind == "van" else DARK, Vector3(0, 0.36, -front_z - 0.02), "BumperR"))
-	for sgn: float in [-1.0, 1.0]:
-		if kind != "van":
-			sb.add_child(_mesh(_box(Vector3(0.3, 0.13, 0.04)), Color("fff6c8"), Vector3(sgn * (w * 0.5 - 0.3), 0.66 if kind != "pickup" else 0.7, front_z + 0.005), "Headlight"))
-		sb.add_child(_mesh(_box(Vector3(0.24, 0.13, 0.04)), Color("ff4a55"), Vector3(sgn * (w * 0.5 - 0.22), 0.7 if kind != "pickup" else 0.95, -front_z - 0.005), "Taillight"))
-		sb.add_child(_mesh(_box(Vector3(0.1, 0.07, 0.12)), color.darkened(0.25), Vector3(sgn * (w * 0.5 + 0.08), cab_y + 0.06, cab_z1 - 0.15), "Mirror"))
-		sb.add_child(_mesh(_box(Vector3(0.012, 0.42, 0.02)), color.darkened(0.35), Vector3(sgn * (w * 0.5 + 0.004), 0.62, (cab_z0 + cab_z1) * 0.5 + 0.1), "DoorSeam"))
-	if kind != "van":
-		sb.add_child(_mesh(_box(Vector3(0.52, 0.12, 0.03)), DARK, Vector3(0, 0.55 if kind != "pickup" else 0.6, front_z + 0.005), "Grille"))
-	sb.add_child(_mesh(_box(Vector3(0.34, 0.12, 0.02)), Color("fff4df"), Vector3(0, 0.45, front_z + 0.06), "PlateF"))
-	sb.add_child(_mesh(_box(Vector3(0.34, 0.12, 0.02)), Color("fff4df"), Vector3(0, 0.5, -front_z - 0.06), "PlateR"))
-	# wheels
-	for sgn: float in [-1.0, 1.0]:
-		for z: float in [wheel_z, -wheel_z]:
-			_wheel(sb, sgn * (w * 0.5 - 0.06), wheel_r, z, wheel_r, 0.2, Color("aab6c4"))
-	# collision: a low body box and a cabin box
-	var low_h: float = cab_y
-	sb.add_child(_shape_box(Vector3(w, low_h, len), Vector3(0, low_h * 0.5, 0), "CollisionBody"))
-	var cab_len: float = (cab_z1 - cab_z0) if kind != "van" else (cab_z1 - cab_z0)
-	sb.add_child(_shape_box(Vector3(w - 0.1, roof_y - cab_y, cab_len), Vector3(0, (roof_y + cab_y) * 0.5, (cab_z0 + cab_z1) * 0.5), "CollisionCabin"))
+	var model: Node3D = HoudiniProps.instance(str(CAR_GLB.get(kind, "car_hatchback")), color)
+	model.name = "Model"
+	sb.add_child(model)
+	var bb: AABB = HoudiniProps.aabb_of(model)
+	var cab: Array = CAR_CABIN.get(kind, CAR_CABIN["hatch"])
+	var belt: float = float(cab[0])
+	var roof: float = bb.end.y
+	var z_tail: float = bb.end.z  # the tail is +Z (the nose faces -Z)
+	var len: float = bb.size.z
+	sb.add_child(_shape_box(Vector3(bb.size.x, belt, len), Vector3(bb.get_center().x, belt * 0.5, bb.get_center().z), "CollisionBody"))
+	var c0: float = z_tail - float(cab[2]) * len
+	var c1: float = z_tail - float(cab[1]) * len
+	sb.add_child(_shape_box(Vector3(bb.size.x - 0.1, roof - belt, c1 - c0), Vector3(bb.get_center().x, (roof + belt) * 0.5, (c0 + c1) * 0.5), "CollisionCabin"))
 	return sb
 
 
-## Clip a (y, z) polygon to y >= ymin (Sutherland-Hodgman against one half-plane).
-static func _clip_above(pts: PackedVector2Array, ymin: float) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	for i: int in pts.size():
-		var a: Vector2 = pts[i]
-		var b: Vector2 = pts[(i + 1) % pts.size()]
-		var a_in: bool = a.x >= ymin
-		var b_in: bool = b.x >= ymin
-		if a_in:
-			out.append(a)
-		if a_in != b_in:
-			var t: float = (ymin - a.x) / (b.x - a.x)
-			out.append(a.lerp(b, t))
-	return out
-
-
-## Length of a car kind along z, for lining them up.
+## Length of a car kind along z, for lining them up (the glb's AABB).
 static func car_length(kind: String) -> float:
 	match kind:
-		"kei":
-			return 3.1
 		"van":
-			return 4.3
+			return 4.72
 		"pickup":
-			return 4.9
-	return 3.95
+			return 5.42
+	return 4.16
 
 
 static func cars() -> Node3D:
@@ -623,22 +417,56 @@ static func cars() -> Node3D:
 	var z: float = WEST_START_Z
 	for spec: Array in CARS_WEST:
 		var kind: String = str(spec[0])
-		var c: StaticBody3D = car(kind, Color(str(spec[1])))
+		var c: StaticBody3D = car(kind, HoudiniProps.palette_colour(int(spec[1])))
 		c.position = Vector3(STRIP_WEST_X, 0.0, z + car_length(kind) * 0.5)
-		c.rotation_degrees = Vector3(0, 0, 0)
+		c.rotation_degrees = Vector3(0, 180, 0)  # nose toward +Z, as the old cars faced
 		c.name = "Car%d_%s" % [n, kind]
 		root.add_child(c)
-		z += car_length(kind) + 1.0 + float(n % 3) * 0.25
+		z += car_length(kind) + 0.8 + float(n % 3) * 0.2
 		n += 1
 	z = EAST_START_Z
 	for spec: Array in CARS_EAST:
 		var kind: String = str(spec[0])
-		var c: StaticBody3D = car(kind, Color(str(spec[1])))
+		var c: StaticBody3D = car(kind, HoudiniProps.palette_colour(int(spec[1])))
 		c.position = Vector3(STRIP_EAST_X, 0.0, z + car_length(kind) * 0.5)
-		c.rotation_degrees = Vector3(0, 180, 0)
+		c.rotation_degrees = Vector3(0, 0, 0)  # nose toward -Z
 		c.name = "Car%d_%s" % [n, kind]
 		root.add_child(c)
-		z += car_length(kind) + 1.0 + float(n % 3) * 0.25
+		z += car_length(kind) + 0.8 + float(n % 3) * 0.2
+		n += 1
+	return root
+
+
+# ------------------------------------------------------------------------------------------------------------------- walls
+
+## The graffiti walls: the Houdini wall (weathering in its vertex colour) with a box collision, and the procedural graffiti art
+## laid over its painted face as decal quads. Facing: yaw 0 faces -Z (the glb's front).
+static func walls() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Walls"
+	var n: int = 0
+	for w: Array in WALLS:
+		var sb: StaticBody3D = _body("GraffitiWall_%d" % n)
+		sb.position = Vector3(float(w[0]), 0.0, float(w[1]))
+		sb.rotation_degrees = Vector3(0.0, float(w[2]), 0.0)
+		var model: Node3D = HoudiniProps.instance("graffiti_wall")
+		model.name = "Model"
+		sb.add_child(model)
+		# a box with round ends, so a skater clipping an end glances off instead of snagging on a corner
+		sb.add_child(_shape_box(Vector3(WALL_LEN - 0.42, 3.1, 0.42), Vector3(0.0, 1.55, 0.0)))
+		for sgn: float in [-1.0, 1.0]:
+			var cs := CollisionShape3D.new()
+			cs.name = "EndCap"
+			var cyl := CylinderShape3D.new()
+			cyl.radius = 0.21
+			cyl.height = 3.1
+			cs.shape = cyl
+			cs.position = Vector3(sgn * (WALL_LEN * 0.5 - 0.21), 1.55, 0.0)
+			sb.add_child(cs)
+		for d: Array in w[3]:
+			var q: MeshInstance3D = decal(str(d[0]), float(d[3]), Vector3(float(d[1]), float(d[2]), WALL_FRONT_Z - DECAL_LIFT), 180.0)
+			sb.add_child(q)
+		root.add_child(sb)
 		n += 1
 	return root
 
@@ -665,35 +493,16 @@ static func parking_strips() -> Array[Node3D]:
 
 # ------------------------------------------------------------------------------------------------------------------ litter
 
-## Litter kinds: [name, colour, count, mesh builder id].
+## Litter kinds, one MultiMeshInstance3D each: [litter_kit mesh, count, scale min, scale max, tint palette (empty for none)].
+## The kit's can and cup print is vertex colour on a white material; the tints recolour it per instance.
 const LITTER_KINDS: Array = [
-	["can_red", "ff5a5f", 12, "can"], ["can_silver", "c9d3dd", 14, "can"], ["can_blue", "4a8fe0", 10, "can"],
-	["cup_white", "f6f1e8", 12, "cup"], ["cup_red", "e8484f", 10, "cup"],
-	["chips_yellow", "ffd23f", 12, "bag"], ["chips_red", "ff5a5f", 10, "bag"], ["chips_blue", "4aa8e0", 10, "bag"],
-	["news_a", "e9e3d2", 10, "paper"], ["news_b", "d9d2bf", 8, "paper"],
-	["pizza_box", "e3c79c", 6, "pizza"], ["ball_paper", "f4f0e6", 16, "ball"], ["bottle_cap", "ff7a45", 12, "cap"],
-	["wrapper_pink", "ff9ec0", 10, "wrapper"], ["wrapper_teal", "52d1c4", 10, "wrapper"],
+	["can_crushed_a", 18, 1.4, 1.9, ["ff5a5f", "c9d3dd", "4a8fe0"]], ["can_crushed_b", 18, 1.4, 1.9, ["ff5a5f", "c9d3dd", "4a8fe0"]],
+	["cup", 22, 1.3, 1.7, ["f6f1e8", "e8484f"]],
+	["paper_crumpled_a", 14, 1.3, 1.8, []], ["paper_crumpled_b", 14, 1.3, 1.8, []],
+	["chip_bag_a", 20, 1.1, 1.5, []], ["chip_bag_b", 20, 1.1, 1.5, []],
+	["newspaper", 18, 0.9, 1.2, []], ["pizza_box", 6, 0.9, 1.1, []], ["napkin", 12, 1.3, 1.8, []],
 ]
 const LITTER_STICKERS: Array = [["sticker_smile", 6], ["sticker_star", 6], ["sticker_sk8", 6], ["sticker_heart", 6]]
-
-
-static func _litter_mesh(kind: String) -> Mesh:
-	match kind:
-		"can":
-			return _cyl(0.033, 0.033, 0.115, 8)
-		"cup":
-			return _cyl(0.042, 0.03, 0.11, 8)
-		"bag":
-			return _box(Vector3(0.17, 0.02, 0.12))
-		"paper":
-			return _box(Vector3(0.3, 0.008, 0.22))
-		"pizza":
-			return _box(Vector3(0.36, 0.035, 0.36))
-		"ball":
-			return _sphere(0.04, 6, 3)
-		"cap":
-			return _cyl(0.016, 0.016, 0.01, 6)
-	return _box(Vector3(0.1, 0.008, 0.07))
 
 
 ## Scatter points: mostly along the fence line and the corners, some around the feet of pieces; none inside `avoid`.
@@ -757,7 +566,8 @@ static func litter_points(avoid: Array[Rect2], count: int, rng: RandomNumberGene
 	return out
 
 
-## All the litter: one MultiMeshInstance3D per kind (cheap) with fixed-seed positions. No collision.
+## All the litter: one MultiMeshInstance3D per litter_kit item (cheap) with fixed-seed positions, random yaw and scale, and one
+## shared toon material (vertex colour on). No collision.
 static func litter(avoid: Array[Rect2], seed_value: int = LITTER_SEED) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Litter"
@@ -765,50 +575,34 @@ static func litter(avoid: Array[Rect2], seed_value: int = LITTER_SEED) -> Node3D
 	rng.seed = seed_value
 	var total: int = 0
 	for k: Array in LITTER_KINDS:
-		total += int(k[2])
+		total += int(k[1])
 	for s: Array in LITTER_STICKERS:
 		total += int(s[1])
 	var pts: Array[Vector2] = litter_points(avoid, total, rng)
 	var cursor: int = 0
+	var mat: Material = Toon.material_vc(Color.WHITE)
 	for k: Array in LITTER_KINDS:
-		var kind: String = str(k[3])
-		var want: int = int(k[2])
+		var mesh: Mesh = HoudiniProps.named_mesh("litter_kit", str(k[0]))
+		var centre: AABB = mesh.get_aabb()
+		var shift: Vector3 = Vector3(centre.get_center().x, 0.0, centre.get_center().z)
+		var tints: Array = k[4]
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = _litter_mesh(kind)
-		var lit_scale: float = 1.6
-		var n: int = mini(want, maxi(0, pts.size() - cursor))
+		mm.use_colors = not tints.is_empty()
+		mm.mesh = mesh
+		var n: int = mini(int(k[1]), maxi(0, pts.size() - cursor))
 		mm.instance_count = n
 		for i: int in n:
 			var p: Vector2 = pts[cursor + i]
-			var yaw: float = rng.randf_range(0.0, TAU)
-			var b: Basis = Basis(Vector3.UP, yaw)
-			var y: float = 0.01
-			match kind:
-				"can":
-					# crushed and lying on its side
-					b = b * Basis(Vector3.BACK, PI * 0.5) * Basis.from_scale(Vector3(1.0, 0.8, rng.randf_range(0.5, 0.9)))
-					y = 0.03
-				"cup":
-					b = b * Basis(Vector3.BACK, PI * 0.5 + rng.randf_range(-0.15, 0.15))
-					y = 0.04
-				"bag":
-					b = b * Basis(Vector3.RIGHT, rng.randf_range(-0.08, 0.08))
-					y = 0.018
-				"paper":
-					y = 0.006
-				"pizza":
-					y = 0.022
-				"ball":
-					y = 0.035
-				"cap":
-					y = 0.01
-			mm.set_instance_transform(i, Transform3D(b.scaled(Vector3.ONE * lit_scale), Vector3(p.x, y * lit_scale, p.y)))
+			var b: Basis = Basis(Vector3.UP, rng.randf_range(0.0, TAU)).scaled(Vector3.ONE * rng.randf_range(float(k[2]), float(k[3])))
+			mm.set_instance_transform(i, Transform3D(b, Vector3(p.x, 0.0, p.y) - b * shift))
+			if not tints.is_empty():
+				mm.set_instance_color(i, Color(str(tints[rng.randi() % tints.size()])))
 		cursor += n
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "Litter_" + str(k[0])
 		mmi.multimesh = mm
-		mmi.material_override = Toon.material(Color(str(k[1])), false)
+		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mmi)
 	for s: Array in LITTER_STICKERS:

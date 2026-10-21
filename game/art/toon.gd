@@ -31,6 +31,20 @@ static func material(color: Color, outline: bool = true) -> ShaderMaterial:
 	return mat
 
 
+## Toon material whose albedo is multiplied by the mesh's vertex colour (and a MultiMesh instance colour): weathered walls,
+## printed cans. Cached per colour, no outline.
+static func material_vc(color: Color) -> ShaderMaterial:
+	var key: String = "%s|vc" % color.to_html(true)
+	if _cache.has(key):
+		return _cache[key] as ShaderMaterial
+	var mat: ShaderMaterial = ShaderMaterial.new()
+	mat.shader = TOON_SHADER
+	mat.set_shader_parameter("albedo", color)
+	mat.set_shader_parameter("vertex_color_amount", 1.0)
+	_cache[key] = mat
+	return mat
+
+
 ## Turns the ink outline on or off for every toon material made with outline = true, now and from here on.
 static func set_outlines(on: bool) -> void:
 	outlines_enabled = on
