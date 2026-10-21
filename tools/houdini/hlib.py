@@ -328,3 +328,104 @@ def set_pivot(glb_path, node_name, pivot):
     out = bytearray(data[:12]) + struct.pack("<II", len(js), 0x4E4F534A) + js + rest
     struct.pack_into("<I", out, 8, len(out))
     open(glb_path, "wb").write(bytes(out))
+
+
+# --- level kits --------------------------------------------------------------------------------------------------
+
+def sphere(b, name, rad, center, mat, path, rows=8, cols=12, snippet=None):
+    """Polygon sphere (ellipsoid radii rad), optionally reshaped by a point wrangle, tagged."""
+    s = b.net.createNode("sphere", name)
+    for k, v in (("type", "polymesh"), ("rows", rows), ("cols", cols), ("radx", rad[0]), ("rady", rad[1]),
+                 ("radz", rad[2]), ("tx", center[0]), ("ty", center[1]), ("tz", center[2])):
+        s.parm(k).set(v)
+    n = b.wrangle(s, snippet, name=name + "_shape") if snippet else s
+    return b.tag(n, mat, path)
+
+
+def python_part(b, name, code, mat, path):
+    """Geometry from a Python SOP (code fills hou.pwd().geometry()), tagged."""
+    n = b.net.createNode("python", name)
+    n.parm("python").set(code)
+    return b.tag(n, mat, path)
+
+
+def build_piece(level, name, fn):
+    """One kit piece: a subnet built by fn(b) under /obj/<level>_<name>. fn may return collision boxes
+    [((cx, cy, cz), (sx, sy, sz)), ...] or "mesh"; None means the piece's bounding box."""
+    geo = hou.node("/obj").createNode("geo", "%s_%s" % (level, name))
+    for c in geo.children():
+        c.destroy()
+    sub = geo.createNode("subnet", name)
+    b = Builder(sub)
+    collision = fn(b)
+    b.finish(size_expr="1")
+    sub.setDisplayFlag(True)
+    sub.setRenderFlag(True)
+    return sub, collision
+
+
+def run_kit(level, pieces, materials):
+    """Export every piece to assets/props/houdini/<level>/<name>.glb and write kit.json next to them.
+    With --preview, also render previews/kit_<level>.png (all pieces in a row; one OpenGL render)."""
+    import json
+    import sys
+    MATERIALS.update(materials)
+    ensure_materials()
+    out_dir = os.path.join(PROPS, level)
+    os.makedirs(out_dir, exist_ok=True)
+    entries, nodes = [], []
+    for name, fn in pieces:
+        node, collision = build_piece(level, name, fn)
+        export_glb_to(node, os.path.join(out_dir, name + ".glb"))
+        tris = report("%s/%s.glb" % (level, name), node)
+        bb = node.geometry().boundingBox()
+        mn, mx = bb.minvec(), bb.maxvec()
+        if collision is None:
+            boxes = [{"center": [round((a + c) * 0.5, 3) for a, c in zip(mn, mx)],
+                      "size": [round(c - a, 3) for a, c in zip(mn, mx)]}]
+        elif collision == "mesh":
+            boxes = "mesh"
+        else:
+            boxes = [{"center": [round(v, 3) for v in c], "size": [round(v, 3) for v in s]} for c, s in collision]
+        entries.append({"name": name, "file": name + ".glb", "tris": tris,
+                        "bounds": {"min": [round(v, 3) for v in mn], "max": [round(v, 3) for v in mx]},
+                        "collision": boxes})
+        nodes.append(node)
+    with open(os.path.join(out_dir, "kit.json"), "w") as f:
+        json.dump({"level": level, "units": "metres, +Y up, front -Z, origin at the base centre",
+                   "collision_note": "boxes are axis-aligned in the piece's space; \"mesh\" = use the mesh as a trimesh",
+                   "pieces": entries}, f, indent=1)
+    print("%s: %d pieces, %d triangles" % (level, len(entries), sum(e["tris"] for e in entries)))
+    if "--preview" in sys.argv:
+        kit_preview(level, nodes)
+    elif "--one" in sys.argv:  # close-up of one piece: --one <name> [azimuth]
+        i = sys.argv.index("--one")
+        name = sys.argv[i + 1]
+        az = float(sys.argv[i + 2]) if len(sys.argv) > i + 2 else 35.0
+        node = nodes[[e["name"] for e in entries].index(name)]
+        for n in nodes:
+            n.parent().setDisplayFlag(n is node)
+        preview(node, os.path.join(PREVIEWS, "_one_%s.png" % name), azimuth=az)
+
+
+def kit_preview(level, nodes, cols=5):
+    """All pieces of a kit in a grid (spaced by their footprints), one OpenGL render."""
+    geo = hou.node("/obj").createNode("geo", "kit_preview_" + level)
+    m = geo.createNode("merge")
+    sizes = [n.geometry().boundingBox().sizevec() for n in nodes]
+    cell = max(max(s[0], s[2]) for s in sizes) * 1.15
+    for i, n in enumerate(nodes):
+        om = geo.createNode("object_merge")
+        om.parm("objpath1").set(n.path())
+        x = geo.createNode("xform")
+        x.setInput(0, om)
+        x.parm("tx").set((i % cols - (min(cols, len(nodes)) - 1) * 0.5) * cell)
+        x.parm("tz").set((i // cols) * cell)
+        m.setInput(i, x)
+    m.setDisplayFlag(True)
+    for n in nodes:
+        n.parent().setDisplayFlag(False)
+    png = os.path.join(PREVIEWS, "kit_%s.png" % level)
+    bb = m.geometry().boundingBox()
+    preview(m, png, res=(1600, 900), azimuth=20.0, elevation=30.0, radius=bb.sizevec().length() * 0.36)
+    print(png)
