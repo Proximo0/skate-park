@@ -11,39 +11,18 @@ signal combo_bailed(text: String)
 signal landed(result: String)
 signal gap_hit(gap_name: String, points: int)
 signal bailed
+## Emitted at the end of every physics tick with `debug` (see docs/physics_debug_brief.md).
+signal physics_ticked(frame: Dictionary)
 
-const GRAVITY := 18.0  ## a bit floatier-than-real arcs (9.8 feels heavy for a cartoon game)
-const PUSH_ACCEL := 9.0
-const PUSH_MAX := 12.0  ## pushing alone tops out here; slopes can go faster
-const MAX_SPEED := 22.0
-const BRAKE := 6.0
-const ROLL_FRICTION := 0.6
-const TURN_RATE := 2.6  ## rad/s at low speed
-const TURN_RATE_FAST := 1.7  ## rad/s at MAX_SPEED
-const OLLIE_MIN := 6.0
-const OLLIE_MAX := 8.5
-const CROUCH_FULL := 0.4  ## seconds of crouch for the full ollie
-const SPIN_RATE := 7.5  ## rad/s in the air
-const AIR_STEER := 1.2
-const VERT_NORMAL_Y := 0.35  ## leaving a surface steeper than this, going up, is a vert launch
-const GRIND_REACH := 1.1
-const GRIND_MIN_SPEED := 3.0
-const FLIP_TIME := 0.42
-const DOUBLE_FLIP_TIME := 0.68
-const WALLRIDE_TIME := 1.2
-const LIP_MAX_TIME := 2.5
 const SPIN_POINTS_PER_180 := 100
-const PUMP_ACCEL := 2.5  ## holding forward on the way down a transition pumps speed, as on a real halfpipe
-const PUMP_ACCEL_VERT := 22.0  ## the same pump on a steep (vert) transition: a few back-and-forths build big air
-const RAIL_GRAVITY := 10.0  ## down rails speed up a little less than free rolling
-const RAIL_FRICTION := 0.5
-const EDGE_GRIP := 2.5  ## how much more than gravity's hold a convex bend may ask before the board leaves it
-const OVERHANG_RADIUS := 3.5  ## assumed curve radius when judging if speed holds the board to an overhang (loop top)
-const GETUP_TIME := 0.6  ## get-up animation after the ragdoll settles
-const KILL_Y := -20.0  ## below the deepest bowl (the dome sinks about 7 m)
-const PUSH_PLANT := 0.18  ## matches SkaterPoser: first push steps off the tail, then each cycle kicks
-const PUSH_CYCLE := 0.6
-const PUSH_CONTACT := 0.55
+
+## Live physics tuning. Every ride number is read from here each tick.
+var tune: PhysicsTuning = PhysicsTuning.shared()
+## Per-tick debug frame (same dictionary the physics_ticked signal carries).
+var debug: Dictionary = {}
+## Events raised this tick: "ollie", "air", "land:<result>", "bail", "grind", "grind_end", "manual", "lip",
+## "wallride", "leave_edge", "overhang_drop", "speed_restore", "respawn".
+var events: Array[String] = []
 
 var db: TrickDB
 var state := SkateState.new()
@@ -93,6 +72,13 @@ var _snap_offset: Vector3 = Vector3.ZERO  ## visual-only catch-up after a rail o
 var _left_rail: GrindRail
 var _left_rail_t: float = -10.0
 var _left_edge: bool = false
+var _tick_count: int = 0
+var _in_tick: bool = false
+var _carry_events: Array[String] = []  ## raised between ticks (an outside respawn()), shown on the next frame
+var _d_pumping: bool = false
+var _d_pushing: bool = false
+var _d_braking: bool = false
+var _d_pulse: float = 0.0
 
 
 func _ready() -> void:
@@ -165,13 +151,27 @@ var scripted_input: bool = false
 
 
 func _physics_process(delta: float) -> void:
+	_tick_count += 1
+	events = _carry_events
+	_carry_events = []
+	_d_pumping = false
+	_d_pushing = false
+	_d_braking = false
+	_d_pulse = 0.0
+	_in_tick = true
+	_step(delta)
+	_in_tick = false
+	_publish()
+
+
+func _step(delta: float) -> void:
 	_t += delta
 	if not scripted_input:
 		read_input()
 	if Input.is_action_just_pressed("restart"):
 		respawn()
 		return
-	if global_position.y < KILL_Y:
+	if global_position.y < tune.kill_y:
 		respawn()
 		return
 	var requests: Array = tricks.feed(_stick, _just_pressed, _held)
@@ -231,9 +231,9 @@ func _tick_rolling(delta: float, requests: Array) -> void:
 func _handle_ollie(delta: float) -> void:
 	if _held.has("ollie"):
 		_crouch_time += delta
-		crouch = clampf(_crouch_time / CROUCH_FULL, 0.0, 1.0)
+		crouch = clampf(_crouch_time / tune.crouch_full, 0.0, 1.0)
 	elif _crouch_time > 0.0:
-		var power: float = lerpf(OLLIE_MIN, OLLIE_MAX, crouch)
+		var power: float = lerpf(tune.ollie_min, tune.ollie_max, crouch)
 		_crouch_time = 0.0
 		crouch = 0.0
 		_ollie(power)
@@ -248,8 +248,38 @@ func _ollie(power: float) -> void:
 	if state.state != SkateState.State.GRIND:
 		position += up * 0.05
 	if state.event("ollie"):
+		_ev("ollie")
 		_set_anim("ollie")
 		_enter_air(false)
+
+
+func _ev(name: String) -> void:
+	if _in_tick:
+		events.append(name)
+	else:
+		_carry_events.append(name)
+
+
+func _publish() -> void:
+	var rail_name: String = ""
+	if _rail != null and is_instance_valid(_rail):
+		rail_name = String(_rail.name)
+	var pressed: Array[String] = []
+	for b: Variant in _just_pressed:
+		pressed.append(str(b))
+	var held: Array[String] = []
+	for b: Variant in _held:
+		held.append(str(b))
+	debug = {
+		"tick": _tick_count, "t": _t, "state": state.state_name(),
+		"pos": global_position if is_inside_tree() else position, "vel": velocity, "speed": velocity.length(),
+		"on_floor": is_on_floor(), "floor_normal": _floor_normal, "facing": facing, "board_up": board_up,
+		"stick": _stick, "held": held, "pressed": pressed, "crouch": crouch, "anim": anim,
+		"vert_air": vert_air, "launch_normal": _launch_normal, "wall_normal": _wall_normal,
+		"pumping": _d_pumping, "pushing": _d_pushing, "push_pulse": _d_pulse, "braking": _d_braking,
+		"left_edge": _left_edge, "on_wall": is_on_wall(), "rail": rail_name, "events": events,
+	}
+	physics_ticked.emit(debug)
 
 
 func _ground_move(delta: float, allow_push: bool) -> void:
@@ -265,31 +295,35 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	else:
 		facing = facing.slide(n).normalized() if facing.slide(n).length() > 0.01 else _fallback_facing(n)
 	# steering: rotate travel direction around the surface normal
-	var turn_rate: float = lerpf(TURN_RATE, TURN_RATE_FAST, clampf(v.length() / MAX_SPEED, 0.0, 1.0))
+	var turn_rate: float = lerpf(tune.turn_rate, tune.turn_rate_fast, clampf(v.length() / tune.max_speed, 0.0, 1.0))
 	var steer: float = -_stick.x * turn_rate * delta * clampf(v.length() / 1.5, 0.25, 1.0)
 	if absf(steer) > 0.0:
 		facing = facing.rotated(n.normalized(), steer).normalized()
 		v = facing * v.length() * (1.0 if v.dot(facing) >= 0.0 else -1.0)
 	# gravity along the slope
-	v += Vector3.DOWN.slide(n) * GRAVITY * delta
+	v += Vector3.DOWN.slide(n) * tune.gravity * delta
 	var along: float = v.dot(facing)
-	if allow_push and _stick.y < -0.3 and along < PUSH_MAX and n.y > 0.8:
+	if allow_push and _stick.y < -0.3 and along < tune.push_max and n.y > 0.8:
+		_d_pushing = true
 		if anim != "push" and crouch == 0.0:
 			_set_anim("push")
 		# Speed comes from the kicks: only while the push foot is on the ground (same timing as the pose).
-		along = minf(along + PUSH_ACCEL * _push_pulse() * delta, PUSH_MAX)
+		_d_pulse = _push_pulse()
+		along = minf(along + tune.push_accel * _d_pulse * delta, tune.push_max)
 	elif _stick.y < -0.3 and n.y < 0.95 and n.y > 0.15 and (v.y < 0.0 or n.y < 0.8):
 		# Steeper transition, stronger pump: kickers and banks give a little on the way down, a vert wall pumps
 		# both ways (compress in, extend out) so a few back-and-forths build big air.
-		along += lerpf(PUMP_ACCEL, PUMP_ACCEL_VERT, clampf((0.95 - n.y) / 0.6, 0.0, 1.0)) * delta
+		_d_pumping = true
+		along += lerpf(tune.pump_accel, tune.pump_accel_vert, clampf((0.95 - n.y) / 0.6, 0.0, 1.0)) * delta
 	elif _stick.y > 0.5 and n.y > 0.8 and state.state == SkateState.State.ROLLING:
-		along = move_toward(along, 0.0, BRAKE * delta)
-	along = move_toward(along, 0.0, ROLL_FRICTION * delta)
+		_d_braking = true
+		along = move_toward(along, 0.0, tune.brake * delta)
+	along = move_toward(along, 0.0, tune.roll_friction * delta)
 	var side: Vector3 = v - facing * v.dot(facing)
-	side = side.move_toward(Vector3.ZERO, 25.0 * delta)  # wheels resist sliding sideways
+	side = side.move_toward(Vector3.ZERO, tune.side_grip * delta)  # wheels resist sliding sideways
 	v = facing * along + side
-	if v.length() > MAX_SPEED:
-		v = v.normalized() * MAX_SPEED
+	if v.length() > tune.max_speed:
+		v = v.normalized() * tune.max_speed
 	if anim == "push" and _stick.y >= -0.3:
 		_set_anim("idle_ride")
 	if crouch > 0.0 and anim != "crouch":
@@ -297,13 +331,14 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	# Going up a steep wall: no snap and no push into the surface, so the skater leaves the lip
 	# into vert air instead of wrapping over onto the deck.
 	# Upside down (a loop's upper half): only centripetal force holds the board on. Too slow, and it drops off.
-	if n.y < -0.2 and v.length_squared() < GRAVITY * -n.y * OVERHANG_RADIUS:
+	if n.y < -0.2 and v.length_squared() < tune.gravity * -n.y * tune.overhang_radius:
 		_left_edge = true
+		_ev("overhang_drop")
 		velocity = v
 		_launch_normal = n
 		return
 	# (Not on an overhang: inside a loop the surface keeps curving over the top, so stay glued to it.)
-	var climbing_vert: bool = n.y < VERT_NORMAL_Y and n.y > -0.2 and v.y > 0.3
+	var climbing_vert: bool = n.y < tune.vert_normal_y and n.y > -0.2 and v.y > 0.3
 	velocity = v if climbing_vert else v - n * 0.5
 	up_direction = n
 	floor_snap_length = 0.0 if climbing_vert else 0.6
@@ -317,6 +352,7 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			# Over a lip (kicker top, ledge edge, funbox crest at speed): the surface falls away faster than
 			# gravity can hold the board to it, so carry on along the old surface into the air.
 			_left_edge = true
+			_ev("leave_edge")
 			velocity = v
 			_launch_normal = was
 			return
@@ -325,11 +361,12 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		if spd > 0.5 and fn.dot(was) > 0.8 and grazing and velocity.length() < spd:
 			# Riding a curved (faceted) ramp, transition or loop, or brushing along a curb: keep the speed the
 			# slope physics gave, so facet corners and glancing side contacts don't eat it.
+			_ev("speed_restore")
 			velocity = velocity.slide(fn).normalized() * spd
 		_floor_normal = fn
-		if was.y < VERT_NORMAL_Y and velocity.dot(Vector3.UP) > 0.0:
+		if was.y < tune.vert_normal_y and velocity.dot(Vector3.UP) > 0.0:
 			_launch_normal = was
-		elif fn.y >= VERT_NORMAL_Y:
+		elif fn.y >= tune.vert_normal_y:
 			_launch_normal = Vector3.UP
 		board_up = _turn_toward(board_up, fn, clampf(delta * 20.0, 0.0, 1.0))
 	else:
@@ -339,7 +376,7 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 
 ## True when following the floor from normal `was` to `fn` this tick would need more grip than gravity gives:
 ## a convex bend (the normal tips toward the travel direction) whose curvature at this speed wants a
-## centripetal pull over EDGE_GRIP times gravity's, or riding down onto a near-vertical face.
+## centripetal pull over the edge_grip tuning times gravity's, or riding down onto a near-vertical face.
 func _leaves_surface(was: Vector3, fn: Vector3, v: Vector3, delta: float) -> bool:
 	var spd: float = v.length()
 	if spd < 0.5:
@@ -353,16 +390,16 @@ func _leaves_surface(was: Vector3, fn: Vector3, v: Vector3, delta: float) -> boo
 	if bend < 0.01:
 		return false
 	var curvature: float = bend / maxf(spd * delta, 0.001)
-	return spd * spd * curvature > EDGE_GRIP * GRAVITY * maxf(was.y, 0.1)
+	return spd * spd * curvature > tune.edge_grip * tune.gravity * maxf(was.y, 0.1)
 
 
 ## 0..1 push strength this tick, from the push anim's time: 0 while stepping off and swinging the foot forward,
 ## a burst while the foot sweeps the ground. Averages to 1 over a cycle.
 func _push_pulse() -> float:
-	if anim != "push" or anim_time < PUSH_PLANT:
+	if anim != "push" or anim_time < tune.push_plant:
 		return 0.3
-	var u: float = fposmod(anim_time - PUSH_PLANT, PUSH_CYCLE) / PUSH_CYCLE
-	return 1.0 / PUSH_CONTACT if u < PUSH_CONTACT else 0.0
+	var u: float = fposmod(anim_time - tune.push_plant, tune.push_cycle) / tune.push_cycle
+	return 1.0 / tune.push_contact if u < tune.push_contact else 0.0
 
 
 func _fallback_facing(n: Vector3) -> Vector3:
@@ -382,7 +419,7 @@ func _tick_manual(delta: float) -> void:
 		return
 	if _just_pressed.has("ollie"):
 		balance_kind = ""
-		_ollie(OLLIE_MIN)
+		_ollie(tune.ollie_min)
 		return
 	if speed < 0.6:
 		balance_kind = ""
@@ -398,9 +435,10 @@ func _go_airborne(_from_grind: bool) -> void:
 
 
 func _enter_air(_from_rail: bool) -> void:
+	_ev("air")
 	balance_kind = ""
 	_rail = null
-	vert_air = _launch_normal.y < VERT_NORMAL_Y and _launch_normal.y > -0.2 and velocity.y > 0.5
+	vert_air = _launch_normal.y < tune.vert_normal_y and _launch_normal.y > -0.2 and velocity.y > 0.5
 	if vert_air:
 		# THUG-style vert: stay in the ramp's plane so the skater comes back down onto the ramp.
 		var out: Vector3 = Vector3(_launch_normal.x, 0.0, _launch_normal.z).normalized()
@@ -419,7 +457,7 @@ func _enter_air(_from_rail: bool) -> void:
 
 
 func _tick_air(delta: float, requests: Array) -> void:
-	velocity += Vector3.DOWN * GRAVITY * delta
+	velocity += Vector3.DOWN * tune.gravity * delta
 	# spin: shoulders or stick left/right
 	var spin_in: float = 0.0
 	if _held.has("spin_left"):
@@ -427,15 +465,15 @@ func _tick_air(delta: float, requests: Array) -> void:
 	if _held.has("spin_right"):
 		spin_in -= 1.0
 	if spin_in == 0.0 and absf(_stick.x) > 0.35:
-		# THUG-style stick spin, analog: past the steering range it spins, full stick at SPIN_RATE.
+		# THUG-style stick spin, analog: past the steering range it spins, full stick at the spin rate.
 		spin_in = -signf(_stick.x) * clampf((absf(_stick.x) - 0.35) / 0.5, 0.3, 1.0)
 	if spin_in != 0.0:
-		facing = facing.rotated(Vector3.UP, spin_in * SPIN_RATE * delta).normalized()
+		facing = facing.rotated(Vector3.UP, spin_in * tune.spin_rate * delta).normalized()
 	elif not vert_air:
 		# gentle drift of travel direction toward the stick (air control)
 		var hv: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
 		if hv.length() > 0.5:
-			velocity = velocity.rotated(Vector3.UP, -_stick.x * AIR_STEER * delta)
+			velocity = velocity.rotated(Vector3.UP, -_stick.x * tune.air_steer * delta)
 	spin.update(_yaw())
 	# auto-align the board toward the predicted landing surface (generous, like THUG)
 	var target_up: Vector3 = _predict_landing_normal()
@@ -489,7 +527,7 @@ func _air_trick(r: Dictionary) -> void:
 		_grab_trick = t
 		_hold_pps = int(t.get("points_per_sec", 0))
 	else:
-		var dur: float = DOUBLE_FLIP_TIME if bool(t.get("double_tap", false)) else FLIP_TIME
+		var dur: float = tune.double_flip_time if bool(t.get("double_tap", false)) else tune.flip_time
 		if t["kind"] == "special":
 			dur = 0.9
 			special.use_special()
@@ -509,6 +547,7 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	elif flip_left > 0.0 and result == "clean":
 		result = "sketchy"  # caught it late
 	var spins: int = spin.spins180()
+	_ev("land:" + result)
 	if result == "bail":
 		_bail()
 		landed.emit(result)
@@ -525,7 +564,7 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 		# pumping on each pass builds height instead of bleeding it away.
 		v = v.normalized() * hit_v.length()
 		keep = 1.0
-	velocity = (v * keep).limit_length(MAX_SPEED)
+	velocity = (v * keep).limit_length(tune.max_speed)
 	if v.length() > 0.5:
 		facing = v.normalized()
 	vert_air = false
@@ -557,11 +596,11 @@ func _predict_landing_normal() -> Vector3:
 # --- rails, lips, walls -------------------------------------------------------------------------------
 
 func _try_grind() -> bool:
-	if speed < GRIND_MIN_SPEED * 0.5 and state.state == SkateState.State.ROLLING:
+	if speed < tune.grind_min_speed * 0.5 and state.state == SkateState.State.ROLLING:
 		return false
 	var best: GrindRail = null
 	var best_hit: Dictionary = {}
-	var best_d: float = GRIND_REACH
+	var best_d: float = tune.grind_reach
 	for node: Node in get_tree().get_nodes_in_group("grind_rail"):
 		var r: GrindRail = node as GrindRail
 		if r == null or r.points.size() < 2:
@@ -595,7 +634,7 @@ func _try_grind() -> bool:
 	if absf(along) < velocity.length() * 0.5:
 		var sgn: float = signf(along) if absf(along) > 0.01 else (1.0 if facing.dot(tan) >= 0.0 else -1.0)
 		along = velocity.length() * 0.5 * sgn
-	var floor_speed: float = GRIND_MIN_SPEED * 0.5
+	var floor_speed: float = tune.grind_min_speed * 0.5
 	if absf(along) < floor_speed:
 		along = floor_speed * (1.0 if along >= 0.0 else -1.0)
 		if absf(velocity.dot(tan)) < 0.01:
@@ -620,9 +659,9 @@ func _tick_grind(delta: float) -> void:
 	combo.add_hold_points(_hold_pps, delta)
 	var cur: Dictionary = _rail.advance(_rail_seg, _rail_t, 0.0)
 	var tan: Vector3 = cur["tangent"]
-	_rail_speed += -RAIL_GRAVITY * tan.y * delta  # downhill rails speed up, uphill ones slow and slide back
-	_rail_speed = move_toward(_rail_speed, 0.0, RAIL_FRICTION * delta)
-	_rail_speed = clampf(_rail_speed, -MAX_SPEED, MAX_SPEED)
+	_rail_speed += -tune.rail_gravity * tan.y * delta  # downhill rails speed up, uphill ones slow and slide back
+	_rail_speed = move_toward(_rail_speed, 0.0, tune.rail_friction * delta)
+	_rail_speed = clampf(_rail_speed, -tune.max_speed, tune.max_speed)
 	if absf(_rail_speed) < 0.3 and absf(tan.y) < 0.05:
 		state.event("fall_off")  # ground to a halt on a flat rail
 		_enter_air(true)
@@ -681,7 +720,7 @@ func _tick_lip(delta: float, _requests: Array) -> void:
 	if not balance.update(delta, _stick.x):
 		_bail()
 		return
-	if _just_pressed.has("ollie") or _just_pressed.has("grind") or balance.time_held() > LIP_MAX_TIME:
+	if _just_pressed.has("ollie") or _just_pressed.has("grind") or balance.time_held() > tune.lip_max_time:
 		# drop back in: down the ramp, which faces along the launch normal
 		balance_kind = ""
 		state.event("lip_end")
@@ -699,17 +738,18 @@ func _tick_lip(delta: float, _requests: Array) -> void:
 func _tick_wallride(delta: float) -> void:
 	combo.add_hold_points(_hold_pps, delta)
 	velocity = velocity.slide(_wall_normal)
-	velocity += Vector3.DOWN * GRAVITY * 0.3 * delta
+	velocity += Vector3.DOWN * tune.gravity * 0.3 * delta
 	velocity += -_wall_normal * 0.5  # stay against the wall
 	up_direction = Vector3.UP
 	move_and_slide()
 	if _just_pressed.has("ollie"):
 		velocity += _wall_normal * 3.5 + Vector3.UP * 6.0
 		state.event("ollie")
+		_ev("ollie")
 		_score_trick({"id": "wallie", "name": "Wallie", "points": 200, "kind": "wallride", "anim": "ollie"})
 		_enter_air(false)
 		return
-	if state.time_in_state > WALLRIDE_TIME or not is_on_wall() or is_on_floor():
+	if state.time_in_state > tune.wallride_time or not is_on_wall() or is_on_floor():
 		state.event("fall_off")
 		velocity += _wall_normal * 1.0
 		_enter_air(false)
@@ -766,7 +806,7 @@ func _tick_bail(delta: float) -> void:
 			facing = -t.basis.z
 			board_up = Vector3.UP
 			_floor_normal = Vector3.UP
-			_getup_left = GETUP_TIME
+			_getup_left = tune.getup_time
 			_set_anim("bail_getup")
 		return
 	if _getup_left > 0.0:
@@ -776,7 +816,7 @@ func _tick_bail(delta: float) -> void:
 		if state.time_in_state >= SkateState.BAIL_TIME and state.event("recover"):
 			_set_anim("idle_ride")
 		return
-	velocity += Vector3.DOWN * GRAVITY * delta
+	velocity += Vector3.DOWN * tune.gravity * delta
 	var h: Vector3 = Vector3(velocity.x, 0.0, velocity.z).move_toward(Vector3.ZERO, 8.0 * delta)
 	velocity = Vector3(h.x, velocity.y, h.z)
 	up_direction = Vector3.UP
@@ -793,6 +833,7 @@ func _tick_bail(delta: float) -> void:
 
 
 func respawn() -> void:
+	_ev("respawn")
 	_end_ragdoll()
 	_getup_left = 0.0
 	global_transform = _spawn
@@ -809,6 +850,180 @@ func respawn() -> void:
 	combo.bail()
 	gaps.reset_combo()
 	_set_anim("idle_ride")
+
+
+# --- snapshot / restore ---------------------------------------------------------------------------------
+
+## Everything that affects future physics, as plain Variants (Vector3, Transform3D, Dictionary, Array, String,
+## int, float, bool) so it survives var_to_str / str_to_var. Inputs are not included: feed them with set_input.
+func snapshot() -> Dictionary:
+	var rail_path: String = ""
+	if _rail != null and is_instance_valid(_rail) and _rail.is_inside_tree():
+		rail_path = str(_rail.get_path())
+	var left_rail_path: String = ""
+	if _left_rail != null and is_instance_valid(_left_rail) and _left_rail.is_inside_tree():
+		left_rail_path = str(_left_rail.get_path())
+	return {
+		"transform": global_transform if is_inside_tree() else transform,
+		"velocity": velocity,
+		"up_direction": up_direction,
+		"speed": speed,
+		"facing": facing,
+		"board_up": board_up,
+		"floor_normal": _floor_normal,
+		"launch_normal": _launch_normal,
+		"wall_normal": _wall_normal,
+		"vert_air": vert_air,
+		"crouch": crouch,
+		"crouch_time": _crouch_time,
+		"switch_stance": switch_stance,
+		"anim": anim,
+		"anim_time": anim_time,
+		"anim_trick": anim_trick.duplicate(true),
+		"balance_kind": balance_kind,
+		"t": _t,
+		"seed": _seed,
+		"tick": _tick_count,
+		"air_trick_until": _air_trick_until,
+		"grab_trick": _grab_trick.duplicate(true),
+		"hold_pps": _hold_pps,
+		"rail": rail_path,
+		"rail_seg": _rail_seg,
+		"rail_t": _rail_t,
+		"rail_speed": _rail_speed,
+		"left_rail": left_rail_path,
+		"left_rail_t": _left_rail_t,
+		"left_edge": _left_edge,
+		"recent_grind_press": _recent_grind_press,
+		"pending_air": _pending_air.duplicate(true),
+		"snap_offset": _snap_offset,
+		"spawn": _spawn,
+		"ragdoll": ragdoll_active,
+		"getup_left": _getup_left,
+		"state": {
+			"state": int(state.state),
+			"time_in_state": state.time_in_state,
+			"combo_open": state.combo_open,
+			"revert_armed": state._revert_armed,
+		},
+		"tricks": {
+			"tick": tricks._tick,
+			"last_dir": tricks._last_dir,
+			"last_dir_tick": tricks._last_dir_tick,
+			"history": Array(tricks._history).duplicate(true),
+			"last_press": tricks._last_press.duplicate(true),
+		},
+		"combo": {
+			"tricks": Array(combo._tricks).duplicate(true),
+			"hold_accum": combo._hold_accum,
+			"landed_total": combo.landed_total,
+			"best_combo": combo.best_combo,
+		},
+		"special": {"value": special.value, "special": special._special},
+		"balance": {
+			"angle": balance.angle,
+			"velocity": balance.velocity,
+			"time": balance._time,
+			"difficulty": balance._difficulty,
+			"failed": balance._failed,
+			"next_nudge_at": balance._next_nudge_at,
+			"rng_seed": balance._rng.seed,
+			"rng_state": balance._rng.state,
+		},
+		"spin": {"last_yaw": spin._last_yaw, "total_rad": spin._total_rad},
+		"gaps": {"discovered": gaps.discovered.duplicate(true), "pending": gaps._pending.duplicate(true)},
+	}
+
+
+## Puts a snapshot() back. Inputs are untouched. The bail ragdoll is a physics-engine object and cannot be
+## stored: a snapshot taken during one starts a fresh ragdoll from the restored velocity.
+func restore(d: Dictionary) -> void:
+	_end_ragdoll()
+	if is_inside_tree():
+		global_transform = d["transform"]
+	else:
+		transform = d["transform"]
+	velocity = d["velocity"]
+	up_direction = d["up_direction"]
+	speed = d["speed"]
+	facing = d["facing"]
+	board_up = d["board_up"]
+	_floor_normal = d["floor_normal"]
+	_launch_normal = d["launch_normal"]
+	_wall_normal = d["wall_normal"]
+	vert_air = d["vert_air"]
+	crouch = d["crouch"]
+	_crouch_time = d["crouch_time"]
+	switch_stance = d["switch_stance"]
+	anim = d["anim"]
+	anim_time = d["anim_time"]
+	anim_trick = (d["anim_trick"] as Dictionary).duplicate(true)
+	balance_kind = d["balance_kind"]
+	_t = d["t"]
+	_seed = d["seed"]
+	_tick_count = d["tick"]
+	_air_trick_until = d["air_trick_until"]
+	_grab_trick = (d["grab_trick"] as Dictionary).duplicate(true)
+	_hold_pps = d["hold_pps"]
+	_rail = _rail_at(str(d["rail"]))
+	_rail_seg = d["rail_seg"]
+	_rail_t = d["rail_t"]
+	_rail_speed = d["rail_speed"]
+	_left_rail = _rail_at(str(d["left_rail"]))
+	_left_rail_t = d["left_rail_t"]
+	_left_edge = d["left_edge"]
+	_recent_grind_press = d["recent_grind_press"]
+	_pending_air = (d["pending_air"] as Array).duplicate(true)
+	_snap_offset = d["snap_offset"]
+	_spawn = d["spawn"]
+	_getup_left = d["getup_left"]
+	var st: Dictionary = d["state"]
+	state.state = int(st["state"]) as SkateState.State
+	state.time_in_state = st["time_in_state"]
+	state.combo_open = st["combo_open"]
+	state._revert_armed = st["revert_armed"]
+	var ti: Dictionary = d["tricks"]
+	tricks._tick = ti["tick"]
+	tricks._last_dir = ti["last_dir"]
+	tricks._last_dir_tick = ti["last_dir_tick"]
+	tricks._history.clear()
+	for h: Dictionary in (ti["history"] as Array):
+		tricks._history.append(h.duplicate(true))
+	tricks._last_press = (ti["last_press"] as Dictionary).duplicate(true)
+	var cb: Dictionary = d["combo"]
+	combo._tricks.clear()
+	for e: Dictionary in (cb["tricks"] as Array):
+		combo._tricks.append(e.duplicate(true))
+	combo._hold_accum = cb["hold_accum"]
+	combo.landed_total = cb["landed_total"]
+	combo.best_combo = cb["best_combo"]
+	var sp: Dictionary = d["special"]
+	special.value = sp["value"]
+	special._special = sp["special"]
+	var bl: Dictionary = d["balance"]
+	balance.angle = bl["angle"]
+	balance.velocity = bl["velocity"]
+	balance._time = bl["time"]
+	balance._difficulty = bl["difficulty"]
+	balance._failed = bl["failed"]
+	balance._next_nudge_at = bl["next_nudge_at"]
+	balance._rng.seed = bl["rng_seed"]
+	balance._rng.state = bl["rng_state"]
+	var sn: Dictionary = d["spin"]
+	spin._last_yaw = sn["last_yaw"]
+	spin._total_rad = sn["total_rad"]
+	var gp: Dictionary = d["gaps"]
+	gaps.discovered = (gp["discovered"] as Dictionary).duplicate(true)
+	gaps._pending = (gp["pending"] as Dictionary).duplicate(true)
+	if bool(d["ragdoll"]):
+		_start_ragdoll()
+		_getup_left = d["getup_left"]
+
+
+func _rail_at(path: String) -> GrindRail:
+	if path == "" or not is_inside_tree():
+		return null
+	return get_node_or_null(NodePath(path)) as GrindRail
 
 
 # --- scoring ------------------------------------------------------------------------------------------
@@ -853,8 +1068,22 @@ func _on_combo_bailed() -> void:
 	combo_bailed.emit(text)
 
 
-func _on_state_changed(_from: SkateState.State, _to: SkateState.State) -> void:
-	pass
+func _on_state_changed(from: SkateState.State, to: SkateState.State) -> void:
+	if from == SkateState.State.GRIND:
+		_ev("grind_end")
+	match to:
+		SkateState.State.GRIND:
+			_ev("grind")
+		SkateState.State.MANUAL:
+			_ev("manual")
+		SkateState.State.LIP:
+			_ev("lip")
+		SkateState.State.WALLRIDE:
+			_ev("wallride")
+		SkateState.State.BAIL:
+			_ev("bail")
+		_:
+			pass
 
 
 func _on_zone_entered(body: Node3D, area: Area3D) -> void:

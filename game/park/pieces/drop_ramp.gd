@@ -62,7 +62,7 @@ static func build(width: float = 4.0, start_height: float = 12.0, flat_len: floa
 	root.add_child(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_SIDE, "RollIn"))
 	var end_z: float = roll_end(start_height)
 	if flat_len > 0.0:
-		root.add_child(PieceKit.box(Vector3(0.0, -0.5, end_z), Vector3(width, 0.5, flat_len), PieceKit.CONCRETE, "RunFloor"))
+		root.add_child(PieceKit.floor_pad(Vector3(0.0, -0.5, end_z), Vector3(width, 0.5, flat_len), PieceKit.CONCRETE, "RunFloor"))
 	for x: float in [SIDE_RAIL_INSET, width - SIDE_RAIL_INSET]:
 		var i: int = 0
 		while i < ROLL_STEPS:

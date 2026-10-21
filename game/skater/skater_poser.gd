@@ -36,6 +36,12 @@ const CATCH: float = 0.8  ## fraction of a flip where the feet come back down on
 const PUSH_CYCLE: float = 0.6
 const PUSH_PLANT: float = 0.18  ## first push only: seconds to step off the tail to the plant point
 const PUSH_CONTACT: float = 0.55  ## fraction of a push cycle with the foot on the ground
+
+## Live push timing. Start at the consts above; a poser whose skater has a `tune` copies its push_* fields in
+## each frame so the pose stays in step with the push kicks.
+static var _push_plant: float = PUSH_PLANT
+static var _push_cycle: float = PUSH_CYCLE
+static var _push_contact: float = PUSH_CONTACT
 const POP_TIME: float = 0.08  ## tail snap
 const LEVEL_TIME: float = 0.22  ## board levels out and rises to the feet
 const LAND_TIME: float = 0.2
@@ -98,6 +104,11 @@ func _process(delta: float) -> void:
 		var balance: Object = skater.get("balance")
 		bal = float(balance.get("angle")) if balance != null else 0.0
 		switch = bool(skater.get("switch_stance"))
+		var tn: Object = skater.get("tune") as Object
+		if tn != null:
+			_push_plant = float(tn.get("push_plant"))
+			_push_cycle = float(tn.get("push_cycle"))
+			_push_contact = float(tn.get("push_contact"))
 	else:
 		_preview_t += delta
 		t = _preview_t
@@ -391,18 +402,18 @@ static func _pose_push(pose: Dictionary, t: float, c: float) -> void:
 	var contact: float = 0.0  ## 1 while the foot is on the ground
 	var foot: Vector3
 	var reach: float = 0.0  ## 0 foot forward, 1 foot fully back (arm swing)
-	if t < PUSH_PLANT:
-		var k: float = _smooth(t / PUSH_PLANT)
+	if t < _push_plant:
+		var k: float = _smooth(t / _push_plant)
 		foot = deck_point(pose, BACK_FOOT + ankle).lerp(ground_point(pose, plant), k) + Vector3.UP * 0.07 * sin(PI * k)
 		contact = k
 	else:
-		var u: float = fposmod(t - PUSH_PLANT, PUSH_CYCLE) / PUSH_CYCLE
-		if u < PUSH_CONTACT:
-			reach = _smooth(u / PUSH_CONTACT)
+		var u: float = fposmod(t - _push_plant, _push_cycle) / _push_cycle
+		if u < _push_contact:
+			reach = _smooth(u / _push_contact)
 			foot = ground_point(pose, plant.lerp(finish, reach))
 			contact = 1.0
 		else:
-			var k: float = _smooth((u - PUSH_CONTACT) / (1.0 - PUSH_CONTACT))
+			var k: float = _smooth((u - _push_contact) / (1.0 - _push_contact))
 			reach = 1.0 - k
 			foot = ground_point(pose, finish.lerp(plant, k)) + Vector3.UP * 0.1 * sin(PI * k)
 			contact = 1.0 - sin(PI * k)

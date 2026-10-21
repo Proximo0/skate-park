@@ -81,14 +81,14 @@ static func build(width: float = 8.0, start_height: float = 18.0, gap: float = 1
 	root.name = "MegaRamp"
 	var L: Dictionary = _layout(gap, start_height, qp_height)
 	root.add_child(_roll_in(width, start_height, L))
-	root.add_child(PieceKit.box(Vector3(0.0, -0.5, float(L["roll_end"])), Vector3(width, 0.5, FLAT_LEN), PieceKit.CONCRETE, "BaseFloor"))
+	root.add_child(PieceKit.floor_pad(Vector3(0.0, -0.5, float(L["roll_end"])), Vector3(width, 0.5, FLAT_LEN), PieceKit.CONCRETE, "BaseFloor"))
 	root.add_child(_kicker(width, L))
 	_gap(root, width, L)
 	root.add_child(_landing(width, L))
 	# Extra gap zones so the data can pair them: "mega_land" over the landing's top, "mega_runout" over the flat after it.
 	root.add_child(PieceKit.gap_zone("mega_land", Vector3(0.0, 0.0, float(L["land_top_z"])), Vector3(width, 6.0, 6.0)))
 	root.add_child(PieceKit.gap_zone("mega_runout", Vector3(0.0, 0.0, float(L["land_bottom_z"]) + 1.0), Vector3(width, 2.0, RUNOUT_LEN - 3.0)))
-	root.add_child(PieceKit.box(Vector3(0.0, -0.5, float(L["land_bottom_z"])), Vector3(width, 0.5, RUNOUT_LEN), PieceKit.CONCRETE, "RunOutFloor"))
+	root.add_child(PieceKit.floor_pad(Vector3(0.0, -0.5, float(L["land_bottom_z"])), Vector3(width, 0.5, RUNOUT_LEN), PieceKit.CONCRETE, "RunOutFloor"))
 	_quarter_pipe(root, width, qp_height, L)
 	return root
 
@@ -271,7 +271,7 @@ static func _gap(root: Node3D, width: float, L: Dictionary) -> void:
 	var lip: float = float(L["lip_z"])
 	var top: float = float(L["land_top_z"])
 	var span: float = top - lip
-	root.add_child(PieceKit.box(Vector3(0.0, -0.5, lip), Vector3(width, 0.5, span), PieceKit.CONCRETE, "GapFloor"))
+	root.add_child(PieceKit.floor_pad(Vector3(0.0, -0.5, lip), Vector3(width, 0.5, span), PieceKit.CONCRETE, "GapFloor"))
 	var mid: float = (lip + top) * 0.5
 	# Painted MEGA stripe on the gap floor (visual only).
 	root.add_child(_visual_box(Vector3(0.5, 0.0, mid - 1.6), Vector3(width - 1.0, 0.02, 3.2), PieceKit.PAINT_RED, "MegaStripe"))

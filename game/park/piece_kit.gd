@@ -16,6 +16,9 @@ const PAINT_YELLOW := Color("ffd23f")
 
 
 ## A static body with a mesh and matching trimesh collision. Collision layer 1 = world.
+const FLOOR_PAD_LIFT: float = 0.006
+
+
 static func body(mesh: Mesh, color: Color, node_name: String = "Body") -> StaticBody3D:
 	var sb := StaticBody3D.new()
 	sb.name = node_name
@@ -39,6 +42,14 @@ static func box(min_corner: Vector3, size: Vector3, color: Color, node_name: Str
 	m.size = size
 	var sb: StaticBody3D = body(m, color, node_name)
 	sb.position = min_corner + size * 0.5
+	return sb
+
+
+## A box whose top sits flush with the park ground (y = 0). The collider stays flush so nothing snags, but the
+## mesh is lifted FLOOR_PAD_LIFT so its top doesn't z-fight (flicker) with the ground slab it overlaps.
+static func floor_pad(min_corner: Vector3, size: Vector3, color: Color, node_name: String = "FloorPad") -> StaticBody3D:
+	var sb: StaticBody3D = box(min_corner, size, color, node_name)
+	(sb.get_node("Mesh") as Node3D).position.y = FLOOR_PAD_LIFT
 	return sb
 
 
