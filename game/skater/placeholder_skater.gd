@@ -1,16 +1,25 @@
 class_name PlaceholderSkater
 extends RefCounted
-## Placeholder anime skater girl and surf-style skateboard, built in code from primitives (no imported assets).
-## build_body(): a joint hierarchy named after SkeletonProfileHumanoid bones. Faces -Z, feet at y = 0.
-## The caller stands it on the deck with body.position.y = DECK_TOP_Y. Regular stance: left foot forward
-## (-Z). Leg poses come from a small two-bone solve so the shoes stay flat on the ground.
+## Placeholder anime skaters (female or male) and surf-style skateboard, built in code from primitives (no imported
+## assets).
+## build_body(palette, options): a joint hierarchy named after SkeletonProfileHumanoid bones (the 17
+## SkaterPoser.JOINTS; same skeleton constants for both bodies, so the poser, ragdoll and physics are shared). Faces
+## -Z, feet at y = 0. The caller stands it on the deck with body.position.y = DECK_TOP_Y. Regular stance: left foot
+## forward (-Z). Leg poses come from a small two-bone solve so the shoes stay flat on the ground.
+## The body is a smooth featureless base body (AnimeOutfit skin split into regions, AnimeHead face); hair and every
+## garment are separate layers chosen by `options` and built through the Wardrobe registry, which also hides the skin
+## regions a garment fully covers. See Wardrobe for the garment contract.
+## options: {"body": "female"|"male", "hair": id, "top": id, "bottom": id, "socks": id, "shoes": id,
+## "accessories": [ids]} using catalog mesh_builder ids; "" or "none" leaves a slot empty; missing keys come from
+## Wardrobe.DEFAULTS (female: ponytail, bikini top and bottoms, striped crew socks, low vulc shoes, wristbands;
+## male: messy hair, surf tee, board shorts, striped crew socks, low vulc shoes).
 ## build_board(): deck long along Z, nose at -Z, wheel bottoms at y = 0.
 ## Every MeshInstance3D has meta "palette" (its palette key) and its StandardMaterial3D in material_override,
 ## so the toon pass can walk the meshes and swap materials.
-## Look: young adult (early 20s) surf-skater girl, about 1.62 m and 7.2 heads tall, slim and athletic with long legs.
-## Sun-bleached golden blonde hair, big blue anime eyes, light tan skin. Sporty teal bikini (bralette top and matching
-## bottoms, coral piping), mint-teal wristbands, striped crew socks and real skate shoes. Board: sand grip with aqua and coral surf stripes
-## and pastel mint wheels.
+## Look: young adult (early 20s) surf skaters, about 1.62 m, slim and athletic with long legs. Her: sun-bleached
+## golden blonde hair, big blue anime eyes, light tan skin. Him: broad shoulders, a lean flat chest, narrow hips, a
+## square jaw, sharp amber eyes and dark messy hair. Board: sand grip with aqua and coral surf stripes and pastel
+## mint wheels.
 ## Only the mesh parts and palette defaults are styling; the joints, pivots and bone lengths are the rig contract.
 
 const DECK_TOP_Y: float = 0.135
@@ -32,51 +41,83 @@ const SHOULDER: Vector2 = Vector2(0.14, 0.195)  ## Chest to UpperArm: x out, y u
 const HAND_SCALE: float = 1.18
 
 
-static func build_body(palette: Dictionary = {}) -> Node3D:
-	var mats: Dictionary = SkaterParts.materials(palette, _body_defaults())
+static func build_body(palette: Dictionary = {}, options: Dictionary = {}) -> Node3D:
+	var opts: Dictionary = Wardrobe.resolve(options)
+	var body_type: String = str(opts["body"])
+	var mats: Dictionary = SkaterParts.materials(palette, _body_defaults(body_type))
 	var root: Node3D = Node3D.new()
 	root.name = "SkaterBody"
+	root.set_meta("body_type", body_type)
+	var rig: Dictionary = {"body_type": body_type}
 
 	var hips: Node3D = SkaterParts.joint(root, "Hips", Vector3(0.0, HIP_HEIGHT, 0.0))
 	var spine: Node3D = SkaterParts.joint(hips, "Spine", Vector3(0.0, SPINE_UP, 0.0))
 	var chest: Node3D = SkaterParts.joint(spine, "Chest", Vector3(0.0, CHEST_UP, 0.0))
-	AnimeOutfit.build_torso(hips, spine, chest, mats)
-
+	AnimeOutfit.build_torso(hips, spine, chest, mats, body_type)
 	var neck: Node3D = SkaterParts.joint(chest, "Neck", Vector3(0.0, NECK_UP, 0.0))
-	SkaterParts.part(neck, "NeckMesh", SkaterParts.loft(SkaterParts.smooth_sections([
-		[-0.035, 0.047, 0.043, 0.043, 1.0, 0.004], [0.02, 0.0455, 0.041, 0.042, 1.0, 0.002],
-		[0.075, 0.044, 0.04, 0.041, 1.0, -0.002], [0.1, 0.035, 0.03, 0.03, 1.0, -0.004],
-	], 3), 18), Vector3.ZERO, mats, "skin")
+	AnimeOutfit.build_neck(neck, mats, body_type)
 	var head: Node3D = SkaterParts.joint(neck, "Head", Vector3(0.0, HEAD_UP, 0.0))
-	AnimeHead.build(head, mats)
-
-	_build_arm(chest, "Left", -1.0, mats)
-	_build_arm(chest, "Right", 1.0, mats)
-	_build_leg(hips, "Left", -1.0, -FOOT_Z, mats)
-	_build_leg(hips, "Right", 1.0, FOOT_Z, mats)
+	for n: Node3D in [hips, spine, chest, neck, head]:
+		rig[str(n.name)] = n
+	for side: Array in [["Left", -1.0, -FOOT_Z], ["Right", 1.0, FOOT_Z]]:
+		_build_arm(chest, side[0], side[1], mats, body_type, rig)
+		_build_leg(hips, side[0], side[1], side[2], mats, body_type, rig)
+	for pivot: String in ["BodySway_BustL", "BodySway_BustR"]:
+		var p: Node = chest.get_node_or_null(pivot)
+		if p != null:
+			rig[pivot] = p
+	rig["rest_y"] = {"Hips": HIP_HEIGHT, "Spine": HIP_HEIGHT + SPINE_UP, "Chest": HIP_HEIGHT + SPINE_UP + CHEST_UP,
+			"Neck": HIP_HEIGHT + SPINE_UP + CHEST_UP + NECK_UP, "Head": HIP_HEIGHT + SPINE_UP + CHEST_UP + NECK_UP + HEAD_UP}
+	rig["lengths"] = {"upper_leg": UPPER_LEG, "lower_leg": LOWER_LEG, "upper_arm": UPPER_ARM, "lower_arm": LOWER_ARM,
+			"ankle": ANKLE_HEIGHT}
+	rig["sections"] = AnimeOutfit.joint_sections(body_type, rig["rest_y"], rig["lengths"])
+	AnimeHead.build(head, mats, str(opts.get("hair", "")), body_type, rig)
+	Wardrobe.dress(rig, opts, mats)
 	return root
 
 
-static func build_board(palette: Dictionary = {}) -> Node3D:
+## The joint rig of a built body (every joint, sway pivot and HeadModel by name, plus the section data), the same
+## Dictionary garment builders receive. For tools and tests.
+static func rig_of(body: Node3D) -> Dictionary:
+	var body_type: String = str(body.get_meta("body_type", "female"))
+	var rig: Dictionary = {"body_type": body_type}
+	for n: Node in body.find_children("*", "Node3D", true, false):
+		if not (n is MeshInstance3D):
+			rig[str(n.name)] = n
+	rig["rest_y"] = {"Hips": HIP_HEIGHT, "Spine": HIP_HEIGHT + SPINE_UP, "Chest": HIP_HEIGHT + SPINE_UP + CHEST_UP,
+			"Neck": HIP_HEIGHT + SPINE_UP + CHEST_UP + NECK_UP, "Head": HIP_HEIGHT + SPINE_UP + CHEST_UP + NECK_UP + HEAD_UP}
+	rig["lengths"] = {"upper_leg": UPPER_LEG, "lower_leg": LOWER_LEG, "upper_arm": UPPER_ARM, "lower_arm": LOWER_ARM,
+			"ankle": ANKLE_HEIGHT}
+	rig["sections"] = AnimeOutfit.joint_sections(body_type, rig["rest_y"], rig["lengths"])
+	return rig
+
+
+static func build_board(palette: Dictionary = {}, options: Dictionary = {}) -> Node3D:
 	var mats: Dictionary = SkaterParts.materials(palette, _board_defaults())
 	var root: Node3D = Node3D.new()
 	root.name = "Skateboard"
 
-	AnimeBoard.build_deck(root, mats)
+	var deck: String = str(options.get("deck", "popsicle"))
+	var truck_opts: Dictionary = {"truck": str(options.get("truck", "standard")), "wheel": str(options.get("wheel", "street"))}
+	AnimeBoard.build_deck(root, mats, deck, str(options.get("graphic", "sunset")))
 
 	var tz: float = AnimeBoard.TRUCK_Z
 	var wx: float = AnimeBoard.WHEEL_X
-	AnimeBoard.build_truck(root, "Front", -tz, mats)
-	AnimeBoard.build_truck(root, "Back", tz, mats)
-	AnimeBoard.build_wheel(root, "Wheel_FL", -wx, -tz, mats)
-	AnimeBoard.build_wheel(root, "Wheel_FR", wx, -tz, mats)
-	AnimeBoard.build_wheel(root, "Wheel_BL", -wx, tz, mats)
-	AnimeBoard.build_wheel(root, "Wheel_BR", wx, tz, mats)
+	var wheel: String = str(truck_opts["wheel"])
+	AnimeBoard.build_truck(root, "Front", -tz, mats, truck_opts)
+	AnimeBoard.build_truck(root, "Back", tz, mats, truck_opts)
+	AnimeBoard.build_wheel(root, "Wheel_FL", -wx, -tz, mats, wheel)
+	AnimeBoard.build_wheel(root, "Wheel_FR", wx, -tz, mats, wheel)
+	AnimeBoard.build_wheel(root, "Wheel_BL", -wx, tz, mats, wheel)
+	AnimeBoard.build_wheel(root, "Wheel_BR", wx, tz, mats, wheel)
+	AnimeBoard.set_deck("popsicle")  # the static shape queries (top_y ...) go back to the default deck
 	return root
 
 
-static func _body_defaults() -> Dictionary:
-	return {
+## Palette defaults of each body. Head and hair keys are AnimeHead.COLORS; shoe keys are the Lagoon colourway
+## (SkateShoe.PRESETS).
+static func _body_defaults(body_type: String = "female") -> Dictionary:
+	var d: Dictionary = {
 		"skin": Color(0.9, 0.69, 0.52),
 		"nose": Color(0.82, 0.52, 0.4),
 		"hair": Color(0.94, 0.78, 0.4),
@@ -97,6 +138,7 @@ static func _body_defaults() -> Dictionary:
 		"trim": Color(1.0, 0.97, 0.9),
 		"top": Color(0.07, 0.66, 0.7),
 		"top_trim": Color(1.0, 0.5, 0.4),
+		"top_print": Color(1.0, 0.82, 0.38),
 		"bottom": Color(0.07, 0.66, 0.7),
 		"bottom_trim": Color(1.0, 0.5, 0.4),
 		"band": Color(0.1, 0.72, 0.74),
@@ -113,6 +155,39 @@ static func _body_defaults() -> Dictionary:
 		"foxing": Color(0.98, 0.97, 0.93),
 		"sole": Color(0.72, 0.54, 0.34),
 	}
+	for key: String in AnimeHead.COLORS:
+		d[key] = AnimeHead.COLORS[key]
+	var lagoon: Dictionary = SkateShoe.preset(SkateShoe.LAGOON)
+	for key: String in lagoon:
+		d[key] = lagoon[key]
+	if body_type == "male":
+		for key: String in MALE_DEFAULTS:
+			d[key] = MALE_DEFAULTS[key]
+	return d
+
+
+## Male palette over the shared defaults: a warmer tan, dark chocolate-brown messy hair with a cool sheen, amber
+## eyes, a cream ringer surf tee with coral trim and deep teal board shorts with a coral side stripe.
+const MALE_DEFAULTS: Dictionary = {
+	"skin": Color(0.86, 0.62, 0.45),
+	"hair_base": Color(0.27, 0.2, 0.2),
+	"hair_mid": Color(0.21, 0.155, 0.16),
+	"hair_shadow": Color(0.14, 0.1, 0.12),
+	"hair_deep": Color(0.09, 0.07, 0.09),
+	"hair_shine": Color(0.5, 0.42, 0.44),
+	"head_brow": Color(0.17, 0.12, 0.12),
+	"head_lash": Color(0.13, 0.09, 0.1),
+	"head_lash_low": Color(0.45, 0.3, 0.25),
+	"head_iris_rim": Color(0.35, 0.17, 0.06),
+	"head_iris_mid": Color(0.8, 0.5, 0.16),
+	"head_iris_glow": Color(1.0, 0.82, 0.45),
+	"head_pupil": Color(0.12, 0.06, 0.04),
+	"top": Color(0.96, 0.94, 0.88),
+	"top_trim": Color(1.0, 0.45, 0.36),
+	"top_print": Color(1.0, 0.72, 0.3),
+	"bottom": Color(0.05, 0.42, 0.5),
+	"bottom_trim": Color(1.0, 0.5, 0.38),
+}
 
 
 static func _board_defaults() -> Dictionary:
@@ -128,12 +203,14 @@ static func _board_defaults() -> Dictionary:
 		"deck_alt": Color(1.0, 0.48, 0.38),
 		"deck_sun": Color(1.0, 0.82, 0.42),
 		"deck_foam": Color(0.98, 0.96, 0.9),
+		"deck_accent": Color(1.0, 0.48, 0.38),
 		# Trucks: raw cast aluminium hanger and baseplate, steel hardware, orange bushings, black riser pads.
 		"trucks": Color(0.76, 0.76, 0.74),
 		"baseplate": Color(0.64, 0.64, 0.63),
 		"truck_dark": Color(0.28, 0.3, 0.35),
 		"hardware": Color(0.56, 0.58, 0.62),
 		"bushings": Color(1.0, 0.55, 0.22),
+		"truck_accent": Color(0.55, 0.92, 0.88),
 		"riser": Color(0.14, 0.15, 0.18),
 		# Wheels: sunny urethane, cream core, teal bearing shields.
 		"wheels": Color(1.0, 0.78, 0.4),
@@ -141,16 +218,18 @@ static func _board_defaults() -> Dictionary:
 		"hubs": Color(0.08, 0.6, 0.68),
 	}
 
-static func _build_arm(chest: Node3D, side: String, s: float, mats: Dictionary) -> void:
+static func _build_arm(chest: Node3D, side: String, s: float, mats: Dictionary, body_type: String, rig: Dictionary) -> void:
 	var upper: Node3D = SkaterParts.joint(chest, side + "UpperArm", Vector3(s * SHOULDER.x, SHOULDER.y, 0.0))
 	upper.rotation.z = s * ARM_OUT
 	var lower: Node3D = SkaterParts.joint(upper, side + "LowerArm", Vector3(0.0, -UPPER_ARM, 0.0))
 	lower.rotation.x = FOREARM_BEND
-	AnimeOutfit.build_arm_skin(upper, lower, side, UPPER_ARM, LOWER_ARM, mats)
-	AnimeOutfit.build_wristband(lower, side, LOWER_ARM, mats)
+	AnimeOutfit.build_arm_skin(upper, lower, side, UPPER_ARM, LOWER_ARM, mats, body_type)
 	var hand: Node3D = SkaterParts.joint(lower, side + "Hand", Vector3(0.0, -LOWER_ARM, 0.0))
 	var hand_mesh: MeshInstance3D = SkaterParts.part(hand, side + "HandMesh", _hand_mesh(s), Vector3.ZERO, mats, "skin")
-	hand_mesh.scale = Vector3.ONE * HAND_SCALE
+	hand_mesh.scale = Vector3.ONE * (HAND_SCALE * 1.08 if body_type == "male" else HAND_SCALE)
+	SkaterParts.tag_region(hand_mesh, "hand_" + side.left(1))
+	for n: Node3D in [upper, lower, hand]:
+		rig[str(n.name)] = n
 
 
 ## Soft hand: a flattened palm, four rounded fingers and a thumb, merged into one mesh. Hangs along -Y.
@@ -168,17 +247,17 @@ static func _hand_mesh(s: float) -> ArrayMesh:
 
 
 ## foot_z: ankle offset from the hips along Z (negative = forward, toward the nose).
-static func _build_leg(hips: Node3D, side: String, s: float, foot_z: float, mats: Dictionary) -> void:
+static func _build_leg(hips: Node3D, side: String, s: float, foot_z: float, mats: Dictionary, body_type: String, rig: Dictionary) -> void:
 	var pose: Vector2 = _leg_pose(foot_z)
 	var upper: Node3D = SkaterParts.joint(hips, side + "UpperLeg", Vector3(s * HIP_SPREAD, 0.0, 0.0))
 	upper.rotation.x = pose.x
 	var lower: Node3D = SkaterParts.joint(upper, side + "LowerLeg", Vector3(0.0, -UPPER_LEG, 0.0))
 	lower.rotation.x = pose.y - pose.x
-	AnimeOutfit.build_leg_skin(upper, lower, side, UPPER_LEG, LOWER_LEG, mats)
-	AnimeOutfit.build_sock(lower, side, LOWER_LEG, mats)
+	AnimeOutfit.build_leg_skin(upper, lower, side, UPPER_LEG, LOWER_LEG, mats, body_type)
 	var foot: Node3D = SkaterParts.joint(lower, side + "Foot", Vector3(0.0, -LOWER_LEG, 0.0))
 	foot.rotation.x = -pose.y
-	SkateShoe.build(foot, side, ANKLE_HEIGHT, mats)
+	for n: Node3D in [upper, lower, foot]:
+		rig[str(n.name)] = n
 
 ## Returns Vector2(thigh angle, shin world angle) for a flat leg pose with the ankle ANKLE_HEIGHT above the
 ## ground and foot_z offset from the hip. Knee bends forward (toward -Z), as a real knee does.

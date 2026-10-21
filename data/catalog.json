@@ -644,6 +644,12 @@
     "Sunshine",
     "Grape"
    ],
+   "graphics": [
+    "sunset",
+    "wave",
+    "face",
+    "checker"
+   ],
    "desc": "The classic shape. Pops easy, flips easy.",
    "mesh_builder": "deck_popsicle",
    "starter": true
@@ -669,6 +675,12 @@
     "Cherry",
     "Cloud"
    ],
+   "graphics": [
+    "palm",
+    "wave",
+    "flames",
+    "sunset"
+   ],
    "desc": "Wide and stable for cruising the park.",
    "mesh_builder": "deck_cruiser",
    "starter": false
@@ -693,6 +705,12 @@
     "Sunshine",
     "Grape",
     "Lagoon"
+   ],
+   "graphics": [
+    "flames",
+    "checker",
+    "face",
+    "palm"
    ],
    "desc": "Old-school shape with a big square tail.",
    "mesh_builder": "deck_oldschool",

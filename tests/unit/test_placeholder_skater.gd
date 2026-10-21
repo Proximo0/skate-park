@@ -180,8 +180,23 @@ func test_body_palette_override() -> void:
 	assert_eq(mat.albedo_color, Color(1, 0, 0), "top palette applied")
 	assert_eq(top.get_meta("palette"), "top", "palette key meta")
 	assert_eq(body.find_child("BikiniBottomMesh", true, false).get_meta("palette"), "bottom", "bottom key meta")
-	assert_eq(body.find_child("LeftUpperLegMesh", true, false).get_meta("palette"), "skin", "bare leg")
+	var thigh: MeshInstance3D = body.find_child("LeftThighUpperMesh", true, false)
+	assert_eq(thigh.get_meta("palette"), "skin", "bare leg")
+	assert_eq(thigh.get_meta("region"), "thigh_upper_L", "skin region meta")
 	body.free()
+
+
+## World AABB at rest of the skin region meshes hung directly on a joint (its loft, split into regions).
+func _skin_box(joint: Node3D) -> AABB:
+	var box: AABB = AABB()
+	var first: bool = true
+	for c: Node in joint.get_children():
+		if c is MeshInstance3D and c.has_meta("region") and not str(c.name).contains("Collarbone"):
+			var mi: MeshInstance3D = c
+			var b: AABB = _world_transform(mi) * mi.mesh.get_aabb()
+			box = b if first else box.merge(b)
+			first = false
+	return box
 
 
 ## The body world AABB (x, z extents) of one mesh at rest, in metres.
@@ -203,8 +218,8 @@ func test_adult_proportions() -> void:
 	var height: float = _world_y_range(body).y
 	var hips: float = PlaceholderSkater.HIP_HEIGHT
 	assert_true(hips / height > 0.49 and hips / height < 0.54, "long legs: hip joint at %f of the height" % (hips / height))
-	var pelvis: AABB = _world_box(body.find_child("HipsMesh", true, false))
-	var ribs: AABB = _world_box(body.find_child("ChestMesh", true, false))
+	var pelvis: AABB = _skin_box(body.find_child("Hips", true, false))
+	var ribs: AABB = _skin_box(body.find_child("Chest", true, false))
 	assert_true(pelvis.position.y > 0.72 and pelvis.position.y < 0.8, "crotch near 47%% of the height: %f" % pelvis.position.y)
 	# Narrow ribcage: the under-bust is well under the hip width; flat elliptical torso, not a barrel.
 	var under_bust: Array = SkaterParts.section_at(SkaterParts.smooth_sections(AnimeOutfit.CHEST, 3), 1.05)
@@ -371,3 +386,21 @@ func _local_aabb(node: Node3D, space: Node3D) -> AABB:
 		var b: AABB = (inv * _world_transform(found[i])) * found[i].get_aabb()
 		box = b if i == 0 else box.merge(b)
 	return box
+
+
+func test_build_body_options() -> void:
+	var f: Node3D = PlaceholderSkater.build_body()
+	assert_eq(str(f.get_meta("body_type")), "female", "female by default")
+	assert_true(f.find_child("BikiniTopMesh", true, false) != null and f.find_child("PonytailMesh", true, false) != null,
+			"default look: bikini and ponytail")
+	var m: Node3D = PlaceholderSkater.build_body({}, {"body": "male", "accessories": ["acc_wristbands"]})
+	assert_eq(str(m.get_meta("body_type")), "male", "male body")
+	for j: String in SkaterPoser.JOINTS:
+		assert_true(m.find_child(j, true, false) != null, "male joint " + j)
+	assert_true(m.find_child("BikiniTopMesh", true, false) == null, "male default top is not the bikini")
+	assert_true(m.find_child("LeftWristbandMesh", true, false) != null, "accessory option builds")
+	var bare: Node3D = PlaceholderSkater.build_body({}, {"top": "none", "bottom": "none"})
+	assert_true(bare.find_child("BikiniTopMesh", true, false) == null, "\"none\" leaves the slot empty")
+	assert_true((bare.find_child("ChestChestMesh", true, false) as MeshInstance3D).visible, "uncovered skin stays visible")
+	for b: Node3D in [f, m, bare]:
+		b.free()

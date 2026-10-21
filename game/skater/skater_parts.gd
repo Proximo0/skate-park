@@ -413,3 +413,100 @@ static func loft_ring(sections: Array, y: float, grow: float, tube_r: float, n: 
 		pts.append(section_point(sec, TAU * float(i) / float(n), grow))
 		radii.append(tube_r)
 	return tube(pts, radii, 6)
+
+
+# --- body regions -------------------------------------------------------------------------------------------
+# The skin is split into named regions (one MeshInstance3D each, meta "region") so a garment can hide the skin it
+# fully covers (Wardrobe body masking). Limb regions carry a side suffix: "_L" or "_R".
+
+## A smooth loft split into regions. cuts: [[region name, y0, y1], ...] along the loft axis (y0 < y1 for an
+## ascending loft, y0 > y1 for a descending limb loft listed top to bottom). Rings are inserted at every cut so the
+## regions meet exactly, and the normals come from the whole loft so there is no shading seam between regions.
+## Returns [[region name, ArrayMesh], ...] in the order of `cuts`.
+static func loft_regions(sections: Array, cuts: Array, sides: int = 16, grow: float = 0.0) -> Array:
+	var secs: Array = []
+	var ys: Array = []
+	for c: Array in cuts:
+		for y: float in [float(c[1]), float(c[2])]:
+			if not ys.has(y):
+				ys.append(y)
+	var y_first: float = float(sections[0][0])
+	var y_last: float = float(sections[sections.size() - 1][0])
+	var dir: float = signf(y_last - y_first)
+	for sec: Array in sections:
+		secs.append(sec)
+	for y: float in ys:
+		if (y - y_first) * dir > 0.0 and (y_last - y) * dir > 0.0:
+			var exists: bool = false
+			for sec: Array in secs:
+				if absf(float(sec[0]) - y) < 0.00001:
+					exists = true
+			if not exists:
+				secs.append(section_at(sections, y))
+	secs.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	var rows: Array = []
+	for sec: Array in secs:
+		var ring: PackedVector3Array = PackedVector3Array()
+		for k: int in sides:
+			ring.append(section_point(sec, TAU * float(k) / float(sides), grow))
+		rows.append(ring)
+	var normals: Array = _grid_normals(rows)
+	var out: Array = []
+	for c: Array in cuts:
+		var lo: float = minf(float(c[1]), float(c[2]))
+		var hi: float = maxf(float(c[1]), float(c[2]))
+		var st: SurfaceTool = SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for i: int in rows.size() - 1:
+			var ya: float = float(secs[i][0])
+			var yb: float = float(secs[i + 1][0])
+			if ya < lo - 0.00001 or yb > hi + 0.00001:
+				continue
+			for k: int in sides:
+				var k2: int = (k + 1) % sides
+				for v: Vector2i in [Vector2i(i, k), Vector2i(i, k2), Vector2i(i + 1, k), Vector2i(i, k2), Vector2i(i + 1, k2), Vector2i(i + 1, k)]:
+					st.set_normal(normals[v.x][v.y])
+					st.add_vertex(rows[v.x][v.y])
+		st.index()
+		out.append([str(c[0]), st.commit()])
+	return out
+
+
+## Smooth outward vertex normals of a closed-ring grid (rings listed bottom to top round an axis).
+static func _grid_normals(rows: Array) -> Array:
+	var n: int = rows.size()
+	var out: Array = []
+	for i: int in n:
+		var ring: PackedVector3Array = rows[i]
+		var m: int = ring.size()
+		var c: Vector3 = Vector3.ZERO
+		for p: Vector3 in ring:
+			c += p
+		c /= float(m)
+		var nr: PackedVector3Array = PackedVector3Array()
+		for k: int in m:
+			var along: Vector3 = (rows[mini(i + 1, n - 1)] as PackedVector3Array)[k] - (rows[maxi(i - 1, 0)] as PackedVector3Array)[k]
+			var round_t: Vector3 = ring[(k + 1) % m] - ring[(k - 1 + m) % m]
+			var nn: Vector3 = round_t.cross(along)
+			if nn.length() < 0.0000001:
+				nn = ring[k] - c
+			nn = nn.normalized()
+			if nn.dot(ring[k] - c) < 0.0:
+				nn = -nn
+			nr.append(nn)
+		out.append(nr)
+	return out
+
+
+## Adds the loft regions under parent as "<prefix><Region>Mesh" parts, each with meta "region" = name + suffix.
+static func region_parts(parent: Node3D, prefix: String, regions: Array, suffix: String, mats: Dictionary, key: String) -> void:
+	for r: Array in regions:
+		var region: String = str(r[0])
+		var mi: MeshInstance3D = part(parent, prefix + region.to_pascal_case() + "Mesh", r[1] as ArrayMesh, Vector3.ZERO, mats, key)
+		mi.set_meta("region", region + suffix)
+
+
+## Tags a skin part with its body region.
+static func tag_region(mi: MeshInstance3D, region: String) -> MeshInstance3D:
+	mi.set_meta("region", region)
+	return mi

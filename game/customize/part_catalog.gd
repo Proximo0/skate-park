@@ -2,7 +2,7 @@ class_name PartCatalog
 extends RefCounted
 ## Every item the skater can wear or ride, loaded from data/catalog.json. Pure data and lookups, no nodes.
 ## Item fields: id (unique across the catalog), name, slot, bodies ("female" / "male"), price, colors (hex),
-## color_names, desc, mesh_builder (key that SkaterBuilder maps to a builder function), starter (owned at the start).
+## color_names, graphics (decks: a bottom graphic id per colourway), desc, mesh_builder (key that SkaterBuilder maps to a builder function), starter (owned at the start).
 
 const DATA_PATH: String = "res://data/catalog.json"
 const BODIES: PackedStringArray = ["female", "male"]
@@ -110,6 +110,14 @@ func color_of(id: String, index: int) -> Color:
 	if cols.is_empty():
 		return Color.WHITE
 	return Color.from_string(str(cols[clampi(index, 0, cols.size() - 1)]), Color.WHITE)
+
+
+## The deck graphic id of colourway `index` (decks carry a "graphics" list parallel to "colors"), "sunset" when none.
+func graphic_of(id: String, index: int) -> String:
+	var gs: Array = item(id).get("graphics", [])
+	if gs.is_empty():
+		return "sunset"
+	return str(gs[clampi(index, 0, gs.size() - 1)])
 
 
 func color_name(id: String, index: int) -> String:

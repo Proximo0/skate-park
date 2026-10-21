@@ -1,24 +1,14 @@
 class_name AnimeOutfit
 extends RefCounted
-## Body and outfit parts of the anime surf-skater girl: a slim adult torso lofted from elliptical sections (pelvis,
-## waist and ribcage, each with its own width, front and back depth), two soft bust forms under BodySway pivots, a
-## sporty teal bikini (bralette top with coral trim and matching bottoms), striped crew socks, wristbands and real
-## skate shoes (skate_shoe). Static builders called by PlaceholderSkater with the joints to attach to and the palette
-## materials. Section tables are in body space (metres above the soles at rest) and converted to each joint's space.
+## Skin of the anime skater bodies (female and male): torso lofted from elliptical sections (pelvis, waist and
+## ribcage, each with its own width, front and back depth), the neck, arm and leg lofts, and on the female body two
+## soft bust forms under BodySway pivots. Clothing is NOT built here: garments live in game/skater/garments/ and are
+## chosen through Wardrobe. This file exposes the skin section tables and surface helpers that garments use to sit
+## just outside the skin: skin_sections(), joint_sections(), chest_front_point(), bust_height(), clip(), clip_desc().
+## Section tables are in body space (metres above the soles at rest) and converted to each joint's space.
 
-# Skate shoe geometry, foot joint space: ankle at the origin, toe toward -Z, sole bottom at -ANKLE_HEIGHT.
-const SHOE_BASE_Y: float = -0.09  ## top of the sole
-const SHOE_TOE_Z: float = -0.224
-const SHOE_HEEL_Z: float = 0.083
-const SHOE_ROUND: float = 0.77
-## Upper cross sections: z, half width, height above SHOE_BASE_Y.
-const SHOE_SECTIONS: Array = [
-	[-0.222, 0.006, 0.008], [-0.214, 0.024, 0.024], [-0.2, 0.037, 0.036], [-0.18, 0.046, 0.044],
-	[-0.15, 0.051, 0.05], [-0.12, 0.052, 0.056], [-0.09, 0.05, 0.068], [-0.06, 0.047, 0.086],
-	[-0.03, 0.045, 0.105], [0.0, 0.046, 0.118], [0.03, 0.046, 0.118], [0.055, 0.042, 0.105],
-	[0.07, 0.034, 0.08], [0.078, 0.018, 0.04], [0.081, 0.005, 0.01],
-]
-const TOE_CAP_END_Z: float = -0.125
+const FEMALE: String = "female"
+const MALE: String = "male"
 
 # --- torso ----------------------------------------------------------------------------------------------------
 # Sections: [y, half width, front depth, back depth, power, z centre]. y in body space (soles at 0, rest pose).
@@ -27,15 +17,17 @@ const PELVIS: Array = [
 	[0.752, 0.02, 0.03, 0.03, 1.0, 0.0], [0.765, 0.062, 0.056, 0.062, 0.9, 0.0],
 	[0.79, 0.126, 0.082, 0.098, 0.85, 0.0], [0.835, 0.163, 0.096, 0.118, 0.8, 0.0],
 	[0.88, 0.157, 0.089, 0.107, 0.82, 0.0], [0.93, 0.132, 0.082, 0.082, 0.9, -0.002],
-	[0.985, 0.101, 0.073, 0.066, 1.0, -0.006], [1.02, 0.099, 0.071, 0.064, 1.0, -0.006],
-	[1.035, 0.05, 0.035, 0.035, 1.0, -0.006],
+	[0.985, 0.098, 0.071, 0.064, 1.0, -0.006], [1.015, 0.086, 0.06, 0.055, 1.0, -0.006],
+	[1.035, 0.04, 0.03, 0.03, 1.0, -0.006],
 ]
-## Waist, on the Spine joint, bridging the pelvis and the ribcage so a bent spine stays closed.
+## Waist, on the Spine joint, bridging the pelvis and the ribcage so a bent spine stays closed. Its top tucks well
+## inside the ribcage (and the pelvis top inside the waist), so a bent spine never pushes it out through the skin
+## or clothes above.
 const WAIST: Array = [
 	[0.9, 0.07, 0.05, 0.05, 1.0, 0.0], [0.925, 0.124, 0.08, 0.079, 0.92, -0.003],
 	[0.96, 0.108, 0.076, 0.071, 1.0, -0.006], [0.99, 0.102, 0.074, 0.067, 1.0, -0.006],
-	[1.04, 0.109, 0.079, 0.071, 1.0, -0.004], [1.09, 0.116, 0.084, 0.074, 1.0, -0.002],
-	[1.11, 0.07, 0.05, 0.05, 1.0, 0.0],
+	[1.04, 0.106, 0.077, 0.069, 1.0, -0.004], [1.075, 0.092, 0.064, 0.06, 1.0, -0.002],
+	[1.11, 0.05, 0.035, 0.035, 1.0, 0.0],
 ]
 ## Ribcage, shoulders and neck base, on the Chest joint. Narrow ribs (about 70% of the hips), flat back, sloped
 ## trapezius from the shoulder line up into the neck.
@@ -47,16 +39,104 @@ const CHEST: Array = [
 	[1.3, 0.109, 0.052, 0.057, 0.9, 0.002], [1.32, 0.078, 0.044, 0.048, 1.0, 0.003],
 	[1.337, 0.052, 0.041, 0.043, 1.0, 0.004], [1.36, 0.045, 0.041, 0.041, 1.0, 0.004],
 ]
-## Bust: two soft modest forms, each under its own pivot (BodySway_BustL/R) at its root on the ribcage.
-const BUST_ROOT: Vector3 = Vector3(0.062, 1.125, -0.065)  ## body space, +x side; mirrored for the left
-const BUST_CENTER: Vector3 = Vector3(0.006, -0.006, -0.016)  ## form centre in pivot space (+x side)
-const BUST_RADII: Vector3 = Vector3(0.054, 0.05, 0.04)
+## Neck, on the Neck joint: [y local to the Neck joint, half width, front, back, power, z centre].
+const NECK: Array = [
+	[-0.035, 0.047, 0.043, 0.043, 1.0, 0.004], [0.02, 0.0455, 0.041, 0.042, 1.0, 0.002],
+	[0.075, 0.044, 0.04, 0.041, 1.0, -0.002], [0.1, 0.035, 0.03, 0.03, 1.0, -0.004],
+]
+
+## Male torso: narrow hips with flat glutes, a straight waist, a broad lean ribcage with a flat chest, wide shoulders
+## that reach past the shoulder joints (the deltoids cover the arm roots), and a thicker neck.
+const PELVIS_M: Array = [
+	[0.752, 0.022, 0.032, 0.032, 1.0, 0.0], [0.765, 0.066, 0.058, 0.06, 0.9, 0.0],
+	[0.79, 0.122, 0.08, 0.088, 0.85, 0.0], [0.835, 0.148, 0.09, 0.098, 0.82, 0.0],
+	[0.88, 0.146, 0.087, 0.094, 0.85, 0.0], [0.93, 0.136, 0.084, 0.084, 0.9, -0.002],
+	[0.985, 0.122, 0.078, 0.072, 0.95, -0.006], [1.015, 0.11, 0.066, 0.06, 1.0, -0.006],
+	[1.035, 0.05, 0.034, 0.034, 1.0, -0.006],
+]
+const WAIST_M: Array = [
+	[0.9, 0.08, 0.055, 0.055, 1.0, 0.0], [0.925, 0.134, 0.083, 0.081, 0.92, -0.003],
+	[0.96, 0.128, 0.081, 0.075, 0.95, -0.006], [0.99, 0.127, 0.081, 0.073, 0.95, -0.006],
+	[1.04, 0.13, 0.084, 0.074, 0.95, -0.004], [1.075, 0.118, 0.072, 0.064, 0.95, -0.002],
+	[1.11, 0.06, 0.04, 0.04, 1.0, 0.0],
+]
+const CHEST_M: Array = [
+	[0.99, 0.07, 0.05, 0.05, 1.0, -0.004], [1.0, 0.118, 0.078, 0.07, 1.0, -0.004],
+	[1.05, 0.135, 0.088, 0.078, 0.95, -0.002], [1.1, 0.146, 0.094, 0.082, 0.9, 0.0],
+	[1.15, 0.155, 0.099, 0.085, 0.86, 0.0], [1.2, 0.163, 0.098, 0.086, 0.84, 0.0],
+	[1.245, 0.168, 0.088, 0.082, 0.82, 0.0], [1.275, 0.162, 0.076, 0.074, 0.84, 0.0],
+	[1.3, 0.142, 0.064, 0.066, 0.86, 0.002], [1.32, 0.104, 0.056, 0.057, 0.95, 0.003],
+	[1.337, 0.064, 0.052, 0.052, 1.0, 0.004], [1.36, 0.058, 0.05, 0.05, 1.0, 0.004],
+]
+const NECK_M: Array = [
+	[-0.035, 0.058, 0.054, 0.054, 1.0, 0.004], [0.02, 0.056, 0.051, 0.052, 1.0, 0.002],
+	[0.075, 0.053, 0.049, 0.05, 1.0, -0.002], [0.1, 0.042, 0.036, 0.036, 1.0, -0.004],
+]
+
+# --- bust (female) ----------------------------------------------------------------------------------------------
+# Each bust form is a smooth height field over the ribcage's front surface, so it rises out of the skin with no seam:
+# height BUST_HEIGHT at the apex, falling to zero (and a hair under the skin) at its rim. The rim reaches up under
+# the collarbones in a long shallow slope; the lower half is fuller and rounder. Each form hangs under its own
+# BodySway_BustL/R pivot so secondary motion can sway it; the bikini cups follow the same field.
+const BUST_APEX: Vector2 = Vector2(0.066, 1.13)  ## body space (x on the +x side, y)
+const BUST_R_IN: float = 0.05  ## rim distance toward the centre line
+const BUST_R_OUT: float = 0.06  ## rim distance toward the arm
+const BUST_R_DOWN: float = 0.052
+const BUST_R_UP: float = 0.1  ## long upper slope, up under the collarbones
+const BUST_HEIGHT: float = 0.05
+const BUST_SINK: float = 0.0015  ## the rim sits this far under the skin, so the patch edge never shows
+const BUST_PIVOT_Y: float = 1.15  ## pivot height (body space): sway hinges near the upper root
 const CUP_GROW: float = 0.0045
 const TOP_BAND: Vector2 = Vector2(1.04, 1.074)  ## bralette under-band, body y
-## Bikini bottom: leg-cut height at the front/back centre and at the sides, and the waistband height.
-const BOTTOM_CROTCH_Y: float = 0.77
-const BOTTOM_SIDE_Y: float = 0.872
-const BOTTOM_TOP_Y: float = 0.905
+
+static var _front_cache: Dictionary = {}
+
+
+## The raw skin section table of a body part, in the units its builder uses. part: "pelvis", "waist", "chest" (body
+## space y), "neck" (Neck-joint space y), "thigh", "calf", "upper_arm", "forearm" (t = fraction of the bone, see the
+## limb tables below). body_type: "female" or "male".
+static func skin_sections(part: String, body_type: String = FEMALE) -> Array:
+	var m: bool = body_type == MALE
+	match part:
+		"pelvis": return PELVIS_M if m else PELVIS
+		"waist": return WAIST_M if m else WAIST
+		"chest": return CHEST_M if m else CHEST
+		"neck": return NECK_M if m else NECK
+		"thigh": return _scaled(THIGH, 1.06, 1.04) if m else THIGH
+		"calf": return _scaled(CALF, 1.1, 1.08) if m else CALF
+		"upper_arm": return _scaled(UPPER_ARM_SECTIONS, 1.2, 1.18) if m else UPPER_ARM_SECTIONS
+		"forearm": return _scaled(FOREARM_SECTIONS, 1.14, 1.16) if m else FOREARM_SECTIONS
+	push_warning("AnimeOutfit.skin_sections: unknown part " + part)
+	return []
+
+
+## Smoothed skin sections in the space of the joint each part hangs on, keyed by part name, ready for garments:
+## pelvis on Hips, waist on Spine, chest on Chest, neck on Neck (y up); thigh on <Side>UpperLeg, calf on
+## <Side>LowerLeg, upper_arm on <Side>UpperArm, forearm on <Side>LowerArm (listed top to bottom, y = -t * length).
+## rest_y: rest heights of "Hips", "Spine", "Chest"; lengths: "upper_leg", "lower_leg", "upper_arm", "lower_arm".
+static func joint_sections(body_type: String, rest_y: Dictionary, lengths: Dictionary) -> Dictionary:
+	return {
+		"pelvis": local_sections(skin_sections("pelvis", body_type), float(rest_y["Hips"])),
+		"waist": local_sections(skin_sections("waist", body_type), float(rest_y["Spine"])),
+		"chest": local_sections(skin_sections("chest", body_type), float(rest_y["Chest"])),
+		"neck": SkaterParts.smooth_sections(skin_sections("neck", body_type), 3),
+		"thigh": limb_sections(skin_sections("thigh", body_type), float(lengths["upper_leg"])),
+		"calf": limb_sections(skin_sections("calf", body_type), float(lengths["lower_leg"])),
+		"upper_arm": limb_sections(skin_sections("upper_arm", body_type), float(lengths["upper_arm"])),
+		"forearm": limb_sections(skin_sections("forearm", body_type), float(lengths["lower_arm"])),
+	}
+
+
+## Table with half width scaled by kw and both depths by kd.
+static func _scaled(table: Array, kw: float, kd: float) -> Array:
+	var out: Array = []
+	for s: Array in table:
+		var row: Array = s.duplicate()
+		row[1] = float(row[1]) * kw
+		row[2] = float(row[2]) * kd
+		row[3] = float(row[3]) * kd
+		out.append(row)
+	return out
 
 
 ## Sections moved down by base (the joint's rest height) and smoothed.
@@ -79,22 +159,66 @@ static func rest_y(node: Node3D) -> float:
 	return y
 
 
-## Skin torso (pelvis, waist, ribcage with shoulders and collarbones), the bust forms and the bikini.
-static func build_torso(hips: Node3D, spine: Node3D, chest: Node3D, mats: Dictionary) -> void:
-	var hips_y: float = rest_y(hips)
+## Skin torso (pelvis, waist, ribcage with shoulders and collarbones) and, on the female body, the bust forms under
+## their BodySway_BustL/R pivots.
+static func build_torso(hips: Node3D, spine: Node3D, chest: Node3D, mats: Dictionary, body_type: String = FEMALE) -> void:
 	var chest_y: float = rest_y(chest)
-	var pelvis: Array = local_sections(PELVIS, hips_y)
-	SkaterParts.part(hips, "HipsMesh", SkaterParts.loft(pelvis, 28), Vector3.ZERO, mats, "skin")
-	SkaterParts.part(spine, "SpineMesh", SkaterParts.loft(local_sections(WAIST, rest_y(spine)), 28), Vector3.ZERO, mats, "skin")
-	var ribs: Array = local_sections(CHEST, chest_y)
-	SkaterParts.part(chest, "ChestMesh", SkaterParts.loft(ribs, 32), Vector3.ZERO, mats, "skin")
-	_collarbones(chest, ribs, chest_y, mats)
-	_bikini_top(chest, ribs, chest_y, mats)
-	_bikini_bottom(hips, pelvis, hips_y, mats)
+	_torso_regions(hips, "Hips", "pelvis", rest_y(hips), body_type, mats, 28)
+	_torso_regions(spine, "Spine", "waist", rest_y(spine), body_type, mats, 28)
+	_torso_regions(chest, "Chest", "chest", chest_y, body_type, mats, 32)
+	var ribs: Array = local_sections(skin_sections("chest", body_type), chest_y)
+	_collarbones(chest, ribs, chest_y, mats, body_type)
+	if body_type != MALE:
+		_bust(chest, chest_y, mats)
+
+
+## Body regions of each torso loft, body-space y ranges. The ends match the section tables.
+const TORSO_REGIONS: Dictionary = {
+	"pelvis": [["pelvis", 0.752, 0.905], ["hip_band", 0.905, 0.965], ["belly", 0.965, 1.035]],
+	"waist": [["waist_low", 0.9, 0.965], ["waist", 0.965, 1.11]],
+	"chest": [["under_bust", 0.99, 1.075], ["chest", 1.075, 1.25], ["chest_upper", 1.25, 1.31], ["neck_base", 1.31, 1.36]],
+}
+## Body regions of each limb loft, as t ranges (fraction of the bone, top to bottom). Regions get "_L"/"_R".
+const LIMB_REGIONS: Dictionary = {
+	"thigh": [["thigh_top", -0.17, -0.11], ["thigh_upper", -0.11, 0.45], ["thigh_lower", 0.45, 1.1]],
+	"calf": [["calf", -0.1, 0.56], ["calf_low", 0.56, 0.9], ["ankle", 0.9, 1.12]],
+	"upper_arm": [["shoulder", -0.12, 0.15], ["upper_arm", 0.15, 0.45], ["upper_arm_low", 0.45, 1.08]],
+	"forearm": [["forearm", -0.08, 0.82], ["wrist", 0.82, 1.06]],
+}
+## Every skin region name (limb ones without the side suffix), for docs and tests.
+const REGIONS: PackedStringArray = [
+	"pelvis", "hip_band", "belly", "waist_low", "waist", "under_bust", "chest", "chest_upper", "neck_base", "bust",
+	"neck", "head", "shoulder", "upper_arm", "upper_arm_low", "elbow", "forearm", "wrist", "hand",
+	"thigh_top", "thigh_upper", "thigh_lower", "knee", "calf", "calf_low", "ankle",
+]
+
+
+static func _torso_regions(joint: Node3D, prefix: String, part: String, base: float, body_type: String, mats: Dictionary,
+		sides: int) -> void:
+	var cuts: Array = []
+	for c: Array in TORSO_REGIONS[part]:
+		cuts.append([c[0], float(c[1]) - base, float(c[2]) - base])
+	SkaterParts.region_parts(joint, prefix, SkaterParts.loft_regions(local_sections(skin_sections(part, body_type), base), cuts, sides),
+			"", mats, "skin")
+
+
+static func _limb_regions(joint: Node3D, side: String, part: String, length: float, body_type: String, mats: Dictionary) -> void:
+	var cuts: Array = []
+	for c: Array in LIMB_REGIONS[part]:
+		cuts.append([c[0], -float(c[1]) * length, -float(c[2]) * length])
+	SkaterParts.region_parts(joint, side, SkaterParts.loft_regions(limb_sections(skin_sections(part, body_type), length), cuts, 16),
+			"_" + side.left(1), mats, "skin")
+
+
+## Neck skin on the Neck joint.
+static func build_neck(neck: Node3D, mats: Dictionary, body_type: String = FEMALE) -> void:
+	SkaterParts.tag_region(SkaterParts.part(neck, "NeckMesh", SkaterParts.loft(SkaterParts.smooth_sections(skin_sections("neck", body_type), 3), 18),
+			Vector3.ZERO, mats, "skin"), "neck")
 
 
 ## Two faint collarbone ridges from the pit of the neck out toward the shoulders.
-static func _collarbones(chest: Node3D, ribs: Array, base: float, mats: Dictionary) -> void:
+static func _collarbones(chest: Node3D, ribs: Array, base: float, mats: Dictionary, body_type: String) -> void:
+	var reach: float = 0.118 if body_type == MALE else 0.1
 	for s: float in [-1.0, 1.0]:
 		var pts: PackedVector3Array = PackedVector3Array()
 		var radii: PackedFloat32Array = PackedFloat32Array()
@@ -102,118 +226,113 @@ static func _collarbones(chest: Node3D, ribs: Array, base: float, mats: Dictiona
 			var t: float = float(i) / 6.0
 			var y: float = lerpf(1.322, 1.296, t) + 0.006 * sin(PI * t) - base
 			var sec: Array = SkaterParts.section_at(ribs, y)
-			var x: float = s * lerpf(0.018, 0.1, t)
+			var x: float = s * lerpf(0.018, reach, t)
 			pts.append(SkaterParts.section_point(sec, SkaterParts.section_angle_for_x(sec, x, true), -0.001))
 			radii.append(lerpf(0.0045, 0.0058, sin(PI * t)))
-		SkaterParts.part(chest, ("Left" if s < 0.0 else "Right") + "CollarboneMesh", SkaterParts.tube_capped(pts, radii, 8),
-				Vector3.ZERO, mats, "skin")
+		SkaterParts.tag_region(SkaterParts.part(chest, ("Left" if s < 0.0 else "Right") + "CollarboneMesh",
+				SkaterParts.tube_capped(pts, radii, 8), Vector3.ZERO, mats, "skin"), "chest_upper")
 
 
-## Sporty bralette: an under-band round the ribs, a cup over each bust form (under the same BodySway pivot, so the
-## fabric follows it), coral piping round the cups and the band, and straps over the shoulders to the back band.
-static func _bikini_top(chest: Node3D, ribs: Array, base: float, mats: Dictionary) -> void:
-	for s: float in [-1.0, 1.0]:
-		var side: String = "L" if s < 0.0 else "R"
-		var root: Vector3 = Vector3(s * BUST_ROOT.x, BUST_ROOT.y - base, BUST_ROOT.z)
-		var pivot: Node3D = SkaterParts.joint(chest, "BodySway_Bust" + side, root)
-		var c: Vector3 = Vector3(s * BUST_CENTER.x, BUST_CENTER.y, BUST_CENTER.z)
-		var turn: Basis = Basis(Vector3.UP, -s * 0.16)  ## each form looks a little outward
-		SkaterParts.part(pivot, "Bust" + side + "Mesh", _bust_mesh(BUST_RADII, turn), c, mats, "skin")
-		var cup_rows: Array = _cup_rows(BUST_RADII + Vector3.ONE * CUP_GROW, turn, s)
-		SkaterParts.part(pivot, "BikiniCup" + side + "Mesh", SkaterParts.facing_grid(cup_rows, Vector3.FORWARD), c, mats, "top")
-		# Piping along the cup's two slanted edges, meeting at the strap.
-		var trim_rows: Array = _cup_rows(BUST_RADII + Vector3.ONE * (CUP_GROW + 0.0012), turn, s)
-		var first: int = 4  ## the lowest rows run round the form's rim, under the band: no piping there
-		var pts: PackedVector3Array = PackedVector3Array()
-		for i: int in range(first, trim_rows.size()):
-			pts.append(c + (trim_rows[i] as PackedVector3Array)[0])
-		for i: int in range(trim_rows.size() - 1, first - 1, -1):
-			var row: PackedVector3Array = trim_rows[i]
-			pts.append(c + row[row.size() - 1])
-		var radii: PackedFloat32Array = PackedFloat32Array()
-		for i: int in pts.size():
-			radii.append(0.0032)
-		SkaterParts.part(pivot, "BikiniCupTrim" + side + "Mesh", SkaterParts.tube_capped(pts, radii, 6), Vector3.ZERO, mats, "top_trim")
-	# Under-band and its piping.
-	var band: Array = _clip(ribs, TOP_BAND.x - base, TOP_BAND.y - base)
-	SkaterParts.part(chest, "BikiniTopMesh", SkaterParts.loft(band, 32, 0.0035), Vector3.ZERO, mats, "top")
-	SkaterParts.part(chest, "BikiniBandTrimMesh", SkaterParts.loft_ring(ribs, TOP_BAND.x - base, 0.0045, 0.0034, 40),
-			Vector3.ZERO, mats, "top_trim")
-	# Straps: up from the top of each cup, over the shoulder, down to the back band.
-	for s: float in [-1.0, 1.0]:
-		var spec: Array = [
-			[1.16, 0.074, true], [1.2, 0.077, true], [1.25, 0.08, true], [1.29, 0.082, true],
-			[1.31, 0.082, false], [1.27, 0.08, false], [1.2, 0.077, false], [1.14, 0.074, false], [1.08, 0.072, false],
-		]
-		var pts: PackedVector3Array = PackedVector3Array()
-		var radii: PackedFloat32Array = PackedFloat32Array()
-		for sp: Array in spec:
-			var sec: Array = SkaterParts.section_at(ribs, float(sp[0]) - base)
-			var x: float = s * float(sp[1])
-			pts.append(SkaterParts.section_point(sec, SkaterParts.section_angle_for_x(sec, x, bool(sp[2]), 0.004), 0.004))
-			radii.append(0.0055)
-		# Over the top of the shoulder.
-		var top: Array = SkaterParts.section_at(ribs, 1.318 - base)
-		pts.insert(4, Vector3(s * 0.08, 1.318 - base + 0.006, float(top[5])))
-		pts = SkaterParts.smooth3d(pts, 3)
-		radii = PackedFloat32Array()
-		for i: int in pts.size():
-			radii.append(0.0055)
-		SkaterParts.part(chest, ("Left" if s < 0.0 else "Right") + "BikiniStrapMesh", SkaterParts.tube_capped(pts, radii, 8),
-				Vector3.ZERO, mats, "top")
+# --- chest front surface and the bust field ------------------------------------------------------------------
+
+## Height of the bust field above the ribcage skin at body-space (|x|, y); -BUST_SINK outside the forms.
+static func bust_height(x_abs: float, y: float) -> float:
+	var dx: float = x_abs - BUST_APEX.x
+	var dy: float = y - BUST_APEX.y
+	var u: float = dx / (BUST_R_OUT if dx > 0.0 else BUST_R_IN)
+	var v: float = dy / (BUST_R_UP if dy > 0.0 else BUST_R_DOWN)
+	var d2: float = u * u + v * v
+	if d2 >= 1.0:
+		return -BUST_SINK
+	var e: float = 0.9 + 1.3 * smoothstep(-0.25, 0.55, v)  ## full and round below, a long soft slope above
+	return BUST_HEIGHT * pow(1.0 - d2, e) - BUST_SINK
 
 
-## A unit-sphere point shaped into a soft natural bust form: the upper slope runs back into the chest, the lower
-## half is fuller and rounder. Front is -Z.
-static func _bust_shape(p: Vector3, radii: Vector3) -> Vector3:
-	var q: Vector3 = p
-	if q.z < 0.0:
-		var up: float = maxf(q.y, 0.0)
-		q.z *= 1.0 - 0.6 * up  ## top slope
-		q.y -= 0.12 * (1.0 - absf(q.y)) * -q.z  ## apex a little low
-	return Vector3(q.x * radii.x, q.y * radii.y, q.z * radii.z)
+## Body-space x of the bust field at rim coordinate u (signed: + toward the arm) on side s.
+static func bust_x(u: float, s: float) -> float:
+	return s * (BUST_APEX.x + u * (BUST_R_OUT if u > 0.0 else BUST_R_IN))
 
 
-## Rows of the triangle cup patch over the front of a bust form: full width at the bottom, narrowing to a point at
-## the top, a little toward the outside where the strap starts. s = +1 right side, -1 left.
-static func _cup_rows(radii: Vector3, turn: Basis, s: float) -> Array:
+## Body-space y of the bust field at rim coordinate v (+ up).
+static func bust_y(v: float) -> float:
+	return BUST_APEX.y + v * (BUST_R_UP if v > 0.0 else BUST_R_DOWN)
+
+
+## Point of the ribcage's front skin at body-space (x, y), in body space, and its outward normal.
+static func chest_skin(x: float, y: float, body_type: String = FEMALE) -> Array:
+	var p: Vector3 = _chest_raw(x, y, body_type)
+	var h: float = 0.002
+	var dx: Vector3 = _chest_raw(x + h, y, body_type) - _chest_raw(x - h, y, body_type)
+	var dy: Vector3 = _chest_raw(x, y + h, body_type) - _chest_raw(x, y - h, body_type)
+	var n: Vector3 = dy.cross(dx).normalized()
+	if n.z > 0.0:
+		n = -n
+	return [p, n]
+
+
+static func _chest_raw(x: float, y: float, body_type: String) -> Vector3:
+	if not _front_cache.has(body_type):
+		_front_cache[body_type] = SkaterParts.smooth_sections(skin_sections("chest", body_type), 6)
+	var sec: Array = SkaterParts.section_at(_front_cache[body_type], y)
+	return SkaterParts.section_point(sec, SkaterParts.section_angle_for_x(sec, x, true))
+
+
+## Body-space point on the front of the chest including the bust forms (female), lifted `lift` off the surface.
+static func chest_front_point(x: float, y: float, lift: float, body_type: String = FEMALE) -> Vector3:
+	var sn: Array = chest_skin(x, y, body_type)
+	var h: float = bust_height(absf(x), y) if body_type != MALE else 0.0
+	return (sn[0] as Vector3) + (sn[1] as Vector3) * (maxf(h, -BUST_SINK) + lift)
+
+
+## Body-space position of the BodySway_Bust pivot on side s (+1 right, -1 left).
+static func bust_pivot(s: float) -> Vector3:
+	var p: Vector3 = (chest_skin(s * BUST_APEX.x, BUST_PIVOT_Y)[0] as Vector3)
+	return Vector3(s * BUST_APEX.x, BUST_PIVOT_Y, p.z + 0.015)
+
+
+## Rows of body-space points over the bust field of side s, lifted `lift`: v from v0 to v1 (n rows), and per row u
+## from u0(v) to u1(v) given by `span` (Callable(v) -> Vector2(u0, u1)), `cols` columns.
+static func bust_rows(s: float, lift: float, v0: float, v1: float, n: int, cols: int, span: Callable) -> Array:
 	var rows: Array = []
-	var n: int = 14
-	var cols: int = 12
 	for i: int in n + 1:
-		var y: float = lerpf(-0.97, 0.96, float(i) / float(n))
-		var disc: float = sqrt(maxf(1.0 - y * y, 0.0))
-		var half: float = 0.06 + (1.0 - y) * 0.85
-		var xc: float = s * 0.12 * (y + 1.0) * 0.5
-		var x0: float = maxf(-disc, xc - half)
-		var x1: float = minf(disc, xc + half)
+		var v: float = lerpf(v0, v1, float(i) / float(n))
+		var uu: Vector2 = span.call(v)
 		var row: PackedVector3Array = PackedVector3Array()
 		for k: int in cols + 1:
-			var x: float = lerpf(x0, x1, float(k) / float(cols))
-			var z: float = -sqrt(maxf(1.0 - x * x - y * y, 0.0))
-			row.append(turn * _bust_shape(Vector3(x, y, z), radii))
+			var u: float = lerpf(uu.x, uu.y, float(k) / float(cols))
+			row.append(chest_front_point(bust_x(u, s), bust_y(v), lift))
 		rows.append(row)
 	return rows
 
 
-## Closed bust form mesh (rings from the bottom pole to the top), turned by `turn`.
-static func _bust_mesh(radii: Vector3, turn: Basis) -> ArrayMesh:
-	var rows: Array = []
-	var lat_n: int = 12
-	var lon_n: int = 24
-	for i: int in lat_n + 1:
-		var lat: float = lerpf(-PI * 0.5, PI * 0.5, float(i) / float(lat_n))
-		var ring: PackedVector3Array = PackedVector3Array()
-		for k: int in lon_n:
-			var a: float = TAU * float(k) / float(lon_n)
-			var p: Vector3 = Vector3(cos(lat) * sin(a), sin(lat), -cos(lat) * cos(a))
-			ring.append(turn * _bust_shape(p, radii))
-		rows.append(ring)
-	return SkaterParts.grid(rows, true)
+static func _full_span(_v: float) -> Vector2:
+	return Vector2(-1.04, 1.04)
+
+
+## Rows moved from body space into a node's space given that node's body-space origin.
+static func rows_to_local(rows: Array, origin: Vector3) -> Array:
+	var out: Array = []
+	for r: PackedVector3Array in rows:
+		var o: PackedVector3Array = PackedVector3Array()
+		for p: Vector3 in r:
+			o.append(p - origin)
+		out.append(o)
+	return out
+
+
+## Bust forms: a height-field patch over each side of the ribcage, under its BodySway_Bust pivot.
+static func _bust(chest: Node3D, chest_y: float, mats: Dictionary) -> void:
+	for s: float in [-1.0, 1.0]:
+		var side: String = "L" if s < 0.0 else "R"
+		var root: Vector3 = bust_pivot(s)
+		var pivot: Node3D = SkaterParts.joint(chest, "BodySway_Bust" + side, root - Vector3(0.0, chest_y, 0.0))
+		var rows: Array = bust_rows(s, 0.0, -1.04, 1.04, 26, 24, _full_span)
+		SkaterParts.tag_region(SkaterParts.part(pivot, "Bust" + side + "Mesh", SkaterParts.facing_grid(rows_to_local(rows, root),
+				Vector3.FORWARD), Vector3.ZERO, mats, "skin"), "bust_" + side)
 
 
 ## Smoothed sections cut to [y0, y1], with exact end sections.
-static func _clip(secs: Array, y0: float, y1: float) -> Array:
+static func clip(secs: Array, y0: float, y1: float) -> Array:
 	var out: Array = [SkaterParts.section_at(secs, y0)]
 	for sec: Array in secs:
 		if float(sec[0]) > y0 and float(sec[0]) < y1:
@@ -222,38 +341,25 @@ static func _clip(secs: Array, y0: float, y1: float) -> Array:
 	return out
 
 
-## Leg-cut height round the pelvis at angle a: low at the front and back centre, high over the hips.
-static func _leg_cut_y(a: float) -> float:
-	return lerpf(BOTTOM_CROTCH_Y, BOTTOM_SIDE_Y, pow(absf(sin(a)), 1.6))
+## Limb sections (listed top to bottom) cut to y0 >= y >= y1.
+static func clip_desc(secs: Array, y0: float, y1: float) -> Array:
+	var out: Array = [SkaterParts.section_at(secs, y0)]
+	for sec: Array in secs:
+		if float(sec[0]) < y0 and float(sec[0]) > y1:
+			out.append(sec)
+	out.append(SkaterParts.section_at(secs, y1))
+	return out
 
 
-## Matching bikini bottoms: a panel over the pelvis between the leg cut and a low waistband, a gusset under the
-## crotch, and coral piping round the waistband and the leg openings.
-static func _bikini_bottom(hips: Node3D, pelvis: Array, base: float, mats: Dictionary) -> void:
-	var grow: float = 0.005
-	var sides: int = 40
-	var rows: Array = []
-	var levels: int = 10
-	for v: int in levels + 1:
-		var ring: PackedVector3Array = PackedVector3Array()
-		for k: int in sides:
-			var a: float = TAU * float(k) / float(sides)
-			var y: float = lerpf(_leg_cut_y(a), BOTTOM_TOP_Y + 0.008 * cos(a + PI), float(v) / float(levels)) - base
-			ring.append(SkaterParts.section_point(SkaterParts.section_at(pelvis, y), a, grow))
-		rows.append(ring)
-	SkaterParts.part(hips, "BikiniBottomMesh", SkaterParts.grid(rows, true), Vector3.ZERO, mats, "bottom")
-	var gusset: Array = _clip(pelvis, float(pelvis[0][0]), BOTTOM_CROTCH_Y + 0.006 - base)
-	SkaterParts.part(hips, "BikiniGussetMesh", SkaterParts.loft(gusset, sides, grow), Vector3.ZERO, mats, "bottom")
-	for which: int in 2:
-		var pts: PackedVector3Array = PackedVector3Array()
-		var radii: PackedFloat32Array = PackedFloat32Array()
-		for k: int in sides + 1:
-			var a: float = TAU * float(k) / float(sides)
-			var y: float = (_leg_cut_y(a) if which == 0 else BOTTOM_TOP_Y + 0.008 * cos(a + PI)) - base
-			pts.append(SkaterParts.section_point(SkaterParts.section_at(pelvis, y), a, grow + 0.001))
-			radii.append(0.0034 if which == 0 else 0.0042)
-		SkaterParts.part(hips, ("BikiniLegTrimMesh" if which == 0 else "BikiniWaistTrimMesh"), SkaterParts.tube(pts, radii, 6),
-				Vector3.ZERO, mats, "bottom_trim")
+## Sections with half width and depths grown by `grow` (and optionally scaled), for loose garments.
+static func grown(secs: Array, grow: float, scale: float = 1.0) -> Array:
+	var out: Array = []
+	for s: Array in secs:
+		var row: Array = s.duplicate()
+		for f: int in [1, 2, 3]:
+			row[f] = float(row[f]) * scale + grow
+		out.append(row)
+	return out
 
 
 # --- limbs ----------------------------------------------------------------------------------------------------
@@ -261,7 +367,7 @@ static func _bikini_bottom(hips: Node3D, pelvis: Array, base: float, mats: Dicti
 # of the bone length (0 at the joint, 1 at the next one, negative above it).
 
 const THIGH: Array = [
-	[-0.17, 0.04, 0.04, 0.045, 1.0, 0.0], [-0.1, 0.06, 0.06, 0.066, 1.0, 0.0], [0.0, 0.077, 0.074, 0.08, 1.0, 0.0],
+	[-0.17, 0.027, 0.027, 0.03, 1.0, 0.0], [-0.1, 0.06, 0.06, 0.066, 1.0, 0.0], [0.0, 0.077, 0.074, 0.08, 1.0, 0.0],
 	[0.2, 0.078, 0.08, 0.078, 1.0, -0.002], [0.45, 0.071, 0.075, 0.069, 1.0, -0.003], [0.7, 0.059, 0.06, 0.055, 1.0, -0.004],
 	[0.88, 0.05, 0.05, 0.047, 1.0, -0.004], [1.0, 0.047, 0.047, 0.045, 1.0, -0.002], [1.1, 0.03, 0.03, 0.03, 1.0, 0.0],
 ]
@@ -292,211 +398,36 @@ static func limb_sections(table: Array, length: float, sub: int = 3) -> Array:
 	return SkaterParts.smooth_sections(out, sub)
 
 
-## Upper and lower arm skin: elliptical lofts with a round deltoid cap and a soft elbow.
-static func build_arm_skin(upper: Node3D, lower: Node3D, side: String, upper_len: float, lower_len: float, mats: Dictionary) -> void:
-	var delt: MeshInstance3D = SkaterParts.part(upper, side + "ShoulderMesh", SkaterParts.sphere(1.0), Vector3(0.0, -0.012, 0.0), mats, "skin")
-	delt.scale = Vector3(0.043, 0.048, 0.043)
-	SkaterParts.part(upper, side + "UpperArmMesh", SkaterParts.loft(limb_sections(UPPER_ARM_SECTIONS, upper_len), 16, 0.0, true),
-			Vector3.ZERO, mats, "skin")
-	SkaterParts.part(lower, side + "ElbowMesh", SkaterParts.sphere(0.029), Vector3.ZERO, mats, "skin")
-	SkaterParts.part(lower, side + "LowerArmMesh", SkaterParts.loft(limb_sections(FOREARM_SECTIONS, lower_len), 16, 0.0, true),
-			Vector3.ZERO, mats, "skin")
+## Upper and lower arm skin: elliptical lofts (split into regions) with a round deltoid cap and a soft elbow.
+static func build_arm_skin(upper: Node3D, lower: Node3D, side: String, upper_len: float, lower_len: float, mats: Dictionary,
+		body_type: String = FEMALE) -> void:
+	var m: bool = body_type == MALE
+	var sfx: String = "_" + side.left(1)
+	var dc: Vector4 = deltoid(body_type)
+	var delt: MeshInstance3D = SkaterParts.part(upper, side + "ShoulderCapMesh", SkaterParts.sphere(1.0), Vector3(0.0, dc.w, 0.0), mats, "skin")
+	delt.scale = Vector3(dc.x, dc.y, dc.z)
+	SkaterParts.tag_region(delt, "shoulder" + sfx)
+	_limb_regions(upper, side, "upper_arm", upper_len, body_type, mats)
+	SkaterParts.tag_region(SkaterParts.part(lower, side + "ElbowMesh", SkaterParts.sphere(0.034 if m else 0.029), Vector3.ZERO, mats,
+			"skin"), "elbow" + sfx)
+	_limb_regions(lower, side, "forearm", lower_len, body_type, mats)
 
 
-## Thigh and calf skin: a slender thigh, a defined knee with a small kneecap, the calf fullest in its upper third and
-## a fine ankle.
-static func build_leg_skin(upper: Node3D, lower: Node3D, side: String, upper_len: float, lower_len: float, mats: Dictionary) -> void:
-	SkaterParts.part(upper, side + "UpperLegMesh", SkaterParts.loft(limb_sections(THIGH, upper_len), 16, 0.0, true),
-			Vector3.ZERO, mats, "skin")
-	SkaterParts.part(lower, side + "KneeMesh", SkaterParts.sphere(0.045), Vector3(0.0, 0.0, 0.0), mats, "skin")
+## Deltoid cap of the upper arm: radii (x, y, z) and the centre's y on the UpperArm joint (w).
+static func deltoid(body_type: String) -> Vector4:
+	return Vector4(0.053, 0.05, 0.051, -0.02) if body_type == MALE else Vector4(0.043, 0.048, 0.043, -0.012)
+
+
+## Thigh and calf skin (split into regions): a slender thigh, a defined knee with a small kneecap, the calf fullest
+## in its upper third and a fine ankle (a little thicker throughout on the male body).
+static func build_leg_skin(upper: Node3D, lower: Node3D, side: String, upper_len: float, lower_len: float, mats: Dictionary,
+		body_type: String = FEMALE) -> void:
+	var m: bool = body_type == MALE
+	var sfx: String = "_" + side.left(1)
+	_limb_regions(upper, side, "thigh", upper_len, body_type, mats)
+	SkaterParts.tag_region(SkaterParts.part(lower, side + "KneeMesh", SkaterParts.sphere(0.048 if m else 0.045), Vector3.ZERO, mats,
+			"skin"), "knee" + sfx)
 	var cap: MeshInstance3D = SkaterParts.part(lower, side + "KneecapMesh", SkaterParts.sphere(1.0), Vector3(0.0, -0.008, -0.032), mats, "skin")
-	cap.scale = Vector3(0.024, 0.028, 0.016)
-	SkaterParts.part(lower, side + "LowerLegMesh", SkaterParts.loft(limb_sections(CALF, lower_len), 16, 0.0, true),
-			Vector3.ZERO, mats, "skin")
-
-
-## Mint wristband round the wrist end of the forearm, with a trim line at its hand edge.
-static func build_wristband(lower: Node3D, side: String, lower_len: float, mats: Dictionary) -> void:
-	var secs: Array = limb_sections(FOREARM_SECTIONS, lower_len)
-	var y0: float = -0.86 * lower_len
-	var y1: float = -1.0 * lower_len + 0.004
-	SkaterParts.part(lower, side + "WristbandMesh", SkaterParts.loft(_clip_desc(secs, y0, y1), 16, 0.0045, true), Vector3.ZERO, mats, "band")
-	SkaterParts.part(lower, side + "WristbandTrimMesh", SkaterParts.loft_ring(secs, y1 + 0.003, 0.0058, 0.0025, 20), Vector3.ZERO, mats, "trim")
-
-
-## Limb sections (listed top to bottom) cut to y0 >= y >= y1.
-static func _clip_desc(secs: Array, y0: float, y1: float) -> Array:
-	var out: Array = [SkaterParts.section_at(secs, y0)]
-	for sec: Array in secs:
-		if float(sec[0]) < y0 and float(sec[0]) > y1:
-			out.append(sec)
-	out.append(SkaterParts.section_at(secs, y1))
-	return out
-
-
-## High-crew striped sock over the lower calf and ankle, down into the shoe collar.
-static func build_sock(lower: Node3D, side: String, lower_len: float, mats: Dictionary) -> void:
-	var secs: Array = limb_sections(CALF, lower_len)
-	var top: float = -lower_len + 0.15  ## cuff about 0.27 above the soles
-	SkaterParts.part(lower, side + "SockMesh", SkaterParts.loft(_clip_desc(secs, top, -lower_len - 0.01), 16, 0.003, true),
-			Vector3.ZERO, mats, "sock")
-	SkaterParts.part(lower, side + "SockCuffMesh", SkaterParts.loft_ring(secs, top, 0.004, 0.004, 24), Vector3.ZERO, mats, "sock")
-	var keys: Array = ["sock_stripe", "sock_stripe2", "sock_stripe"]
-	for i: int in 3:
-		SkaterParts.part(lower, side + "SockStripe%dMesh" % i, SkaterParts.loft_ring(secs, top - 0.014 - 0.015 * float(i), 0.0035, 0.0042, 24),
-				Vector3.ZERO, mats, keys[i])
-
-
-# --- skate shoe -------------------------------------------------------------------------------------------
-
-## Half width and height above the sole of the upper at z (linear between the sections).
-static func shoe_dims(z: float) -> Vector2:
-	for i: int in SHOE_SECTIONS.size() - 1:
-		var a: Array = SHOE_SECTIONS[i]
-		var b: Array = SHOE_SECTIONS[i + 1]
-		if z <= float(b[0]):
-			var t: float = clampf((z - float(a[0])) / maxf(float(b[0]) - float(a[0]), 0.00001), 0.0, 1.0)
-			return Vector2(lerpf(float(a[1]), float(b[1]), t), lerpf(float(a[2]), float(b[2]), t))
-	return Vector2(0.005, 0.01)
-
-
-## Foot-shaped outline (x, z) of the sole, grown by `grow`.
-static func shoe_outline(grow: float, n: int = 44) -> PackedVector2Array:
-	var out: PackedVector2Array = PackedVector2Array()
-	var half: float = (SHOE_HEEL_Z - SHOE_TOE_Z) * 0.5 + grow
-	var zc: float = (SHOE_HEEL_Z + SHOE_TOE_Z) * 0.5
-	for i: int in n:
-		var a: float = TAU * float(i) / float(n)
-		var c: float = cos(a)
-		var sn: float = sin(a)
-		var z: float = zc - signf(c) * pow(absf(c), 0.85) * half
-		var t: float = clampf((z - SHOE_TOE_Z) / (SHOE_HEEL_Z - SHOE_TOE_Z), 0.0, 1.0)
-		var w: float = 0.0565 - 0.011 * smoothstep(0.35, 0.95, t) + grow
-		out.append(Vector2(signf(sn) * pow(absf(sn), 0.8) * w, z))
-	return out
-
-
-## One cross-section ring of the upper (z fixed), K points from the top round the right side to the bottom and back.
-static func _shoe_ring(z: float, hw: float, h: float, grow: float, count: int) -> PackedVector3Array:
-	var ring: PackedVector3Array = PackedVector3Array()
-	for j: int in count:
-		var a: float = TAU * float(j) / float(count)
-		var u: float = cos(a)
-		var v: float = sin(a)
-		var x: float = (hw + grow) * signf(v) * pow(absf(v), SHOE_ROUND)
-		var y: float = SHOE_BASE_Y - grow * 0.5
-		if u > 0.0:
-			y = SHOE_BASE_Y + (h + grow) * pow(u, SHOE_ROUND)
-		ring.append(Vector3(x, y, z))
-	return ring
-
-
-static func _shoe_rows() -> Array:
-	var pts: PackedVector3Array = PackedVector3Array()
-	for sct: Array in SHOE_SECTIONS:
-		pts.append(Vector3(float(sct[0]), float(sct[1]), float(sct[2])))
-	return Array(SkaterParts.smooth3d(pts, 3))
-
-
-## x of the upper's surface at height y and z (right side, positive x).
-static func shoe_side_x(z: float, y: float) -> float:
-	var d: Vector2 = shoe_dims(z)
-	var u: float = pow(clampf((y - SHOE_BASE_Y) / maxf(d.y, 0.001), 0.0, 1.0), 1.0 / SHOE_ROUND)
-	return d.x * pow(sqrt(maxf(1.0 - u * u, 0.0)), SHOE_ROUND)
-
-
-## Real-looking skate shoe: padded collar and tongue, laces, stitched toe cap, vulcanised gum sole with a foxing stripe,
-## and a side panel stripe. Sole bottom at -ankle_height; the parts share a "<side>ShoeMesh" node.
-static func skate_shoe(foot: Node3D, side: String, ankle_height: float, mats: Dictionary) -> Node3D:
-	var shoe: Node3D = SkaterParts.joint(foot, side + "ShoeMesh", Vector3.ZERO)
-	var bottom: float = -ankle_height
-	# Gum rubber sole and the foxing stripe round the base of the upper.
-	SkaterParts.part(shoe, "SoleMesh", SkaterParts.slab(shoe_outline(0.003), bottom, bottom + 0.03, 0.005), Vector3.ZERO, mats, "sole")
-	SkaterParts.part(shoe, "FoxingMesh", SkaterParts.slab(shoe_outline(-0.0015), bottom + 0.025, bottom + 0.044, 0.004),
-			Vector3.ZERO, mats, "foxing")
-
-	# Upper: a lofted body, and a toe cap loft slightly proud of it.
-	var count: int = 20
-	var rows: Array = []
-	var cap_rows: Array = []
-	for d: Vector3 in _shoe_rows():
-		rows.append(_shoe_ring(d.x, d.y, d.z, 0.0, count))
-		if d.x <= TOE_CAP_END_Z:
-			cap_rows.append(_shoe_ring(d.x, d.y, d.z, 0.0035, count))
-	SkaterParts.part(shoe, "UpperMesh", SkaterParts.grid(rows, true), Vector3.ZERO, mats, "shoes")
-	var cap_z: float = (cap_rows[cap_rows.size() - 1] as PackedVector3Array)[0].z
-	var last: Vector2 = shoe_dims(cap_z)
-	cap_rows.append(_shoe_ring(cap_z + 0.0025, last.x, last.y, 0.0012, count))
-	SkaterParts.part(shoe, "ToeCapMesh", SkaterParts.grid(cap_rows, true), Vector3.ZERO, mats, "toe")
-
-	# Toe cap stitching: dashes along the cap's back edge over the top and down both sides.
-	var dashes: Array = []
-	var dash_n: int = 15
-	for i: int in dash_n:
-		var a0: float = deg_to_rad(-98.0 + 14.0 * float(i))
-		var a1: float = a0 + deg_to_rad(8.0)
-		var p0: Vector3 = _edge_point(cap_z + 0.0075, a0)
-		var p1: Vector3 = _edge_point(cap_z + 0.0075, a1)
-		dashes.append([SkaterParts.tube(PackedVector3Array([p0, p1]), PackedFloat32Array([0.0014, 0.0014]), 4), Transform3D.IDENTITY])
-	SkaterParts.part(shoe, "StitchMesh", SkaterParts.merge(dashes), Vector3.ZERO, mats, "stitch")
-
-	# Laces: raised bars across the tongue, with a small knot.
-	var bars: Array = []
-	for i: int in 5:
-		var z: float = -0.1 + 0.021 * float(i)
-		var dm: Vector2 = shoe_dims(z)
-		var slope: float = atan2(shoe_dims(z + 0.01).y - shoe_dims(z - 0.01).y, 0.02)
-		var y: float = SHOE_BASE_Y + dm.y + 0.002
-		var bar: Mesh = SkaterParts.capsule_small(0.0058, 0.064)
-		bars.append([bar, Transform3D(Basis(Vector3.RIGHT, -slope) * Basis(Vector3.BACK, PI * 0.5), Vector3(0.0, y, z))])
-	var kz: float = -0.0
-	var kd: Vector2 = shoe_dims(kz)
-	bars.append([SkaterParts.sphere_small(0.0075), Transform3D(Basis.IDENTITY, Vector3(0.0, SHOE_BASE_Y + kd.y + 0.006, kz - 0.012))])
-	for s: float in [-1.0, 1.0]:
-		bars.append([SkaterParts.capsule_small(0.0042, 0.04), Transform3D(Basis(Vector3.BACK, s * 1.0) * Basis(Vector3.RIGHT, 0.0),
-				Vector3(s * 0.016, SHOE_BASE_Y + kd.y + 0.004, kz - 0.016))])
-	SkaterParts.part(shoe, "LacesMesh", SkaterParts.merge(bars), Vector3.ZERO, mats, "laces")
-
-	# Padded tongue and chunky collar.
-	var tongue: MeshInstance3D = SkaterParts.part(shoe, "TongueMesh", SkaterParts.capsule(0.02, 0.1), Vector3(0.0, 0.018, -0.042),
-			mats, "tongue")
-	tongue.scale = Vector3(1.55, 1.0, 0.75)
-	tongue.rotation.x = 0.1
-	var collar: MeshInstance3D = SkaterParts.part(shoe, "CollarMesh", SkaterParts.torus(0.024, 0.048), Vector3(0.0, 0.017, 0.012),
-			mats, "collar")
-	collar.scale = Vector3(1.0, 1.0, 1.15)
-	# Heel tab.
-	var tab: MeshInstance3D = SkaterParts.part(shoe, "HeelTabMesh", SkaterParts.sphere(0.02), Vector3(0.0, 0.0, 0.074), mats, "shoe_panel")
-	tab.scale = Vector3(0.7, 1.4, 0.35)
-
-	# Side panel stripe on both sides: a bold diagonal band from the lace line down toward the heel.
-	var path: Array = [Vector2(-0.05, 0.012), Vector2(-0.018, -0.012), Vector2(0.012, -0.036), Vector2(0.04, -0.058), Vector2(0.056, -0.07)]
-	var line: PackedVector3Array = PackedVector3Array()
-	for p: Vector2 in path:
-		line.append(Vector3(p.x, p.y, 0.0))
-	line = SkaterParts.smooth3d(line, 4)
-	for sgn: float in [-1.0, 1.0]:
-		var left: PackedVector3Array = PackedVector3Array()
-		var right: PackedVector3Array = PackedVector3Array()
-		for i: int in line.size():
-			var q: Vector3 = line[i]
-			var q2: Vector3 = line[mini(i + 1, line.size() - 1)]
-			var q1: Vector3 = line[maxi(i - 1, 0)]
-			var tz: float = q2.x - q1.x
-			var ty: float = q2.y - q1.y
-			var tl: float = maxf(sqrt(tz * tz + ty * ty), 0.00001)
-			var az: float = ty / tl * 0.011
-			var ay: float = -tz / tl * 0.011
-			left.append(Vector3(sgn * (shoe_side_x(q.x - az, q.y - ay) + 0.0015), q.y - ay, q.x - az))
-			right.append(Vector3(sgn * (shoe_side_x(q.x + az, q.y + ay) + 0.0015), q.y + ay, q.x + az))
-		SkaterParts.part(shoe, "SidePanel" + ("Left" if sgn < 0.0 else "Right") + "Mesh", SkaterParts.facing_grid([left, right], Vector3(sgn, 0.0, 0.0)),
-				Vector3.ZERO, mats, "shoe_panel")
-	return shoe
-
-
-## Point on the upper's outline at angle a (0 = top, + toward +x) at section z, a hair outside the surface.
-static func _edge_point(z: float, a: float) -> Vector3:
-	var d: Vector2 = shoe_dims(z)
-	var u: float = cos(a)
-	var v: float = sin(a)
-	return Vector3((d.x + 0.0045) * signf(v) * pow(absf(v), SHOE_ROUND), SHOE_BASE_Y + (d.y + 0.0045) * pow(maxf(u, 0.0), SHOE_ROUND), z)
+	cap.scale = Vector3(0.026, 0.03, 0.017) if m else Vector3(0.024, 0.028, 0.016)
+	SkaterParts.tag_region(cap, "knee" + sfx)
+	_limb_regions(lower, side, "calf", lower_len, body_type, mats)

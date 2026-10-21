@@ -26,6 +26,45 @@ const TAIL_ANGLE: float = 21.0
 ## Rails sit this much higher than the centre line (concave across the width).
 const CONCAVE: float = 0.006
 
+## Deck shapes by key: length along Z, widest width, where each end starts to round off / kick, kick angles, kick
+## bend length, concave depth, half width at the nose and tail (a taper between them), and the end-curve exponent (2 =
+## ellipse, higher = squarer). "popsicle" is the constants above. Wheelbase (TRUCK_Z) is the same for every deck.
+const DECK_SHAPES: Dictionary = {
+	"popsicle": {"len": 0.8, "wid": 0.22, "ks_n": 0.295, "ks_t": 0.295, "ang_n": 24.0, "ang_t": 21.0, "bend": 0.042,
+			"conc": 0.006, "hw_n": 0.11, "hw_t": 0.11, "p_n": 2.0, "p_t": 2.0},
+	"cruiser": {"len": 0.72, "wid": 0.25, "ks_n": 0.28, "ks_t": 0.285, "ang_n": 10.0, "ang_t": 17.0, "bend": 0.05,
+			"conc": 0.003, "hw_n": 0.125, "hw_t": 0.125, "p_n": 2.0, "p_t": 3.2},
+	"oldschool": {"len": 0.78, "wid": 0.256, "ks_n": 0.27, "ks_t": 0.298, "ang_n": 16.0, "ang_t": 20.0, "bend": 0.045,
+			"conc": 0.005, "hw_n": 0.128, "hw_t": 0.112, "p_n": 2.0, "p_t": 4.5},
+}
+const GRAPHICS: PackedStringArray = ["sunset", "wave", "face", "checker", "flames", "palm"]
+## Truck variants: `drop` is how much the hanger sits closer to the baseplate (a thicker riser keeps the deck top
+## at DECK_TOP_Y); `hollow` draws a hollow kingpin and axle with a light accent.
+const TRUCKS: Dictionary = {
+	"standard": {"drop": 0.0, "hollow": false},
+	"low": {"drop": 0.013, "hollow": false},
+	"hollow": {"drop": 0.0, "hollow": true},
+}
+## Wheel variants: radius, width and lathe profile kind. "street" is the original wheel.
+const WHEELS: Dictionary = {
+	"street": {"r": 0.032, "w": 0.034, "kind": "street"},
+	"park": {"r": 0.0335, "w": 0.036, "kind": "park"},
+	"cruiser": {"r": 0.0355, "w": 0.040, "kind": "cruiser"},
+}
+
+static var _len: float = DECK_LENGTH
+static var _wid: float = DECK_WIDTH
+static var _ks_n: float = KICK_START
+static var _ks_t: float = KICK_START
+static var _ang_n: float = NOSE_ANGLE
+static var _ang_t: float = TAIL_ANGLE
+static var _bend: float = KICK_BEND
+static var _conc: float = CONCAVE
+static var _hw_n: float = DECK_WIDTH * 0.5
+static var _hw_t: float = DECK_WIDTH * 0.5
+static var _p_n: float = 2.0
+static var _p_t: float = 2.0
+
 ## Truck layout (truck frame: origin on the ground under the axle, -Z toward the board's centre, so the kingpin
 ## faces the middle). Real Indy proportions scaled up about 1.45x in height to meet the game's deck height.
 const WHEEL_R: float = 0.032
@@ -49,10 +88,38 @@ const HOLE_X: float = 0.025
 const HOLE_Z: float = 0.032
 
 
-static func build_deck(root: Node3D, mats: Dictionary) -> void:
+## Resolves a catalog id or short key ("deck_cruiser", "cruiser", "wheel_park_54") to a key of `table`.
+static func resolve_key(table: Dictionary, key: String, prefix: String) -> String:
+	var k: String = key.trim_prefix(prefix)
+	for name: String in table.keys():
+		if k == name or k.begins_with(name + "_"):
+			return name
+	return table.keys()[0]
+
+
+## Makes the static shape queries (center_y, top_y, ...) describe this deck. PlaceholderSkater.build_board sets the
+## deck it builds and puts "popsicle" back afterwards.
+static func set_deck(key: String) -> void:
+	var d: Dictionary = DECK_SHAPES[resolve_key(DECK_SHAPES, key, "deck_")]
+	_len = float(d["len"])
+	_wid = float(d["wid"])
+	_ks_n = float(d["ks_n"])
+	_ks_t = float(d["ks_t"])
+	_ang_n = float(d["ang_n"])
+	_ang_t = float(d["ang_t"])
+	_bend = float(d["bend"])
+	_conc = float(d["conc"])
+	_hw_n = float(d["hw_n"])
+	_hw_t = float(d["hw_t"])
+	_p_n = float(d["p_n"])
+	_p_t = float(d["p_t"])
+
+
+static func build_deck(root: Node3D, mats: Dictionary, deck: String = "popsicle", graphic: String = "sunset") -> void:
+	set_deck(deck)
 	# "Deck" is the board's reference box (full size, top at DECK_TOP_Y). It is not drawn: the visible deck is the
 	# shaped surfaces below.
-	var proxy: MeshInstance3D = SkaterParts.part(root, "Deck", SkaterParts.box(Vector3(DECK_WIDTH, DECK_THICK, DECK_LENGTH)),
+	var proxy: MeshInstance3D = SkaterParts.part(root, "Deck", SkaterParts.box(Vector3(_wid, DECK_THICK, _len)),
 			Vector3(0.0, DECK_Y, 0.0), mats, "grip")
 	proxy.visible = false
 
@@ -60,7 +127,19 @@ static func build_deck(root: Node3D, mats: Dictionary) -> void:
 	SkaterParts.part(root, "DeckGrip", _patch(_outline_rows(zs, 8), 0.0, true), Vector3.ZERO, mats, "grip")
 	SkaterParts.part(root, "DeckBottom", _patch(_outline_rows(zs, 8), 0.0, false), Vector3.ZERO, mats, "deck")
 	_build_edge(root, zs, mats)
-	_build_graphic(root, mats)
+	match graphic:
+		"wave":
+			_graphic_wave(root, mats)
+		"face":
+			_graphic_face(root, mats)
+		"checker":
+			_graphic_checker(root, mats)
+		"flames":
+			_graphic_flames(root, mats)
+		"palm":
+			_graphic_palm(root, mats)
+		_:
+			_build_graphic(root, mats)
 
 
 ## The side wall: a dark grip band on top, then one band per ply.
@@ -103,7 +182,264 @@ static func _build_graphic(root: Node3D, mats: Dictionary) -> void:
 	SkaterParts.part(root, "DeckFoam", _patch_multi(foam, 0.0025), Vector3.ZERO, mats, "deck_foam")
 
 
-static func build_truck(board: Node3D, truck_name: String, z: float, mats: Dictionary) -> void:
+## Great-wave graphic: a deck-coloured sky with a pale sun, a deep sea from a rolling horizon to the tail, and a
+## curling foam crest with spray dots.
+static func _graphic_wave(root: Node3D, mats: Dictionary) -> void:
+	_poly_part(root, "DeckSun", [_ellipse(Vector2(0.045, -0.15), 0.05, 0.05, 28)], 0.0005, mats, "deck_alt")
+	SkaterParts.part(root, "DeckSea", _patch(_sea_rows(0.02), 0.001, false), Vector3.ZERO, mats, "deck_dark")
+	# The crest: a crescent between two arcs, thick at the top and tapering into curled tips.
+	var crest: PackedVector2Array = PackedVector2Array()
+	for i: int in 17:
+		var a: float = PI + PI * float(i) / 16.0
+		crest.append(Vector2(cos(a) * 0.105, 0.075 + sin(a) * 0.115))
+	for i: int in 17:
+		var a: float = TAU - PI * float(i) / 16.0
+		crest.append(Vector2(0.02 + cos(a) * 0.075, 0.088 + sin(a) * 0.085))
+	_poly_part(root, "DeckFoam", [crest], 0.0016, mats, "deck_foam")
+	var spray: Array = []
+	for d: Array in [[-0.092, -0.07, 0.007], [-0.075, -0.098, 0.005], [-0.05, -0.12, 0.0045], [0.075, -0.06, 0.005]]:
+		spray.append(_ellipse(Vector2(float(d[0]), float(d[1])), float(d[2]), float(d[2]), 10))
+	_poly_part(root, "DeckSpray", spray, 0.0016, mats, "deck_foam")
+	# Two foam lines along the sea toward the tail.
+	var foam: Array = []
+	foam.append(_wave_line(0.11, 0.0035))
+	foam.append(_wave_line(0.18, 0.003))
+	SkaterParts.part(root, "DeckFoamLines", _patch_multi(foam, 0.0025), Vector3.ZERO, mats, "deck_foam")
+
+
+## Chibi anime face sticker: a white-bordered round face with a hair fringe, big shiny eyes, blush and a tiny mouth.
+static func _graphic_face(root: Node3D, mats: Dictionary) -> void:
+	var c: Vector2 = Vector2(0.0, 0.02)
+	var ring: Array = [_ellipse(c, 0.1, 0.1, 32)]
+	_poly_part(root, "DeckSticker", ring, 0.0005, mats, "deck_dark")
+	_poly_part(root, "DeckFace", [_ellipse(c, 0.093, 0.093, 32)], 0.001, mats, "deck_foam")
+	# Hair: the upper arc of the face with a zig-zag fringe along the bottom.
+	var hair: PackedVector2Array = PackedVector2Array()
+	for i: int in 17:
+		var a: float = PI + PI * float(i) / 16.0
+		hair.append(c + Vector2(cos(a), sin(a)) * 0.093)
+	for f: Array in [[0.088, -0.005], [0.066, -0.04], [0.048, -0.012], [0.024, -0.046], [0.0, -0.016], [-0.024, -0.046],
+			[-0.048, -0.012], [-0.066, -0.04], [-0.088, -0.005]]:
+		hair.append(c + Vector2(float(f[0]), float(f[1])))
+	_poly_part(root, "DeckHair", [hair], 0.0015, mats, "deck_accent")
+	var side: Array = [_ellipse(c + Vector2(-0.088, 0.03), 0.014, 0.04, 14), _ellipse(c + Vector2(0.088, 0.03), 0.014, 0.04, 14)]
+	_poly_part(root, "DeckHairSide", side, 0.0015, mats, "deck_accent")
+	var eyes: Array = [_ellipse(c + Vector2(-0.04, 0.026), 0.017, 0.026, 18), _ellipse(c + Vector2(0.04, 0.026), 0.017, 0.026, 18)]
+	_poly_part(root, "DeckEyes", eyes, 0.002, mats, "deck_dark")
+	var irises: Array = [_ellipse(c + Vector2(-0.04, 0.032), 0.011, 0.016, 14), _ellipse(c + Vector2(0.04, 0.032), 0.011, 0.016, 14)]
+	_poly_part(root, "DeckIris", irises, 0.0025, mats, "deck")
+	var glints: Array = [_ellipse(c + Vector2(-0.045, 0.017), 0.0055, 0.0075, 10), _ellipse(c + Vector2(0.035, 0.017), 0.0055, 0.0075, 10),
+			_ellipse(c + Vector2(-0.034, 0.04), 0.003, 0.004, 8), _ellipse(c + Vector2(0.046, 0.04), 0.003, 0.004, 8)]
+	_poly_part(root, "DeckGlints", glints, 0.003, mats, "deck_foam")
+	var cheeks: Array = [_ellipse(c + Vector2(-0.062, 0.066), 0.014, 0.008, 12), _ellipse(c + Vector2(0.062, 0.066), 0.014, 0.008, 12)]
+	_poly_part(root, "DeckCheeks", cheeks, 0.002, mats, "deck_accent")
+	_poly_part(root, "DeckMouth", [_ellipse(c + Vector2(0.0, 0.074), 0.009, 0.005, 10)], 0.002, mats, "deck_dark")
+
+
+## Checker band across the middle of the deck with a stripe near each end.
+static func _graphic_checker(root: Node3D, mats: Dictionary) -> void:
+	var half: float = _body_hw(0.0) - 0.0035
+	var cw: float = half / 3.0
+	var dark: Array = []
+	var light: Array = []
+	for i: int in 6:
+		for j: int in 6:
+			var x0: float = -half + cw * float(i)
+			var z0: float = -cw * 3.0 + cw * float(j)
+			var sq: PackedVector2Array = PackedVector2Array([Vector2(x0, z0), Vector2(x0 + cw, z0), Vector2(x0 + cw, z0 + cw),
+					Vector2(x0, z0 + cw)])
+			if (i + j) % 2 == 0:
+				dark.append(sq)
+			else:
+				light.append(sq)
+	_poly_part(root, "DeckCheckDark", dark, 0.001, mats, "deck_dark")
+	_poly_part(root, "DeckCheckLight", light, 0.001, mats, "deck_foam")
+	var bands: Array = []
+	var thin: Array = []
+	for sd: float in [-1.0, 1.0]:
+		var zc: float = sd * (cw * 3.0 + 0.045)
+		bands.append(_rect(-half, zc - 0.014, half, zc + 0.014))
+		thin.append(_rect(-half, zc + sd * 0.03, half, zc + sd * 0.036))
+	_poly_part(root, "DeckStripes", bands, 0.001, mats, "deck_accent")
+	_poly_part(root, "DeckStripesThin", thin, 0.001, mats, "deck_alt")
+
+
+## Flames licking in from the nose and the tail: a solid cap with tongues of flame and a hot yellow core.
+static func _graphic_flames(root: Node3D, mats: Dictionary) -> void:
+	var outer: Array = []
+	var inner: Array = []
+	for tail: bool in [false, true]:
+		var sd: float = 1.0 if tail else -1.0
+		var base: float = sd * 0.225
+		SkaterParts.part(root, "DeckFlameCap" + ("Tail" if tail else "Nose"), _patch(_cap_rows(base, tail), 0.001, false),
+				Vector3.ZERO, mats, "deck_accent")
+		var hw: float = (_hw_t if tail else _hw_n) - 0.012
+		for i: int in 5:
+			var x0: float = lerpf(-hw, hw, float(i) / 4.0)
+			var len_: float = [0.15, 0.21, 0.28, 0.2, 0.14][i]
+			var lean: float = 0.012 * (1.0 if i % 2 == 0 else -1.0)
+			outer.append(_flame(x0, base + sd * 0.012, -sd, len_, hw * 0.42, lean))
+			inner.append(_flame(x0, base + sd * 0.012, -sd, len_ * 0.6, hw * 0.24, lean * 0.6))
+	_poly_part(root, "DeckFlames", outer, 0.001, mats, "deck_accent")
+	_poly_part(root, "DeckFlameCore", inner, 0.0015, mats, "deck_sun")
+
+
+## One flame tongue: from (x0, z0) toward dir (+1 / -1 along Z), tapering to a curled tip.
+static func _flame(x0: float, z0: float, dir: float, length: float, half_w: float, lean: float) -> PackedVector2Array:
+	var left: PackedVector2Array = PackedVector2Array()
+	var right: PackedVector2Array = PackedVector2Array()
+	for i: int in 11:
+		var t: float = float(i) / 10.0
+		var cx: float = x0 + lean * sin(t * PI * 1.3) * (1.0 + t) * 1.6
+		var w: float = half_w * pow(1.0 - t, 0.85) * (1.0 + 0.35 * sin(t * PI))
+		var zz: float = z0 + dir * length * t
+		left.append(Vector2(cx - w, zz))
+		right.append(Vector2(cx + w, zz))
+	var out: PackedVector2Array = PackedVector2Array()
+	out.append_array(left)
+	for i: int in range(right.size() - 2, -1, -1):
+		out.append(right[i])
+	return out
+
+
+## Palm tree on a sandbar with a setting sun, the trunk leaning, seven drooping fronds and a bunch of coconuts.
+static func _graphic_palm(root: Node3D, mats: Dictionary) -> void:
+	_poly_part(root, "DeckSun", [_ellipse(Vector2(0.045, -0.115), 0.058, 0.058, 28)], 0.0005, mats, "deck_alt")
+	SkaterParts.part(root, "DeckSea", _patch(_cap_rows(0.15, true), 0.001, false), Vector3.ZERO, mats, "deck_dark")
+	_poly_part(root, "DeckSand", [_ellipse(Vector2(0.0, 0.152), 0.092, 0.026, 24)], 0.0015, mats, "deck_sun")
+	# Trunk: a tapering ribbon along a leaning curve.
+	var left: PackedVector2Array = PackedVector2Array()
+	var right: PackedVector2Array = PackedVector2Array()
+	var crown: Vector2 = Vector2(-0.025, -0.07)
+	for i: int in 13:
+		var t: float = float(i) / 12.0
+		var cx: float = lerpf(0.02, crown.x, t) + 0.03 * sin(t * PI)
+		var zz: float = lerpf(0.15, crown.y, t)
+		var w: float = lerpf(0.0085, 0.0052, t)
+		left.append(Vector2(cx - w, zz))
+		right.append(Vector2(cx + w, zz))
+	var trunk: PackedVector2Array = PackedVector2Array()
+	trunk.append_array(left)
+	for i: int in range(right.size() - 1, -1, -1):
+		trunk.append(right[i])
+	_poly_part(root, "DeckTrunk", [trunk], 0.002, mats, "ply_dark")
+	var fronds: Array = []
+	for a: float in [-172.0, -140.0, -108.0, -72.0, -40.0, -8.0, 28.0, 152.0]:
+		fronds.append(_frond(crown, deg_to_rad(a), 0.115))
+	_poly_part(root, "DeckFronds", fronds, 0.0025, mats, "deck_dark")
+	var nuts: Array = [_ellipse(crown + Vector2(-0.009, 0.012), 0.0065, 0.0065, 10), _ellipse(crown + Vector2(0.008, 0.013), 0.0065, 0.0065, 10),
+			_ellipse(crown + Vector2(0.0, 0.021), 0.0065, 0.0065, 10)]
+	_poly_part(root, "DeckCoconuts", nuts, 0.003, mats, "deck_accent")
+
+
+## A palm frond from p along angle a (0 = +X, +90 deg = +Z), drooping toward the tail.
+static func _frond(p: Vector2, a: float, length: float) -> PackedVector2Array:
+	var left: PackedVector2Array = PackedVector2Array()
+	var right: PackedVector2Array = PackedVector2Array()
+	var dir: Vector2 = Vector2(cos(a), sin(a))
+	for i: int in 11:
+		var t: float = float(i) / 10.0
+		var q: Vector2 = p + dir * length * t + Vector2(0.0, length * 0.55 * t * t)
+		var tangent: Vector2 = dir * length + Vector2(0.0, length * 1.1 * t)
+		var n: Vector2 = Vector2(-tangent.y, tangent.x).normalized()
+		var w: float = 0.0105 * sin(PI * pow(t, 0.7)) + 0.0004
+		left.append(q + n * w)
+		right.append(q - n * w)
+	var out: PackedVector2Array = PackedVector2Array()
+	out.append_array(left)
+	for i: int in range(right.size() - 1, -1, -1):
+		out.append(right[i])
+	return out
+
+
+## Rows from a straight line at z = start to the end of the nose or the tail outline.
+static func _cap_rows(start: float, tail: bool) -> Array:
+	var rows: Array = []
+	var hw: float = (_hw_t if tail else _hw_n) - 0.0001
+	var sd: float = 1.0 if tail else -1.0
+	for i: int in 9:
+		var v: float = float(i) / 8.0
+		var row: PackedVector2Array = PackedVector2Array()
+		for j: int in 23:
+			var x: float = lerpf(-hw, hw, float(j) / 22.0)
+			row.append(Vector2(x, lerpf(start, sd * (_end_z(x, tail) - 0.0004), v)))
+		rows.append(row)
+	return rows
+
+
+static func _body_hw(z: float) -> float:
+	return lerpf(_hw_n, _hw_t, clampf((z + _ks_n) / (_ks_n + _ks_t), 0.0, 1.0))
+
+
+static func _ellipse(c: Vector2, rx: float, rz: float, segs: int) -> PackedVector2Array:
+	var out: PackedVector2Array = PackedVector2Array()
+	for i: int in segs:
+		var a: float = TAU * float(i) / float(segs)
+		out.append(c + Vector2(cos(a) * rx, sin(a) * rz))
+	return out
+
+
+static func _rect(x0: float, z0: float, x1: float, z1: float) -> PackedVector2Array:
+	return PackedVector2Array([Vector2(x0, z0), Vector2(x1, z0), Vector2(x1, z1), Vector2(x0, z1)])
+
+
+## A part made of flat polygons (x, z) lying on the deck bottom, `off` below it. Points are kept inside the outline.
+static func _poly_part(root: Node3D, part_name: String, polys: Array, off: float, mats: Dictionary, key: String) -> void:
+	var st: SurfaceTool = _new_st()
+	for poly: PackedVector2Array in polys:
+		_poly_into(st, poly, off)
+	SkaterParts.part(root, part_name, st.commit(), Vector3.ZERO, mats, key)
+
+
+static func _poly_into(st: SurfaceTool, poly: PackedVector2Array, off: float) -> void:
+	var clipped: PackedVector2Array = PackedVector2Array()
+	var zmax: float = _len * 0.5 - 0.004
+	for q: Vector2 in poly:
+		var zz: float = clampf(q.y, -zmax, zmax)
+		var hwz: float = maxf(_half_width(zz) - 0.002, 0.0)
+		clipped.append(Vector2(clampf(q.x, -hwz, hwz), zz))
+	var idx: PackedInt32Array = Geometry2D.triangulate_polygon(clipped)
+	for t: int in range(0, idx.size(), 3):
+		_sub_tri(st, clipped[idx[t]], clipped[idx[t + 1]], clipped[idx[t + 2]], off, 0)
+
+
+## Emits a triangle on the bottom surface, split into four until its edges are short enough to follow the concave.
+static func _sub_tri(st: SurfaceTool, a: Vector2, b: Vector2, c: Vector2, off: float, depth: int) -> void:
+	var longest: float = maxf(a.distance_to(b), maxf(b.distance_to(c), c.distance_to(a)))
+	if longest > 0.04 and depth < 4:
+		var ab: Vector2 = (a + b) * 0.5
+		var bc: Vector2 = (b + c) * 0.5
+		var ca: Vector2 = (c + a) * 0.5
+		_sub_tri(st, a, ab, ca, off, depth + 1)
+		_sub_tri(st, ab, b, bc, off, depth + 1)
+		_sub_tri(st, ca, bc, c, off, depth + 1)
+		_sub_tri(st, ab, bc, ca, off, depth + 1)
+		return
+	var v: Array = []
+	var n: Array = []
+	for q: Vector2 in [a, b, c]:
+		v.append(Vector3(q.x, top_y(q.x, q.y) - VIS_THICK - off, q.y))
+		n.append(-_surface_normal(q.x, q.y))
+	_tri(st, v[0], v[1], v[2], n[0], n[1], n[2])
+
+
+## Truck (ground at y = 0, wheel axle at the wheel radius). `opts` takes "truck" and "wheel" keys. The baseplate and
+## riser hang from the deck (the deck top is fixed), the hanger and axle sit on the wheel radius, and the kingpin
+## stack and neck bridge the gap, so a low truck or a bigger wheel only changes how the pieces overlap.
+static func build_truck(board: Node3D, truck_name: String, z: float, mats: Dictionary, opts: Dictionary = {}) -> void:
+	var tdef: Dictionary = TRUCKS[resolve_key(TRUCKS, str(opts.get("truck", "standard")), "truck_")]
+	var wdef: Dictionary = WHEELS[resolve_key(WHEELS, str(opts.get("wheel", "street")), "wheel_")]
+	var drop: float = float(tdef["drop"])
+	var hollow: bool = bool(tdef["hollow"])
+	var axle_y: float = float(wdef["r"])
+	var hw: float = float(wdef["w"]) * 0.5
+	var dh: float = axle_y - WHEEL_R  # hanger-side parts shift up for a bigger wheel
+	var hy: Vector3 = Vector3(0.0, dh, 0.0)
+	var pb: float = PLATE_BOTTOM - drop  # the baseplate drops with a low truck (a thicker riser keeps the deck top)
+	var pt: float = PLATE_TOP - drop
+	var kbase: Vector3 = KINGPIN_BASE + Vector3(0.0, -drop, 0.0)
+	var cup: Vector3 = PIVOT_CUP + Vector3(0.0, -drop, 0.0)
+
 	var truck: Node3D = SkaterParts.joint(board, "Truck_" + truck_name, Vector3(0.0, 0.0, z))
 	var body: Node3D = SkaterParts.joint(truck, "TruckBody", Vector3.ZERO)
 	if z < 0.0:
@@ -112,15 +448,15 @@ static func build_truck(board: Node3D, truck_name: String, z: float, mats: Dicti
 
 	# Riser pad and baseplate, with the 4 mounting nuts and bolt ends under the plate and 4 bolt heads on the grip.
 	_prism(_st(b, "riser"), _rounded_rect(0.038, 0.05, 0.008, 4), Vector3.RIGHT, Vector3.BACK, Vector3.UP,
-			PLATE_TOP, RISER_TOP, 0.0)
+			pt, RISER_TOP, 0.0)
 	var plate: PackedVector2Array = _plate_outline()
-	_prism(_st(b, "baseplate"), plate, Vector3.RIGHT, Vector3.BACK, Vector3.UP, PLATE_BOTTOM, PLATE_TOP, 0.0025)
+	_prism(_st(b, "baseplate"), plate, Vector3.RIGHT, Vector3.BACK, Vector3.UP, pb, pt, 0.0025)
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			var hole: Vector3 = Vector3(sx * HOLE_X, 0.0, sz * HOLE_Z)
-			_cyl(_st(b, "hardware"), hole + Vector3(0.0, PLATE_BOTTOM, 0.0), hole + Vector3(0.0, PLATE_BOTTOM - 0.004, 0.0),
+			_cyl(_st(b, "hardware"), hole + Vector3(0.0, pb, 0.0), hole + Vector3(0.0, pb - 0.004, 0.0),
 					0.0052, 0.0052, 6, false, true, true)
-			_cyl(_st(b, "hardware"), hole + Vector3(0.0, PLATE_BOTTOM - 0.004, 0.0), hole + Vector3(0.0, PLATE_BOTTOM - 0.0065, 0.0),
+			_cyl(_st(b, "hardware"), hole + Vector3(0.0, pb - 0.004, 0.0), hole + Vector3(0.0, pb - 0.0065, 0.0),
 					0.0024, 0.0024, 6, false, true)
 			var top: float = DECK_TOP_Y + _concave(hole.x)
 			_cyl(_st(b, "hardware"), hole + Vector3(0.0, top - 0.0004, 0.0), hole + Vector3(0.0, top + 0.0011, 0.0),
@@ -130,63 +466,93 @@ static func build_truck(board: Node3D, truck_name: String, z: float, mats: Dicti
 
 	# Kingpin boss (the wedge under the plate that holds the kingpin) and the pivot cup housing.
 	var k: Vector3 = KINGPIN_DIR
-	_cyl(_st(b, "baseplate"), Vector3(0.0, PLATE_BOTTOM + 0.002, -0.004), KINGPIN_BASE + k * 0.01, 0.017, 0.0125, 16, false, true)
-	_cyl(_st(b, "baseplate"), Vector3(0.0, PLATE_BOTTOM + 0.002, 0.028), PIVOT_CUP + k * 0.006, 0.011, 0.0095, 14, false, true)
-	_cyl(_st(b, "bushings"), PIVOT_CUP + k * 0.005, PIVOT_CUP + k * 0.008, 0.0075, 0.0075, 12, false, true)
+	_cyl(_st(b, "baseplate"), Vector3(0.0, pb + 0.002, -0.004), kbase + k * 0.01, 0.017, 0.0125, 16, false, true)
+	_cyl(_st(b, "baseplate"), Vector3(0.0, pb + 0.002, 0.028), cup + k * 0.006, 0.011, 0.0095, 14, false, true)
+	_cyl(_st(b, "bushings"), cup + k * 0.005, cup + k * 0.008, 0.0075, 0.0075, 12, false, true)
 
 	# Kingpin stack, from the boss down: bottom (boardside) bushing, the hanger's bushing seat, top (roadside)
-	# bushing, cup washer, kingpin nut and the bolt's threaded end.
-	var p: Callable = func(s: float) -> Vector3: return KINGPIN_BASE + k * s
+	# bushing, cup washer, kingpin nut and the bolt's threaded end. It rides with the hanger.
+	var p: Callable = func(s: float) -> Vector3: return KINGPIN_BASE + hy + k * s
 	_cyl(_st(b, "hardware"), p.call(0.008), p.call(0.0105), 0.0145, 0.0145, 16, true, true)
 	_cyl(_st(b, "bushings"), p.call(0.0105), p.call(0.0235), 0.0125, 0.0132, 16, true, true)
 	_cyl(_st(b, "trucks"), p.call(0.0235), p.call(0.0355), 0.0165, 0.0165, 18, true, true)
 	_cyl(_st(b, "bushings"), p.call(0.0355), p.call(0.0475), 0.0128, 0.0105, 16, true, true)
 	_cyl(_st(b, "hardware"), p.call(0.0475), p.call(0.0505), 0.0128, 0.0128, 16, true, true)
-	_cyl(_st(b, "hardware"), p.call(0.0505), p.call(0.0575), 0.0078, 0.0078, 6, true, true, true)
-	_cyl(_st(b, "hardware"), p.call(0.0575), p.call(0.0625), 0.0042, 0.0042, 10, false, true)
+	if hollow:
+		# Hollow kingpin: a light tube with a dark bore showing at the end.
+		_cyl(_st(b, "truck_accent"), p.call(0.0505), p.call(0.0665), 0.0082, 0.0082, 14, true, true)
+		_cyl(_st(b, "truck_dark"), p.call(0.0665), p.call(0.0672), 0.0054, 0.0054, 12, false, true)
+	else:
+		_cyl(_st(b, "hardware"), p.call(0.0505), p.call(0.0575), 0.0078, 0.0078, 6, true, true, true)
+		_cyl(_st(b, "hardware"), p.call(0.0575), p.call(0.0625), 0.0042, 0.0042, 10, false, true)
 
 	# Hanger: the cast front-view profile (grinding bar over the axle, a tent rising in the middle, a rounded belly),
 	# the neck up to the bushing seat, the pivot nub up into the pivot cup, and the cross on both faces.
-	_prism(_st(b, "trucks"), _hanger_profile(), Vector3.RIGHT, Vector3.UP, Vector3.BACK, -HANGER_DEPTH, HANGER_DEPTH, 0.003)
-	var web: PackedVector2Array = PackedVector2Array([Vector2(0.0115, 0.044), Vector2(0.007, 0.056), Vector2(-0.02, 0.081),
-			Vector2(-0.035, 0.075), Vector2(-0.027, 0.058), Vector2(-0.0115, 0.046)])
+	_prism(_st(b, "trucks"), _up(_hanger_profile(), dh), Vector3.RIGHT, Vector3.UP, Vector3.BACK, -HANGER_DEPTH, HANGER_DEPTH, 0.003)
+	var web: PackedVector2Array = _up(PackedVector2Array([Vector2(0.0115, 0.044), Vector2(0.007, 0.056), Vector2(-0.02, 0.081),
+			Vector2(-0.035, 0.075), Vector2(-0.027, 0.058), Vector2(-0.0115, 0.046)]), dh)
 	_prism(_st(b, "trucks"), web, Vector3.BACK, Vector3.UP, Vector3.RIGHT, -0.0125, 0.0125, 0.003)
-	_cyl(_st(b, "trucks"), Vector3(0.0, 0.054, 0.005), PIVOT_CUP + k * 0.004, 0.0062, 0.0048, 10, true, true)
-	var cross: PackedVector2Array = _cross_outline(Vector2(0.0, 0.034), 0.0118, 0.0024, 0.0062)
-	_prism(_st(b, "truck_dark"), cross, Vector3.RIGHT, Vector3.UP, Vector3.BACK, -HANGER_DEPTH - 0.0006, -HANGER_DEPTH + 0.001, 0.0)
-	_prism(_st(b, "truck_dark"), cross, Vector3.RIGHT, Vector3.UP, Vector3.BACK, HANGER_DEPTH - 0.001, HANGER_DEPTH + 0.0006, 0.0)
+	_cyl(_st(b, "trucks"), Vector3(0.0, 0.054 + dh, 0.005), cup + k * 0.004, 0.0062, 0.0048, 10, true, true)
+	if hollow:
+		# Lightening holes through the hanger instead of the cross.
+		for sd: float in [-1.0, 1.0]:
+			for hx: float in [-0.024, 0.024]:
+				var face: float = sd * (HANGER_DEPTH + 0.0002)
+				_cyl(_st(b, "truck_dark"), Vector3(hx, 0.0285 + dh, face), Vector3(hx, 0.0285 + dh, face + sd * 0.0004),
+						0.0072, 0.0072, 12, false, true)
+	else:
+		var cross: PackedVector2Array = _cross_outline(Vector2(0.0, 0.034 + dh), 0.0118, 0.0024, 0.0062)
+		_prism(_st(b, "truck_dark"), cross, Vector3.RIGHT, Vector3.UP, Vector3.BACK, -HANGER_DEPTH - 0.0006, -HANGER_DEPTH + 0.001, 0.0)
+		_prism(_st(b, "truck_dark"), cross, Vector3.RIGHT, Vector3.UP, Vector3.BACK, HANGER_DEPTH - 0.001, HANGER_DEPTH + 0.0006, 0.0)
 
-	# Axle through the hanger, a speed ring each side of each wheel, and the axle nuts.
+	# Axle through the hanger, a speed ring each side of each wheel, and the axle nuts (a hollow axle shows its bore).
 	var wx: float = WHEEL_X
-	_cyl(_st(b, "hardware"), Vector3(-wx - 0.019, AXLE_Y, 0.0), Vector3(wx + 0.019, AXLE_Y, 0.0), 0.0042, 0.0042, 10, true, true)
+	var ring_key: String = "truck_accent" if hollow else "hardware"
+	var ay: float = axle_y
+	_cyl(_st(b, "hardware"), Vector3(-wx - hw - 0.002, ay, 0.0), Vector3(wx + hw + 0.002, ay, 0.0),
+			0.0052 if hollow else 0.0042, 0.0052 if hollow else 0.0042, 10, true, true)
 	for s: float in [-1.0, 1.0]:
-		_cyl(_st(b, "hardware"), Vector3(s * (HANGER_HALF - 0.001), AXLE_Y, 0.0), Vector3(s * (wx - 0.0152), AXLE_Y, 0.0),
+		_cyl(_st(b, ring_key), Vector3(s * (HANGER_HALF - 0.001), ay, 0.0), Vector3(s * (wx - hw + 0.0018), ay, 0.0),
 				0.0062, 0.0062, 12, true, true)
-		_cyl(_st(b, "hardware"), Vector3(s * (wx + 0.0152), AXLE_Y, 0.0), Vector3(s * (wx + 0.0175), AXLE_Y, 0.0),
+		_cyl(_st(b, ring_key), Vector3(s * (wx + hw - 0.0018), ay, 0.0), Vector3(s * (wx + hw + 0.0005), ay, 0.0),
 				0.0062, 0.0062, 12, true, true)
-		_cyl(_st(b, "hardware"), Vector3(s * (wx + 0.0175), AXLE_Y, 0.0), Vector3(s * (wx + 0.0245), AXLE_Y, 0.0),
-				0.0068, 0.0068, 6, true, true, true)
+		if hollow:
+			_cyl(_st(b, "truck_accent"), Vector3(s * (wx + hw + 0.0005), ay, 0.0), Vector3(s * (wx + hw + 0.0085), ay, 0.0),
+					0.0074, 0.0074, 14, true, true)
+			_cyl(_st(b, "truck_dark"), Vector3(s * (wx + hw + 0.0085), ay, 0.0), Vector3(s * (wx + hw + 0.0089), ay, 0.0),
+					0.0048, 0.0048, 12, false, true)
+		else:
+			_cyl(_st(b, "hardware"), Vector3(s * (wx + hw + 0.0005), ay, 0.0), Vector3(s * (wx + hw + 0.0075), ay, 0.0),
+					0.0068, 0.0068, 6, true, true, true)
 
 	var names: Dictionary = {"trucks": "TruckHangerMesh", "baseplate": "TruckBaseMesh", "hardware": "TruckAxleMesh",
-			"bushings": "TruckBushingsMesh", "riser": "TruckRiserMesh", "truck_dark": "TruckCrossMesh"}
+			"bushings": "TruckBushingsMesh", "riser": "TruckRiserMesh", "truck_dark": "TruckCrossMesh",
+			"truck_accent": "TruckAccentMesh"}
 	for key: String in b:
 		SkaterParts.part(body, names.get(key, "Truck_" + key), (b[key] as SurfaceTool).commit(), Vector3.ZERO, mats, key)
 
 
-## Urethane wheel (bottom at y = 0): a lathe-turned tyre with rounded lips and a recessed face, a cream core ring
-## on each face (children of the wheel, so they spin with it), and the bearing in the "_Hub" sibling: a coloured
-## shield between a steel outer race and inner race.
-static func build_wheel(board: Node3D, wheel_name: String, x: float, z: float, mats: Dictionary) -> void:
-	var h: float = WHEEL_W * 0.5
-	var r: float = WHEEL_R
-	var prof: PackedVector2Array = PackedVector2Array([
-		Vector2(0.0112, -h + 0.0024), Vector2(0.0205, -h + 0.0024), Vector2(0.0222, -h + 0.0006), Vector2(0.0262, -h),
-		Vector2(0.0293, -h + 0.0012), Vector2(0.0311, -h + 0.0042), Vector2(r, -h + 0.009), Vector2(r, h - 0.009),
-		Vector2(0.0311, h - 0.0042), Vector2(0.0293, h - 0.0012), Vector2(0.0262, h), Vector2(0.0222, h - 0.0006),
-		Vector2(0.0205, h - 0.0024), Vector2(0.0112, h - 0.0024), Vector2(0.0112, -h + 0.0024)])
+## An outline moved up by dy.
+static func _up(pts: PackedVector2Array, dy: float) -> PackedVector2Array:
+	var out: PackedVector2Array = PackedVector2Array()
+	for q: Vector2 in pts:
+		out.append(q + Vector2(0.0, dy))
+	return out
+
+
+## Urethane wheel (bottom at y = 0, so the centre is at the wheel radius): a lathe-turned tyre with rounded lips
+## and a recessed face, a cream core ring on each face (children of the wheel, so they spin with it), and the
+## bearing in the "_Hub" sibling: a coloured shield between a steel outer race and inner race. `kind` picks the
+## profile: street (the original, narrow and square-shouldered), park (conical, a narrow contact patch) or cruiser
+## (wide, soft and fully rounded).
+static func build_wheel(board: Node3D, wheel_name: String, x: float, z: float, mats: Dictionary, kind: String = "street") -> void:
+	var wdef: Dictionary = WHEELS[resolve_key(WHEELS, kind, "wheel_")]
+	var h: float = float(wdef["w"]) * 0.5
+	var r: float = float(wdef["r"])
+	var prof: PackedVector2Array = _wheel_profile(str(wdef["kind"]), r, h)
 	var tyre: SurfaceTool = _new_st()
-	_lathe(tyre, prof, 20)
-	var wheel: MeshInstance3D = SkaterParts.part(board, wheel_name, tyre.commit(), Vector3(x, AXLE_Y, z), mats, "wheels")
+	_lathe(tyre, prof, 20 if str(wdef["kind"]) != "cruiser" else 24)
+	var wheel: MeshInstance3D = SkaterParts.part(board, wheel_name, tyre.commit(), Vector3(x, r, z), mats, "wheels")
 	wheel.rotation.z = PI * 0.5
 	var face: float = h - 0.0022
 	var core: SurfaceTool = _new_st()
@@ -201,22 +567,53 @@ static func build_wheel(board: Node3D, wheel_name: String, x: float, z: float, m
 		_ring(shield, c, Vector3(0.0, s, 0.0), 0.0056, 0.0094, 16)
 		_ring(races, c, Vector3(0.0, s, 0.0), 0.0094, 0.0112, 16)
 		_ring(races, c, Vector3(0.0, s, 0.0), 0.0041, 0.0056, 8)
-	var hub: MeshInstance3D = SkaterParts.part(board, wheel_name + "_Hub", shield.commit(), Vector3(x, AXLE_Y, z), mats, "hubs")
+	var hub: MeshInstance3D = SkaterParts.part(board, wheel_name + "_Hub", shield.commit(), Vector3(x, r, z), mats, "hubs")
 	hub.rotation.z = PI * 0.5
 	SkaterParts.part(hub, wheel_name + "_Races", races.commit(), Vector3.ZERO, mats, "hardware")
+
+
+## Closed (radius, y) profile of a wheel of radius r and half width h.
+static func _wheel_profile(kind: String, r: float, h: float) -> PackedVector2Array:
+	var pts: Array = []
+	if kind == "park":
+		# Conical: the tread is a narrow band and the shoulders slope away, with a large chamfer.
+		pts = [Vector2(0.0112, -h + 0.0024), Vector2(0.0205, -h + 0.0024), Vector2(0.0226, -h + 0.0006), Vector2(0.0268, -h),
+				Vector2(r - 0.0085, -h + 0.0012), Vector2(r - 0.0034, -h + 0.0058), Vector2(r - 0.0004, -0.0072),
+				Vector2(r, -0.0045), Vector2(r, 0.0045), Vector2(r - 0.0004, 0.0072), Vector2(r - 0.0034, h - 0.0058),
+				Vector2(r - 0.0085, h - 0.0012), Vector2(0.0268, h), Vector2(0.0226, h - 0.0006), Vector2(0.0205, h - 0.0024),
+				Vector2(0.0112, h - 0.0024), Vector2(0.0112, -h + 0.0024)]
+	elif kind == "cruiser":
+		# Wide, soft and fully rounded: the tread is one big arc from lip to lip.
+		pts = [Vector2(0.0114, -h + 0.0026), Vector2(0.0212, -h + 0.0026), Vector2(0.0234, -h + 0.0008)]
+		var arc: Array = []
+		for i: int in 9:
+			var a: float = PI * 0.5 * float(i) / 8.0
+			arc.append(Vector2(0.0284 + (r - 0.0284) * pow(sin(a), 0.6), -h * cos(a)))
+		pts.append_array(arc)
+		for i: int in range(arc.size() - 2, -1, -1):
+			var q: Vector2 = arc[i]
+			pts.append(Vector2(q.x, -q.y))
+		pts.append_array([Vector2(0.0234, h - 0.0008), Vector2(0.0212, h - 0.0026), Vector2(0.0114, h - 0.0026),
+				Vector2(0.0114, -h + 0.0026)])
+	else:
+		pts = [Vector2(0.0112, -h + 0.0024), Vector2(0.0205, -h + 0.0024), Vector2(0.0222, -h + 0.0006), Vector2(0.0262, -h),
+				Vector2(0.0293, -h + 0.0012), Vector2(0.0311, -h + 0.0042), Vector2(r, -h + 0.009), Vector2(r, h - 0.009),
+				Vector2(0.0311, h - 0.0042), Vector2(0.0293, h - 0.0012), Vector2(0.0262, h), Vector2(0.0222, h - 0.0006),
+				Vector2(0.0205, h - 0.0024), Vector2(0.0112, h - 0.0024), Vector2(0.0112, -h + 0.0024)]
+	return PackedVector2Array(pts)
 
 
 ## Deck centre line height at z: flat in the middle, then a short bend into a straight kick at the nose (-Z) and
 ## tail (+Z) angles.
 static func center_y(z: float) -> float:
 	var base: float = DECK_TOP_Y - VIS_THICK * 0.5
-	var d: float = absf(z) - KICK_START
+	var d: float = absf(z) - (_ks_n if z < 0.0 else _ks_t)
 	if d <= 0.0:
 		return base
-	var t: float = tan(deg_to_rad(NOSE_ANGLE if z < 0.0 else TAIL_ANGLE))
-	if d < KICK_BEND:
-		return base + t * d * d / (2.0 * KICK_BEND)
-	return base + t * (d - KICK_BEND * 0.5)
+	var t: float = tan(deg_to_rad(_ang_n if z < 0.0 else _ang_t))
+	if d < _bend:
+		return base + t * d * d / (2.0 * _bend)
+	return base + t * (d - _bend * 0.5)
 
 
 ## Top surface height (grip) at (x, z): the centre line plus the concave lift toward the rails.
@@ -225,37 +622,45 @@ static func top_y(x: float, z: float) -> float:
 
 
 static func _concave(x: float) -> float:
-	var u: float = clampf(x / (DECK_WIDTH * 0.5), -1.0, 1.0)
-	return CONCAVE * u * u
+	var u: float = clampf(x / (_wid * 0.5), -1.0, 1.0)
+	return _conc * u * u
 
 
 ## Half width at z: full in the middle, a half ellipse over the ends.
 static func _half_width(z: float) -> float:
-	var end: float = DECK_LENGTH * 0.5 - KICK_START
-	var d: float = maxf(absf(z) - KICK_START, 0.0) / end
-	return DECK_WIDTH * 0.5 * sqrt(maxf(1.0 - d * d, 0.0))
+	var ks: float = _ks_n if z < 0.0 else _ks_t
+	var d: float = maxf(absf(z) - ks, 0.0) / (_len * 0.5 - ks)
+	var t: float = clampf((z + _ks_n) / (_ks_n + _ks_t), 0.0, 1.0)
+	return lerpf(_hw_n, _hw_t, t) * _superellipse(d, _p_n if z < 0.0 else _p_t)
+
+
+## (1 - d^p)^(1/p): the end-curve of the outline (an ellipse at p = 2).
+static func _superellipse(d: float, p: float) -> float:
+	if p == 2.0:
+		return sqrt(maxf(1.0 - d * d, 0.0))
+	return pow(maxf(1.0 - pow(d, p), 0.0), 1.0 / p)
 
 
 ## |z| where the end outline crosses x (inverse of _half_width over the ends).
-static func _end_z(x: float) -> float:
-	var u: float = clampf(absf(x) / (DECK_WIDTH * 0.5), 0.0, 1.0)
-	return KICK_START + (DECK_LENGTH * 0.5 - KICK_START) * sqrt(1.0 - u * u)
+static func _end_z(x: float, tail: bool = true) -> float:
+	var ks: float = _ks_t if tail else _ks_n
+	var u: float = clampf(absf(x) / (_hw_t if tail else _hw_n), 0.0, 1.0)
+	return ks + (_len * 0.5 - ks) * _superellipse(u, _p_t if tail else _p_n)
 
 
 ## z samples from nose to tail: even in the middle, arc-spaced over the rounded ends so the tips stay round.
 static func _sample_zs() -> Array:
 	var out: Array = []
-	var end: float = DECK_LENGTH * 0.5 - KICK_START
-	var arc: int = 14
+	var arc: int = 14 if _p_n == 2.0 and _p_t == 2.0 else 22
 	for i: int in arc + 1:
 		var phi: float = (PI * 0.5) * (1.0 - float(i) / float(arc))
-		out.append(-(KICK_START + end * sin(phi)))
+		out.append(-(_ks_n + (_len * 0.5 - _ks_n) * sin(phi)))
 	var mid: int = 10
 	for i: int in range(1, mid):
-		out.append(-KICK_START + 2.0 * KICK_START * float(i) / float(mid))
+		out.append(-_ks_n + (_ks_n + _ks_t) * float(i) / float(mid))
 	for i: int in arc + 1:
 		var phi: float = (PI * 0.5) * float(i) / float(arc)
-		out.append(KICK_START + end * sin(phi))
+		out.append(_ks_t + (_len * 0.5 - _ks_t) * sin(phi))
 	return out
 
 
@@ -305,7 +710,7 @@ static func _sea_rows(shift: float) -> Array:
 	var rows: Array = []
 	var cols: int = 22
 	var rows_n: int = 8
-	var hw: float = DECK_WIDTH * 0.5 - 0.0001
+	var hw: float = _hw_t - 0.0001
 	for i: int in rows_n + 1:
 		var v: float = float(i) / float(rows_n)
 		var row: PackedVector2Array = PackedVector2Array()
@@ -320,7 +725,7 @@ static func _sea_rows(shift: float) -> Array:
 static func _wave_line(shift: float, w: float) -> Array:
 	var a: PackedVector2Array = PackedVector2Array()
 	var b: PackedVector2Array = PackedVector2Array()
-	var hw: float = DECK_WIDTH * 0.5 - 0.0015
+	var hw: float = _hw_t - 0.0015
 	for j: int in 33:
 		var x: float = lerpf(-hw, hw, float(j) / 32.0)
 		a.append(Vector2(x, _wave_z(x, shift) - w))
