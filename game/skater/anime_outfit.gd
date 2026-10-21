@@ -344,6 +344,11 @@ static func _span_outer(v: float) -> Vector2:
 	return Vector2(c.y, 1.04)
 
 
+## Where the bust skin splits at row v (public, for HoudiniBody's region tags).
+static func skin_cut(v: float) -> Vector2:
+	return _skin_cut(v)
+
+
 ## Where the bust skin splits at row v: the cup outline moved CUP_SKIN_INSET inward (collapsing at the tip).
 static func _skin_cut(v: float) -> Vector2:
 	var cs: Vector2 = cup_span(v)
@@ -382,10 +387,11 @@ static func rows_to_local(rows: Array, origin: Vector3) -> Array:
 ## cup (region "bust_L"/"bust_R", which the bikini hides), the skin beside the cup on the inside and the outside, and
 ## the upper slope above the strap point (region "chest": a top that covers the chest covers them too).
 static func _bust(chest: Node3D, chest_y: float, mats: Dictionary) -> void:
+	var pivots: Array = build_bust_pivots(chest, chest_y)
 	for s: float in [-1.0, 1.0]:
 		var side: String = "L" if s < 0.0 else "R"
 		var root: Vector3 = bust_pivot(s)
-		var pivot: Node3D = SkaterParts.joint(chest, "BodySway_Bust" + side, root - Vector3(0.0, chest_y, 0.0))
+		var pivot: Node3D = pivots[0 if s < 0.0 else 1]
 		var v0: float = -1.04
 		var vt: float = CUP_TOP_V
 		var pieces: Array = [
@@ -397,6 +403,16 @@ static func _bust(chest: Node3D, chest_y: float, mats: Dictionary) -> void:
 		for pc: Array in pieces:
 			var mesh: ArrayMesh = _bust_patch(s, root, float(pc[2]), float(pc[3]), int(pc[4]), int(pc[5]), pc[6])
 			SkaterParts.tag_region(SkaterParts.part(pivot, str(pc[0]), mesh, Vector3.ZERO, mats, "skin"), str(pc[1]))
+
+
+## The female body's BodySway_BustL/R pivots under the Chest joint (rest height chest_y), [left, right]: the code
+## skin's bust forms hang on them, and the skinned body's BustL/R bones follow them.
+static func build_bust_pivots(chest: Node3D, chest_y: float) -> Array:
+	var out: Array = []
+	for s: float in [-1.0, 1.0]:
+		var side: String = "L" if s < 0.0 else "R"
+		out.append(SkaterParts.joint(chest, "BodySway_Bust" + side, bust_pivot(s) - Vector3(0.0, chest_y, 0.0)))
+	return out
 
 
 ## One piece of a bust form: rows v0..v1 (n rows), each from span(v).x to span(v).y (cols columns), in the pivot's

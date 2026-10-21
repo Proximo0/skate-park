@@ -6,11 +6,13 @@ extends RefCounted
 ## SkaterPoser.JOINTS; same skeleton constants for both bodies, so the poser, ragdoll and physics are shared). Faces
 ## -Z, feet at y = 0. The caller stands it on the deck with body.position.y = DECK_TOP_Y. Regular stance: left foot
 ## forward (-Z). Leg poses come from a small two-bone solve so the shoes stay flat on the ground.
-## The body is a smooth featureless base body (AnimeOutfit skin split into regions, AnimeHead face); hair and every
-## garment are separate layers chosen by `options` and built through the Wardrobe registry, which also hides the skin
-## regions a garment fully covers. See Wardrobe for the garment contract.
-## options: {"body": "female"|"male", "hair": id, "top": id, "bottom": id, "socks": id, "shoes": id,
-## "accessories": [ids]} using catalog mesh_builder ids; "" or "none" leaves a slot empty; missing keys come from
+## The body is a smooth featureless base body (AnimeHead face and code-built hands, and the skin: by default the
+## seamless Houdini skinned body, HoudiniBody via SkinnedBody, driven by the joints; options "skin": "code" builds the
+## older AnimeOutfit lofts instead). Either skin is split into regions; hair and every garment are separate layers
+## chosen by `options` and built through the Wardrobe registry, which also hides the skin regions a garment fully
+## covers. See Wardrobe for the garment contract.
+## options: {"body": "female"|"male", "skin": "houdini"|"code", "hair": id, "top": id, "bottom": id, "socks": id,
+## "shoes": id, "accessories": [ids]} using catalog mesh_builder ids; "" or "none" leaves a slot empty; missing keys come from
 ## Wardrobe.DEFAULTS (female: ponytail, bikini top and bottoms, striped crew socks, low vulc shoes, wristbands;
 ## male: messy hair, surf tee, board shorts, striped crew socks, low vulc shoes).
 ## build_board(): deck long along Z, nose at -Z, wheel bottoms at y = 0.
@@ -39,6 +41,8 @@ const NECK_UP: float = 0.255  ## Chest to Neck (base of the neck)
 const HEAD_UP: float = 0.065  ## Neck to Head (top of the slender neck, under the jaw)
 const SHOULDER: Vector2 = Vector2(0.14, 0.195)  ## Chest to UpperArm: x out, y up
 const HAND_SCALE: float = 1.18
+## Default skin: "houdini" (one seamless skinned mesh, docs/houdini_pipeline.md) or "code" (AnimeOutfit lofts).
+const SKIN: String = "houdini"
 
 
 static func build_body(palette: Dictionary = {}, options: Dictionary = {}) -> Node3D:
@@ -48,14 +52,19 @@ static func build_body(palette: Dictionary = {}, options: Dictionary = {}) -> No
 	var root: Node3D = Node3D.new()
 	root.name = "SkaterBody"
 	root.set_meta("body_type", body_type)
-	var rig: Dictionary = {"body_type": body_type}
+	var code_skin: bool = str(opts.get("skin", SKIN)) == "code"
+	var rig: Dictionary = {"body_type": body_type, "code_skin": code_skin}
 
 	var hips: Node3D = SkaterParts.joint(root, "Hips", Vector3(0.0, HIP_HEIGHT, 0.0))
 	var spine: Node3D = SkaterParts.joint(hips, "Spine", Vector3(0.0, SPINE_UP, 0.0))
 	var chest: Node3D = SkaterParts.joint(spine, "Chest", Vector3(0.0, CHEST_UP, 0.0))
-	AnimeOutfit.build_torso(hips, spine, chest, mats, body_type)
+	if code_skin:
+		AnimeOutfit.build_torso(hips, spine, chest, mats, body_type)
+	elif body_type != AnimeOutfit.MALE:
+		AnimeOutfit.build_bust_pivots(chest, HIP_HEIGHT + SPINE_UP + CHEST_UP)
 	var neck: Node3D = SkaterParts.joint(chest, "Neck", Vector3(0.0, NECK_UP, 0.0))
-	AnimeOutfit.build_neck(neck, mats, body_type)
+	if code_skin:
+		AnimeOutfit.build_neck(neck, mats, body_type)
 	var head: Node3D = SkaterParts.joint(neck, "Head", Vector3(0.0, HEAD_UP, 0.0))
 	for n: Node3D in [hips, spine, chest, neck, head]:
 		rig[str(n.name)] = n
@@ -72,8 +81,23 @@ static func build_body(palette: Dictionary = {}, options: Dictionary = {}) -> No
 			"ankle": ANKLE_HEIGHT}
 	rig["sections"] = AnimeOutfit.joint_sections(body_type, rig["rest_y"], rig["lengths"])
 	AnimeHead.build(head, mats, str(opts.get("hair", "")), body_type, rig)
+	if not code_skin:
+		_attach_skinned(root, body_type, mats)
 	Wardrobe.dress(rig, opts, mats)
 	return root
+
+
+## The Houdini skinned body under the body root, driven by the joints, drawn with the "skin" material.
+static func _attach_skinned(root: Node3D, body_type: String, mats: Dictionary) -> void:
+	var sb: SkinnedBody = SkinnedBody.attach(root, body_type, "houdini")
+	if sb == null or sb.mesh_instance == null:
+		push_warning("PlaceholderSkater: the Houdini base body is missing (no skin drawn); pass \"skin\": \"code\"")
+		return
+	var mi: MeshInstance3D = sb.mesh_instance
+	mi.name = "SkinMesh"
+	mi.material_override = mats["skin"]
+	mi.set_meta("palette", "skin")
+	mi.set_meta("skinned", true)
 
 
 ## The joint rig of a built body (every joint, sway pivot and HeadModel by name, plus the section data), the same
@@ -226,7 +250,8 @@ static func _build_arm(chest: Node3D, side: String, s: float, mats: Dictionary, 
 	upper.rotation.z = s * ARM_OUT
 	var lower: Node3D = SkaterParts.joint(upper, side + "LowerArm", Vector3(0.0, -UPPER_ARM, 0.0))
 	lower.rotation.x = FOREARM_BEND
-	AnimeOutfit.build_arm_skin(upper, lower, side, UPPER_ARM, LOWER_ARM, mats, body_type)
+	if rig["code_skin"]:
+		AnimeOutfit.build_arm_skin(upper, lower, side, UPPER_ARM, LOWER_ARM, mats, body_type)
 	var hand: Node3D = SkaterParts.joint(lower, side + "Hand", Vector3(0.0, -LOWER_ARM, 0.0))
 	var hand_mesh: MeshInstance3D = SkaterParts.part(hand, side + "HandMesh", _hand_mesh(s), Vector3.ZERO, mats, "skin")
 	hand_mesh.scale = Vector3.ONE * (HAND_SCALE * 1.08 if body_type == "male" else HAND_SCALE)
@@ -256,7 +281,8 @@ static func _build_leg(hips: Node3D, side: String, s: float, foot_z: float, mats
 	upper.rotation.x = pose.x
 	var lower: Node3D = SkaterParts.joint(upper, side + "LowerLeg", Vector3(0.0, -UPPER_LEG, 0.0))
 	lower.rotation.x = pose.y - pose.x
-	AnimeOutfit.build_leg_skin(upper, lower, side, UPPER_LEG, LOWER_LEG, mats, body_type)
+	if rig["code_skin"]:
+		AnimeOutfit.build_leg_skin(upper, lower, side, UPPER_LEG, LOWER_LEG, mats, body_type)
 	var foot: Node3D = SkaterParts.joint(lower, side + "Foot", Vector3(0.0, -LOWER_LEG, 0.0))
 	foot.rotation.x = -pose.y
 	for n: Node3D in [upper, lower, foot]:

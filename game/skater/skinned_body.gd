@@ -20,6 +20,11 @@ extends SkeletonModifier3D
 ##
 ## Use: var sb: SkinnedBody = SkinnedBody.attach(body_root) after PlaceholderSkater.build_body(); then
 ## sb.hide_code_skin() hides the code-built skin meshes (the code head, hair and garments stay).
+##
+## Houdini body (the game's default skin, docs/houdini_pipeline.md): attach(body, type, "houdini") swaps in the mesh
+## HoudiniBody.prepared() makes from assets/characters/houdini/base_body_<type>.glb (cut, region-tagged, fitted) and
+## its per-triangle regions, in the code skin's region names. PlaceholderSkater.build_body does this itself and
+## builds no code skin; Wardrobe.mask_skin() then calls set_hidden_regions() with the garments' covers.
 
 const PATHS: Dictionary = {
 	"female": "res://assets/characters/base_body_female.glb",
@@ -62,13 +67,26 @@ var body_root: Node3D  ## the code-built SkaterBody whose joints drive the bones
 var mesh_instance: MeshInstance3D
 var _map: Array = []  ## [bone index, driving Node3D, correction Transform3D], parents before children
 var _full_mesh: ArrayMesh
+var region_names: PackedStringArray = PackedStringArray()  ## region index -> name (REGIONS for the Blender body)
+var tri_region: PackedInt32Array = PackedInt32Array()  ## region index of each triangle of _full_mesh
+var always_hidden: PackedStringArray = PackedStringArray()  ## regions never drawn (the Houdini head and hands)
+var hidden_regions: PackedStringArray = PackedStringArray()  ## the regions hidden now (always_hidden included)
+
+## Masked meshes shared by every body with the same full mesh and hidden set: "<full mesh id>|<sorted regions>".
+static var _masked: Dictionary = {}
 
 
 ## Instantiates the body type's .glb under body_root (identity transform) and returns its modifier, already
 ## driving the skeleton. Returns null when the .glb or its Skeleton3D is missing.
-static func attach(body: Node3D, body_type: String = "") -> SkinnedBody:
+## source: "blender" (assets/characters/base_body_<type>.glb, regions in UV2) or "houdini" (HoudiniBody).
+static func attach(body: Node3D, body_type: String = "", source: String = "blender") -> SkinnedBody:
 	var kind: String = body_type if body_type != "" else str(body.get_meta("body_type", "female"))
-	var scene: PackedScene = load(str(PATHS.get(kind, PATHS["female"]))) as PackedScene
+	var houdini: bool = source == "houdini"
+	var paths: Dictionary = HoudiniBody.PATHS if houdini else PATHS
+	var prep: Dictionary = HoudiniBody.prepared(kind) if houdini else {}
+	if houdini and prep.is_empty():
+		return null
+	var scene: PackedScene = load(str(paths.get(kind, paths["female"]))) as PackedScene
 	if scene == null:
 		return null
 	var inst: Node3D = scene.instantiate() as Node3D
@@ -83,6 +101,13 @@ static func attach(body: Node3D, body_type: String = "") -> SkinnedBody:
 	sb.body_root = body
 	skel.add_child(sb)
 	sb.bind()
+	if houdini and sb.mesh_instance != null:
+		sb.mesh_instance.mesh = prep["mesh"]
+		sb._full_mesh = prep["mesh"]
+		sb.region_names = prep["regions"]
+		sb.tri_region = prep["tri_region"]
+		sb.always_hidden = HoudiniBody.ALWAYS_HIDDEN
+		sb.set_hidden_regions(PackedStringArray())
 	return sb
 
 
@@ -162,7 +187,7 @@ func _skel() -> Skeleton3D:
 	return s if s != null else get_parent() as Skeleton3D
 
 
-func _skeleton_to_body(skel: Skeleton3D) -> Transform3D:
+func _skeleton_to_body(skel: Node3D) -> Transform3D:
 	var xf: Transform3D = Transform3D.IDENTITY
 	var n: Node = skel
 	while n != null and n != body_root:
@@ -182,10 +207,11 @@ func sync_pose() -> void:
 	if skel == null or _map.is_empty():
 		return
 	var from_body: Transform3D = _skeleton_to_body(skel).affine_inverse()
-	var inv_root: Transform3D = body_root.global_transform.affine_inverse()
+	var in_tree: bool = body_root.is_inside_tree()
+	var inv_root: Transform3D = body_root.global_transform.affine_inverse() if in_tree else Transform3D.IDENTITY
 	for m: Array in _map:
 		var node: Node3D = m[1]
-		var joint_body: Transform3D = inv_root * node.global_transform
+		var joint_body: Transform3D = inv_root * node.global_transform if in_tree else _skeleton_to_body(node)
 		skel.set_bone_global_pose(int(m[0]), from_body * joint_body * (m[2] as Transform3D))
 
 
@@ -204,50 +230,121 @@ func _hide_skin(n: Node) -> void:
 		_hide_skin(c)
 
 
-## Drops the triangles of the given regions (names from REGIONS) from the mesh; an empty list shows them all.
+## Drops the triangles of the given regions (names from region_names) and of always_hidden from the mesh; an empty
+## list shows all but always_hidden. A cap region "<r>_cap" (Houdini) is drawn only while <r> is hidden. The masked
+## mesh is built once per hidden set and shared.
 func set_hidden_regions(regions: PackedStringArray) -> void:
 	if mesh_instance == null or mesh_instance.mesh == null:
 		return
 	if _full_mesh == null:
 		_full_mesh = mesh_instance.mesh as ArrayMesh
-	if regions.is_empty():
+	_load_regions()
+	var want: Dictionary = {}
+	for r: String in regions + always_hidden:
+		want[r] = true
+	var hidden: Dictionary = {}
+	var names: PackedStringArray = PackedStringArray()
+	for i: int in region_names.size():
+		var r: String = region_names[i]
+		var hide: bool = want.has(r)
+		if r.ends_with("_cap"):
+			hide = not want.has(r.trim_suffix("_cap"))
+		if hide:
+			hidden[i] = true
+			names.append(r)
+	names.sort()
+	hidden_regions = names
+	if hidden.is_empty():
 		mesh_instance.mesh = _full_mesh
 		return
-	var hidden: Dictionary = {}
-	for r: String in regions:
-		var i: int = REGIONS.find(r)
-		if i >= 0:
-			hidden[i] = true
+	var key: String = "%d|%s" % [_full_mesh.get_instance_id(), ",".join(names)]
+	if not _masked.has(key):
+		_masked[key] = _masked_mesh(hidden)
+	mesh_instance.mesh = _masked[key]
+
+
+func _masked_mesh(hidden: Dictionary) -> ArrayMesh:
 	var out: ArrayMesh = ArrayMesh.new()
+	var arrays: Array = _full_mesh.surface_get_arrays(0)
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var kept: PackedInt32Array = PackedInt32Array()
+	for t: int in tri_region.size():
+		if not hidden.has(tri_region[t]):
+			kept.append_array([idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]])
 	for s: int in _full_mesh.get_surface_count():
-		var arrays: Array = _full_mesh.surface_get_arrays(s)
-		var uv2: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
-		var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-		var kept: PackedInt32Array = PackedInt32Array()
-		if uv2.is_empty() or idx.is_empty():
-			kept = idx
-		else:
-			for t: int in range(0, idx.size(), 3):
-				if not hidden.has(int(uv2[idx[t]].x)):
-					kept.append_array([idx[t], idx[t + 1], idx[t + 2]])
-		if kept.is_empty():
-			continue
-		arrays[Mesh.ARRAY_INDEX] = kept
+		var arr: Array = arrays if s == 0 else _full_mesh.surface_get_arrays(s)
+		if s == 0:
+			if kept.is_empty():
+				continue
+			arr[Mesh.ARRAY_INDEX] = kept
 		var flags: int = _full_mesh.surface_get_format(s) & Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS
-		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, flags)
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, flags)
 		out.surface_set_material(out.get_surface_count() - 1, _full_mesh.surface_get_material(s))
-	mesh_instance.mesh = out
+	return out
 
 
-## Region index of each triangle of surface 0 (for tools and tests).
+## Region index of each triangle of surface 0 (for tools and tests). Blender bodies read it from UV2.x.
 func triangle_regions() -> PackedInt32Array:
-	var out: PackedInt32Array = PackedInt32Array()
+	_load_regions()
+	return tri_region
+
+
+func _load_regions() -> void:
+	if not tri_region.is_empty():
+		return
 	var m: Mesh = _full_mesh if _full_mesh != null else (mesh_instance.mesh if mesh_instance != null else null)
 	if m == null:
-		return out
+		return
+	region_names = REGIONS
 	var arrays: Array = m.surface_get_arrays(0)
-	var uv2: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
+	var uv2: Variant = arrays[Mesh.ARRAY_TEX_UV2]
 	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
 	for t: int in range(0, idx.size(), 3):
-		out.append(int(uv2[idx[t]].x) if not uv2.is_empty() else -1)
+		tri_region.append(int((uv2 as PackedVector2Array)[idx[t]].x) if uv2 != null and not (uv2 as PackedVector2Array).is_empty() else -1)
+
+
+## Region name of each triangle (for tools and tests).
+func triangle_region_names() -> PackedStringArray:
+	_load_regions()
+	var out: PackedStringArray = PackedStringArray()
+	for r: int in tri_region:
+		out.append(region_names[r] if r >= 0 and r < region_names.size() else "")
 	return out
+
+
+## Vertex positions and normals of the full mesh in its current skinned pose, in world space (CPU skinning; call
+## sync_pose() first when the joints moved since the last skeleton update). Returns [positions, normals].
+func posed_arrays() -> Array:
+	var skel: Skeleton3D = _skel()
+	if skel == null or mesh_instance == null or _full_mesh == null:
+		return [PackedVector3Array(), PackedVector3Array()]
+	var skin: Skin = mesh_instance.skin
+	var mats: Array[Transform3D] = []
+	for i: int in skin.get_bind_count():
+		var b: int = skin.get_bind_bone(i)
+		if b < 0:
+			b = skel.find_bone(skin.get_bind_name(i))
+		mats.append(skel.get_bone_global_pose(b) * skin.get_bind_pose(i) if b >= 0 else Transform3D.IDENTITY)
+	var to_world: Transform3D = skel.global_transform if skel.is_inside_tree() else _skeleton_to_body(skel)
+	var arrays: Array = _full_mesh.surface_get_arrays(0)
+	var vs: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var ns: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+	var wts: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+	var out_v: PackedVector3Array = PackedVector3Array()
+	var out_n: PackedVector3Array = PackedVector3Array()
+	out_v.resize(vs.size())
+	out_n.resize(vs.size())
+	for v: int in vs.size():
+		var p: Vector3 = Vector3.ZERO
+		var n: Vector3 = Vector3.ZERO
+		for k: int in 4:
+			var w: float = wts[v * 4 + k]
+			if w <= 0.0:
+				continue
+			var m: Transform3D = mats[bones[v * 4 + k]]
+			p += (m * vs[v]) * w
+			n += (m.basis * ns[v]) * w
+		out_v[v] = to_world * p
+		out_n[v] = (to_world.basis * n).normalized()
+	return [out_v, out_n]

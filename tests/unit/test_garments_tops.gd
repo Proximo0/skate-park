@@ -140,6 +140,7 @@ func test_covered_skin_stays_inside_garment_in_every_pose() -> void:
 			poser.set_process(false)
 			holder.add_child(poser)
 			poser._capture_rest()
+			helper.repose_skin(body)
 			var regions: Dictionary = helper._skin_regions(body)
 			var cloth: Array[MeshInstance3D] = []
 			var all: Array[MeshInstance3D] = []
@@ -149,17 +150,18 @@ func test_covered_skin_stays_inside_garment_in_every_pose() -> void:
 			for mi: MeshInstance3D in all:
 				if mi.has_meta("region"):
 					skin.append(mi)
-				elif not head.is_ancestor_of(mi):
+				elif helper.is_cloth(mi, head):
 					cloth.append(mi)
 			for p: Array in poses:
 				poser._apply(SkaterPoser.pose_for(p[1], p[2], p[3], 0.0, false, p[4], p[5]))
+				helper.repose_skin(body)
 				var tm: TriangleMesh = helper._tri_mesh(cloth)
 				var skin_tm: TriangleMesh = helper._tri_mesh(skin)
 				var misses: int = 0
 				var checked: int = 0
 				var first: String = ""
 				for r: String in covers:
-					assert_true(regions.has(r), "%s %s covers an existing region %s" % [body_type, id, r])
+					assert_true(regions.has(r) or helper.fused_away(body, r), "%s %s covers an existing region %s" % [body_type, id, r])
 					for mi: MeshInstance3D in regions.get(r, []):
 						assert_false(mi.visible, "%s %s hides %s" % [body_type, id, r])
 						var res: Array = helper._check_region(mi, tm, skin_tm)
@@ -167,6 +169,6 @@ func test_covered_skin_stays_inside_garment_in_every_pose() -> void:
 						misses += int(res[1])
 						if int(res[1]) > 0 and first == "":
 							first = r
-				assert_true(checked > 0, "%s %s sampled skin" % [body_type, id])
+				assert_true(checked > 0 or helper._all_fused(body, covers), "%s %s sampled skin" % [body_type, id])
 				assert_eq(misses, 0, "%s %s pose %s: skin outside the garment (first region %s)" % [body_type, id, p[0], first])
 			holder.free()

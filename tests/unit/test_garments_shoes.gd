@@ -161,6 +161,10 @@ func test_colourways() -> void:
 # --- the high top's collar vs the leg ----------------------------------------------------------------------------
 
 
+func _wardrobe() -> Object:
+	return (load("res://tests/unit/test_wardrobe.gd") as GDScript).new()
+
+
 func _tri_mesh(meshes: Array[MeshInstance3D]) -> TriangleMesh:
 	var faces: PackedVector3Array = PackedVector3Array()
 	for mi: MeshInstance3D in meshes:
@@ -211,8 +215,10 @@ func test_high_top_collar_outside_leg_and_sock_in_every_pose() -> void:
 		holder.add_child(poser)
 		poser._capture_rest()
 		var ay: float = -PlaceholderSkater.LOWER_LEG
+		var helper: Object = _wardrobe()
 		for p: Array in POSES:
 			poser._apply(SkaterPoser.pose_for(p[1], p[2], p[3], 0.0, false, p[4], p[5]))
+			helper.repose_skin(body)
 			for side: String in ["Left", "Right"]:
 				var lower: Node3D = body.find_child(side + "LowerLeg", true, false)
 				var shaft_parts: Array[MeshInstance3D] = [lower.get_node(side + "ShoeShaftMesh") as MeshInstance3D]
@@ -252,6 +258,8 @@ func test_high_top_covers_bare_ankle_in_every_pose() -> void:
 		poser.set_process(false)
 		holder.add_child(poser)
 		poser._capture_rest()
+		var helper: Object = _wardrobe()
+		helper.repose_skin(body)
 		var all: Array[MeshInstance3D] = []
 		_meshes(body, all)
 		var head: Node = body.find_child("HeadModel", true, false)
@@ -264,11 +272,12 @@ func test_high_top_covers_bare_ankle_in_every_pose() -> void:
 				if str(mi.get_meta("region")).begins_with("ankle"):
 					ankle.append(mi)
 					assert_false(mi.visible, "high top hides " + str(mi.get_meta("region")))
-			elif not head.is_ancestor_of(mi):
+			elif helper.is_cloth(mi, head):
 				cloth.append(mi)
 		assert_eq(ankle.size(), 2, body_type + " has two ankle meshes")
 		for p: Array in POSES:
 			poser._apply(SkaterPoser.pose_for(p[1], p[2], p[3], 0.0, false, p[4], p[5]))
+			helper.repose_skin(body)
 			var tm: TriangleMesh = _tri_mesh(cloth)
 			var skin_tm: TriangleMesh = _tri_mesh(skin)
 			var misses: int = 0

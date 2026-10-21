@@ -1,5 +1,8 @@
 # Blender character pipeline (pilot)
 
+> The game's default body is now the Houdini base body (`docs/houdini_pipeline.md`). The Blender bodies below are
+> still loadable through `SkinnedBody.attach(body, type, "blender")` and covered by `test_skinned_body`.
+
 Base bodies are modelled, rigged, weighted and exported by scripts in `tools/blender/`, run in Blender as a Python
 module (headless, no GUI). Output: `assets/characters/base_body_female.glb` and `base_body_male.glb`, driven at
 runtime by `SkinnedBody` (`game/skater/skinned_body.gd`) from the code-built joint rig.

@@ -32,6 +32,11 @@ func _world_y_range(node: Node3D) -> Vector2:
 	var lo: float = INF
 	var hi: float = -INF
 	for mi: MeshInstance3D in found:
+		if mi.has_meta("skinned"):
+			for p: Vector3 in _drawn_skin(node):
+				lo = minf(lo, p.y)
+				hi = maxf(hi, p.y)
+			continue
 		var t: Transform3D = _world_transform(mi)
 		var box: AABB = mi.mesh.get_aabb()
 		for i: int in 8:
@@ -39,6 +44,31 @@ func _world_y_range(node: Node3D) -> Vector2:
 			lo = minf(lo, p.y)
 			hi = maxf(hi, p.y)
 	return Vector2(lo, hi)
+
+
+## The Houdini skinned body of a built body (SkinnedBody), or null for the code skin.
+func _skinned(body: Node) -> SkinnedBody:
+	var found: Array[Node] = body.find_children("*", "SkinnedBody", true, false)
+	return found[0] as SkinnedBody if not found.is_empty() else null
+
+
+## Body-space corners of the skinned body's drawn triangles (hidden regions left out) in the current joint pose,
+## optionally only those of regions hung on `joint` (HoudiniBody.home_joint).
+func _drawn_skin(body: Node3D, joint: String = "") -> PackedVector3Array:
+	var sb: SkinnedBody = _skinned(body)
+	var out: PackedVector3Array = PackedVector3Array()
+	if sb == null:
+		return out
+	sb.sync_pose()
+	var pv: PackedVector3Array = sb.posed_arrays()[0]
+	var names: PackedStringArray = sb.triangle_region_names()
+	var idx: PackedInt32Array = sb._full_mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX]
+	for t: int in names.size():
+		if sb.hidden_regions.has(names[t]) or (joint != "" and HoudiniBody.home_joint(names[t]) != joint):
+			continue
+		for k: int in 3:
+			out.append(pv[idx[t * 3 + k]])
+	return out
 
 
 func _world_origin(node: Node3D) -> Vector3:
@@ -180,16 +210,30 @@ func test_body_palette_override() -> void:
 	assert_eq(mat.albedo_color, Color(1, 0, 0), "top palette applied")
 	assert_eq(top.get_meta("palette"), "top", "palette key meta")
 	assert_eq(body.find_child("BikiniBottomMesh", true, false).get_meta("palette"), "bottom", "bottom key meta")
-	var thigh: MeshInstance3D = body.find_child("LeftThighUpperMesh", true, false)
-	assert_eq(thigh.get_meta("palette"), "skin", "bare leg")
-	assert_eq(thigh.get_meta("region"), "thigh_upper_L", "skin region meta")
+	var skin: MeshInstance3D = body.find_child("SkinMesh", true, false)
+	assert_eq(skin.get_meta("palette"), "skin", "bare skin")
+	assert_true(not _skinned(body).hidden_regions.has("thigh_upper_L"), "bare leg drawn")
 	body.free()
+	var code: Node3D = PlaceholderSkater.build_body({"top": Color(1, 0, 0)}, {"skin": "code"})
+	var thigh: MeshInstance3D = code.find_child("LeftThighUpperMesh", true, false)
+	assert_eq(thigh.get_meta("palette"), "skin", "bare leg (code skin)")
+	assert_eq(thigh.get_meta("region"), "thigh_upper_L", "skin region meta")
+	code.free()
 
 
-## World AABB at rest of the skin region meshes hung directly on a joint (its loft, split into regions).
+## World AABB at rest of the skin region meshes hung directly on a joint (its loft, split into regions); on the
+## skinned body, of the drawn triangles of the regions hung on it.
 func _skin_box(joint: Node3D) -> AABB:
 	var box: AABB = AABB()
 	var first: bool = true
+	var root: Node3D = joint
+	while root.get_parent() is Node3D:
+		root = root.get_parent() as Node3D
+	if _skinned(root) != null:
+		for p: Vector3 in _drawn_skin(root, str(joint.name)):
+			box = AABB(p, Vector3.ZERO) if first else box.expand(p)
+			first = false
+		return box
 	for c: Node in joint.get_children():
 		if c is MeshInstance3D and c.has_meta("region") and not str(c.name).contains("Collarbone"):
 			var mi: MeshInstance3D = c
@@ -401,6 +445,7 @@ func test_build_body_options() -> void:
 	assert_true(m.find_child("LeftWristbandMesh", true, false) != null, "accessory option builds")
 	var bare: Node3D = PlaceholderSkater.build_body({}, {"top": "none", "bottom": "none"})
 	assert_true(bare.find_child("BikiniTopMesh", true, false) == null, "\"none\" leaves the slot empty")
-	assert_true((bare.find_child("ChestChestMesh", true, false) as MeshInstance3D).visible, "uncovered skin stays visible")
+	var sb: SkinnedBody = _skinned(bare)
+	assert_true(sb != null and not sb.hidden_regions.has("chest") and sb.mesh_instance.visible, "uncovered skin stays visible")
 	for b: Node3D in [f, m, bare]:
 		b.free()

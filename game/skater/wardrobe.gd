@@ -11,8 +11,9 @@ extends RefCounted
 ## 2. Garments. Every garment (hair, top, bottom, socks, shoes, accessory) is a separate layer built by a builder
 ##    registered here, lofted from the base body's section data and offset outward by a small clearance (about 4-8
 ##    mm, more at the joints). Nothing about a garment is baked into the body.
-## 3. Body masking. The skin is split into regions (AnimeOutfit.TORSO_REGIONS / LIMB_REGIONS / REGIONS; each skin
-##    MeshInstance3D has meta "region", limb regions end in "_L" or "_R"). Each garment declares the regions it FULLY
+## 3. Body masking. The skin is split into regions (AnimeOutfit.TORSO_REGIONS / LIMB_REGIONS / REGIONS; each code
+##    skin MeshInstance3D has meta "region", limb regions end in "_L" or "_R"; the Houdini skinned body tags each
+##    triangle with the same names, HoudiniBody, plus "foot_L"/"foot_R"). Each garment declares the regions it FULLY
 ##    covers (covers()); dress() hides those skin meshes, so skin can never poke through the garment in any pose. A
 ##    garment may only declare a region it encloses all round, and the piece that encloses it must hang on the same
 ##    joint (or pivot) as that skin, so the cover holds in every pose. tests/unit/test_wardrobe.gd checks this over
@@ -65,6 +66,11 @@ const DEFAULTS: Dictionary = {
 		"shoes": "shoes_low_vulc", "accessories": [],
 	},
 }
+
+## Skin regions any shoe hides: the skinned body's bare feet (the code skin has none). Not part of covers(): a foot
+## sits deep in a roomy shoe rather than just under its surface, so tests/unit/test_garments_shoes.gd checks it is
+## enclosed in its own way.
+const FEET: PackedStringArray = ["foot_L", "foot_R"]
 
 static var _registry: Dictionary = {}
 static var _warned: Dictionary = {}
@@ -176,14 +182,19 @@ static func dress(rig: Dictionary, options: Dictionary, mats: Dictionary) -> voi
 		for id: Variant in ids:
 			build_item(slot, str(id), rig, body_type, mats)
 			covered.append_array(covers(slot, str(id), body_type))
-	mask_skin(rig["Hips"] as Node3D, covered)
+			if slot == "shoes" and has_builder(slot, str(id)):
+				covered.append_array(FEET)
+	mask_skin((rig["Hips"] as Node3D).get_parent(), covered)
 
 
-## Hides every skin mesh under root whose region is in `covered` (meta "hidden_by_garment" marks them).
+## Hides every skin mesh under root whose region is in `covered` (meta "hidden_by_garment" marks them), and the
+## covered regions of a skinned body (SkinnedBody.set_hidden_regions; the head and hands it never draws stay hidden).
 static func mask_skin(root: Node, covered: PackedStringArray) -> void:
 	if root is MeshInstance3D and root.has_meta("region") and covered.has(str(root.get_meta("region"))):
 		(root as MeshInstance3D).visible = false
 		root.set_meta("hidden_by_garment", true)
+	if root is SkinnedBody:
+		(root as SkinnedBody).set_hidden_regions(covered)
 	for c: Node in root.get_children():
 		mask_skin(c, covered)
 

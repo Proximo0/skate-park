@@ -20,6 +20,100 @@ func _meshes(node: Node, out: Array[MeshInstance3D]) -> void:
 		_meshes(c, out)
 
 
+## The Houdini skinned body of a built body (the SkinnedBody under its Skeleton3D), or null for the code skin.
+static func skinned(body: Node) -> SkinnedBody:
+	if body is SkinnedBody:
+		return body as SkinnedBody
+	for c: Node in body.get_children():
+		if c is MeshInstance3D:
+			continue
+		var s: SkinnedBody = skinned(c)
+		if s != null:
+			return s
+	return null
+
+
+## The skinned body's skin as code-skin-like parts: one proxy MeshInstance3D per region (meta "region" and
+## "skin_proxy"), under the region's home joint (HoudiniBody.home_joint), holding that region's triangles in their
+## current skinned pose, and visible only while the region is drawn. Made on the first call; each later call (after
+## posing the joints) refreshes the triangles. Does nothing for the code skin. The checks that walk region meshes
+## then read the seamless skin exactly as it is drawn in that pose.
+static func repose_skin(body: Node3D) -> void:
+	var sb: SkinnedBody = skinned(body)
+	if sb == null:
+		return
+	sb.sync_pose()
+	var posed: Array = sb.posed_arrays()
+	var pv: PackedVector3Array = posed[0]
+	var pn: PackedVector3Array = posed[1]
+	var names: PackedStringArray = sb.triangle_region_names()
+	var idx: PackedInt32Array = sb._full_mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX]
+	var by_region: Dictionary = {}
+	for t: int in names.size():
+		if not by_region.has(names[t]):
+			by_region[names[t]] = []
+		(by_region[names[t]] as Array).append_array([idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]])
+	for r: String in by_region.keys():
+		if sb.always_hidden.has(r):
+			continue  ## never drawn: the code head and hands stand in for these
+		var joint: Node3D = body.find_child(HoudiniBody.home_joint(r), true, false) as Node3D
+		if joint == null:
+			continue
+		var proxy: MeshInstance3D = joint.get_node_or_null("SkinProxy_" + r) as MeshInstance3D
+		if proxy == null:
+			proxy = MeshInstance3D.new()
+			proxy.name = "SkinProxy_" + r
+			proxy.set_meta("region", r)
+			proxy.set_meta("skin_proxy", true)
+			proxy.set_meta("palette", "skin")
+			joint.add_child(proxy)
+		proxy.visible = not sb.hidden_regions.has(r)
+		var to_local: Transform3D = _placed(joint, sb).affine_inverse()
+		var verts: PackedVector3Array = PackedVector3Array()
+		var nrms: PackedVector3Array = PackedVector3Array()
+		for i: int in by_region[r]:
+			verts.append(to_local * pv[i])
+			nrms.append((to_local.basis * pn[i]).normalized())
+		var arrays: Array = []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_NORMAL] = nrms
+		var mesh: ArrayMesh = ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		proxy.mesh = mesh
+
+
+## A joint's transform in the space posed_arrays works in: the world inside the tree, else the body's.
+static func _placed(node: Node3D, sb: SkinnedBody) -> Transform3D:
+	if node.is_inside_tree():
+		return node.global_transform
+	var xf: Transform3D = Transform3D.IDENTITY
+	var n: Node = node
+	while n != null and n != sb.body_root:
+		if n is Node3D:
+			xf = (n as Node3D).transform * xf
+		n = n.get_parent()
+	return xf
+
+
+## True when a covered code-skin region has no surface on the skinned body (HoudiniBody.FUSED, e.g. the thigh tops,
+## buried in the pelvis): there is nothing to hide or check.
+static func fused_away(body: Node3D, region: String) -> bool:
+	return skinned(body) != null and HoudiniBody.FUSED.has(region.trim_suffix("_L").trim_suffix("_R"))
+
+
+static func _all_fused(body: Node3D, covers: PackedStringArray) -> bool:
+	for r: String in covers:
+		if not fused_away(body, r):
+			return false
+	return true
+
+
+## True for a garment mesh: not skin (code region meshes, skin proxies, the skinned body itself) and not the head.
+static func is_cloth(mi: MeshInstance3D, head: Node) -> bool:
+	return not mi.has_meta("region") and not mi.has_meta("skinned") and not head.is_ancestor_of(mi)
+
+
 func _skin_regions(body: Node3D) -> Dictionary:
 	var out: Dictionary = {}
 	var found: Array[MeshInstance3D] = []
@@ -85,9 +179,10 @@ func test_bare_mannequin_has_only_skin() -> void:
 
 func test_masking_hides_covered_regions() -> void:
 	var body: Node3D = PlaceholderSkater.build_body({}, {"body": "male"})
+	repose_skin(body)
 	var regions: Dictionary = _skin_regions(body)
 	var covered: PackedStringArray = Wardrobe.covers("top", "top_surf_tee", "male") + Wardrobe.covers("bottom", "bottom_board_shorts", "male") \
-			+ Wardrobe.covers("socks", "socks_crew", "male")
+			+ Wardrobe.covers("socks", "socks_crew", "male") + Wardrobe.FEET  ## the shoes hide the bare feet
 	assert_true(covered.has("waist") and covered.has("pelvis") and covered.has("calf_low_L"), "tee, shorts and socks cover")
 	for r: String in regions.keys():
 		for mi: MeshInstance3D in regions[r]:
@@ -99,10 +194,13 @@ func test_masking_hides_covered_regions() -> void:
 func test_every_region_has_a_mesh() -> void:
 	for body_type: String in ["female", "male"]:
 		var body: Node3D = PlaceholderSkater.build_body({}, {"body": body_type, "top": "none", "bottom": "none"})
+		repose_skin(body)
 		var regions: Dictionary = _skin_regions(body)
 		for r: String in AnimeOutfit.REGIONS:
 			if r == "bust":
 				assert_eq(regions.has("bust_L"), body_type == "female", body_type + " bust region")
+				continue
+			if fused_away(body, r):
 				continue
 			var limb: bool = not regions.has(r)
 			assert_true(regions.has(r) or (limb and regions.has(r + "_L") and regions.has(r + "_R")), body_type + " region " + r)
@@ -145,13 +243,14 @@ func test_covered_skin_stays_inside_garment_in_every_pose() -> void:
 			poser.set_process(false)
 			holder.add_child(poser)
 			poser._capture_rest()
+			repose_skin(body)
 			var regions: Dictionary = _skin_regions(body)
 			var cloth: Array[MeshInstance3D] = []
 			var all: Array[MeshInstance3D] = []
 			_meshes(body, all)
 			var head: Node = body.find_child("HeadModel", true, false)
 			for mi: MeshInstance3D in all:
-				if not mi.has_meta("region") and not head.is_ancestor_of(mi):
+				if is_cloth(mi, head):
 					cloth.append(mi)
 			var skin: Array[MeshInstance3D] = []
 			for r: String in regions.keys():
@@ -159,13 +258,14 @@ func test_covered_skin_stays_inside_garment_in_every_pose() -> void:
 					skin.append(mi)
 			for p: Array in POSES:
 				poser._apply(SkaterPoser.pose_for(p[1], p[2], p[3], 0.0, false, p[4], p[5]))
+				repose_skin(body)
 				var tm: TriangleMesh = _tri_mesh(cloth)
 				var skin_tm: TriangleMesh = _tri_mesh(skin)
 				var misses: int = 0
 				var checked: int = 0
 				var first: String = ""
 				for r: String in covers:
-					assert_true(regions.has(r), "%s %s covers an existing region %s" % [body_type, id, r])
+					assert_true(regions.has(r) or fused_away(body, r), "%s %s covers an existing region %s" % [body_type, id, r])
 					for mi: MeshInstance3D in regions.get(r, []):
 						assert_false(mi.visible, "%s %s hides %s" % [body_type, id, r])
 						var res: Array = _check_region(mi, tm, skin_tm)
@@ -173,7 +273,7 @@ func test_covered_skin_stays_inside_garment_in_every_pose() -> void:
 						misses += int(res[1])
 						if int(res[1]) > 0 and first == "":
 							first = r
-				assert_true(checked > 0, "%s %s sampled skin" % [body_type, id])
+				assert_true(checked > 0 or _all_fused(body, covers), "%s %s sampled skin" % [body_type, id])
 				assert_eq(misses, 0, "%s %s pose %s: skin outside the garment (first region %s)" % [body_type, id, p[0], first])
 			holder.free()
 
