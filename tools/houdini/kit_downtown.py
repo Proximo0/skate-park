@@ -65,7 +65,7 @@ def bus_stop(b):
             ((-0.4, 0.24, D / 2 - 0.3), (1.8, 0.48, 0.4))]
 
 
-# Python SOP: a closed (r, y) profile revolved round Y, `n` sides (a hollow ring wall).
+# Python SOP: a closed (r, y) profile (counter-clockwise) revolved round Y, `n` sides (a hollow ring wall).
 REVOLVE = """
 import math
 geo = hou.pwd().geometry()
@@ -84,7 +84,7 @@ for k in range(len(rings)):
     for i in range(n):
         j = (i + 1) %% n
         poly = geo.createPolygon()
-        for p in (a[i], b[i], b[j], a[j]):
+        for p in (a[i], a[j], b[j], b[i]):  # front face to the right of the profile's travel (outward for CCW)
             poly.addVertex(p)
 """
 
