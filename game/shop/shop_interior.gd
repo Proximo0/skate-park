@@ -51,6 +51,8 @@ var spawn: Transform3D = Transform3D.IDENTITY
 var sit_camera: Transform3D = Transform3D.IDENTITY
 var vice: Node3D  ## holder for the board clamped in the workbench vice (ShopRoom puts the player's board here)
 var tv_screen: MeshInstance3D
+var _shoe_cache: Dictionary = {}
+var _garment_cache: Dictionary = {}
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
 
@@ -206,10 +208,16 @@ func _poster(parent: Node3D, kind: int, pos: Vector3, rot_y_deg: float, size: Ve
 	mat.shader = load("res://game/shop/poster.gdshader") as Shader
 	mat.set_shader_parameter("kind", kind)
 	mat.set_shader_parameter("aspect", size.x / size.y)
+	mat.set_shader_parameter("banner", 1.0 if title != "" else 0.0)
 	_place(p, q, Vector3(0, 0, 0.01), mat)
 	_box(p, Vector3(0, 0, -0.005), Vector3(size.x + 0.04, size.y + 0.04, 0.01), INK)
 	if title != "":
-		_label(p, title, Vector3(0, -size.y * 0.38, 0.02), 40, title_color, INK, 0.0, size.x * 0.0042)
+		# The title sits on the banner baked into the poster art (shader strip along the bottom).
+		var tl: Label3D = _label(p, title, Vector3(0, -size.y * (0.5 - 0.0825), 0.014), 40, title_color, INK, 0.0,
+				minf(size.x * 0.86 / (float(title.length()) * 24.0), size.y * 0.11 / 40.0))
+		tl.outline_size = 0
+		tl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		tl.modulate = Color("#FFF6E6")
 	for corner: Vector2 in [Vector2(-1, 1), Vector2(1, 1)]:
 		_ball(p, Vector3(corner.x * (size.x * 0.5 - 0.04), corner.y * (size.y * 0.5 - 0.04), 0.02), 0.015, Color("#FF5A5F"))
 
@@ -334,8 +342,12 @@ func _build_front_wall(g: Node3D) -> void:
 	_label(sign_holder, "COME IN!", Vector3(0, 0, -0.015), 48, Color("#E0455A"), CREAM, 180.0, 0.003)
 	_solid(Vector3(0, DOOR_H * 0.5, D + 0.05), Vector3(DOOR_HALF * 2.0, DOOR_H, 0.2))
 	# Doormat inside.
-	_box(g, Vector3(0, 0.008, D - 0.55), Vector3(1.4, 0.016, 0.8), Color("#C2553F"))
-	_label(g, "SHRED ON", Vector3(0, 0.02, D - 0.55), 64, CREAM, Color("#C2553F"), 0.0, 0.004).rotation_degrees = Vector3(-90, 180, 0)
+	_box(g, Vector3(0, 0.008, D - 0.75), Vector3(1.9, 0.016, 1.0), Color("#C2553F"))
+	_box(g, Vector3(0, 0.0165, D - 0.75), Vector3(1.78, 0.004, 0.88), Color("#A63F2E"))
+	var mat_text: Label3D = _label(g, "SHRED ON", Vector3(0, 0.03, D - 0.75), 96, CREAM, INK, 0.0, 0.0048)
+	mat_text.rotation_degrees = Vector3(-90, 180, 0)
+	mat_text.double_sided = true
+	mat_text.outline_size = 10
 
 
 func _build_outside() -> void:
@@ -459,36 +471,124 @@ func _build_boards() -> void:
 		_box(case, Vector3(case_x, 0.865, ex), Vector3(0.64, 0.46, 0.02), METAL)
 	_box(case, Vector3(case_x, 1.1, case_cz), Vector3(0.64, 0.02, cz1 - cz0 + 0.02), METAL)
 	var wheel_colors: Array[Color] = [Color("#FFD84D"), Color("#FF7EB6"), Color("#4FC3F7"), CREAM, Color("#A6E22E"), Color("#FF9F1C")]
+	var truck_colors: Array[Color] = [Color("#C9D3DD"), Color("#FFD84D"), Color("#3A506B"), Color("#FF5A5F"), Color("#4FC3F7"), Color("#C9D3DD")]
+	var kinds: Array[String] = ["standard", "low", "hollow"]
+	var wkinds: Array[String] = ["street", "park", "cruiser"]
 	for i: int in 6:
 		var z: float = cz0 + 0.18 + float(i) * 0.27
-		_wheel(case, Vector3(case_x + 0.12, 0.67, z), wheel_colors[i], Vector3(0, 0, 0))
-		_wheel(case, Vector3(case_x + 0.12, 0.67, z + 0.07), wheel_colors[i], Vector3(0, 0, 0))
-		if i < 5:
-			_truck(case, Vector3(case_x - 0.08, 0.83, z + 0.08), [METAL, Color("#FFD84D"), Color("#1B1B2F"), Color("#FF5A5F"), Color("#4FC3F7")][i] as Color)
+		# Real AnimeBoard trucks and wheels (pulled off a freshly built board), shown a little larger than life.
+		var board: Node3D = PlaceholderSkater.build_board({"wheels": wheel_colors[i], "trucks": truck_colors[i]},
+				{"truck": kinds[i % 3], "wheel": wkinds[(i + 1) % 3]})
+		var truck: Node3D = board.get_node("Truck_Front") as Node3D
+		board.remove_child(truck)
+		truck.position = Vector3(case_x - 0.05, 0.83, z + 0.04)
+		truck.rotation_degrees.y = 90.0
+		truck.scale = Vector3.ONE * 1.25
+		case.add_child(truck)
+		Toon.apply_to(truck)
+		for wn: Array in [["Wheel_FL", 0.0], ["Wheel_FL_Hub", 0.0], ["Wheel_FR", 0.085], ["Wheel_FR_Hub", 0.085]]:
+			var w: Node3D = board.get_node(str(wn[0])) as Node3D
+			board.remove_child(w)
+			case.add_child(w)
+			w.position = Vector3(case_x + 0.12, 0.65 + 0.032 * 1.25, z + float(wn[1]))
+			w.scale = Vector3.ONE * 1.25
+			Toon.apply_to(w)
+		board.free()
 	_solid(Vector3(case_x, 0.55, case_cz), Vector3(0.64, 1.1, cz1 - cz0))
 	_plaque(g, "TRUCKS + WHEELS", Vector3(-W + 0.04, 1.75, case_cz), 90.0, 1.5, Color("#4F7CAC"))
 
 
 # --- clothes: racks, shoe wall ---------------------------------------------------------------------------------
 
-## A tee (or hoodie) hanging on a rail, its body in the plane across the rail (YZ when the rail runs along X).
+## A lofted garment tube along -Y: `rows` are Vector3(y, half width, half depth) elliptical sections, `fold` adds
+## vertical fold ripples around the section. Closed at both ends, smooth normals.
+func _loft(rows: Array, segs: int, fold: float, phase: float) -> ArrayMesh:
+	var st: SurfaceTool = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for r: Vector3 in rows:
+		for j: int in segs:
+			var a: float = TAU * float(j) / float(segs)
+			var rip: float = 1.0 + fold * sin(a * 3.0 + phase)
+			st.add_vertex(Vector3(r.y * cos(a) * (1.0 + 0.3 * fold * sin(a * 5.0 + phase * 2.0)), r.x, r.z * sin(a) * rip))
+	for i: int in rows.size() - 1:
+		for j: int in segs:
+			var j2: int = (j + 1) % segs
+			var a0: int = i * segs + j
+			var a1: int = i * segs + j2
+			var b0: int = (i + 1) * segs + j
+			var b1: int = (i + 1) * segs + j2
+			for idx: int in [a0, b0, a1, a1, b0, b1]:
+				st.add_index(idx)
+	for cap: Array in [[0, false], [rows.size() - 1, true]]:
+		var ci: int = int(cap[0])
+		var centre: int = rows.size() * segs + (1 if cap[1] else 0)
+		st.add_vertex(Vector3(0.0, (rows[ci] as Vector3).x, 0.0))
+		for j: int in segs:
+			var j2: int = (j + 1) % segs
+			if cap[1]:
+				st.add_index(centre)
+				st.add_index(ci * segs + j2)
+				st.add_index(ci * segs + j)
+			else:
+				st.add_index(centre)
+				st.add_index(ci * segs + j)
+				st.add_index(ci * segs + j2)
+	st.generate_normals()
+	return st.commit()
+
+
+func _garment_meshes(hoodie: bool) -> Dictionary:
+	var key: String = "hood" if hoodie else "tee"
+	if _garment_cache.has(key):
+		return _garment_cache[key] as Dictionary
+	var d: Dictionary = {}
+	if hoodie:
+		d["body"] = _loft([Vector3(-0.09, 0.08, 0.04), Vector3(-0.11, 0.15, 0.05), Vector3(-0.17, 0.215, 0.058),
+				Vector3(-0.33, 0.235, 0.062), Vector3(-0.52, 0.245, 0.058), Vector3(-0.66, 0.25, 0.052), Vector3(-0.68, 0.24, 0.05)], 18, 0.1, 0.4)
+		d["sleeve"] = _loft([Vector3(0.0, 0.085, 0.06), Vector3(-0.12, 0.078, 0.056), Vector3(-0.3, 0.068, 0.05),
+				Vector3(-0.44, 0.062, 0.05), Vector3(-0.46, 0.056, 0.048)], 12, 0.12, 1.3)
+	else:
+		d["body"] = _loft([Vector3(-0.09, 0.07, 0.035), Vector3(-0.105, 0.14, 0.045), Vector3(-0.16, 0.2, 0.05),
+				Vector3(-0.32, 0.212, 0.052), Vector3(-0.47, 0.218, 0.05), Vector3(-0.58, 0.222, 0.046), Vector3(-0.6, 0.214, 0.044)], 18, 0.08, 1.1)
+		d["sleeve"] = _loft([Vector3(0.0, 0.085, 0.05), Vector3(-0.07, 0.08, 0.048), Vector3(-0.15, 0.076, 0.046),
+				Vector3(-0.17, 0.07, 0.044)], 12, 0.1, 0.2)
+	_garment_cache[key] = d
+	return d
+
+
+## A tee (or hoodie) hanging on a rail from a wire hanger, its body in the plane across the rail (YZ when the rail
+## runs along X): a lofted body with fold ripples, tapered sleeves, a ribbed collar, hood and pocket on hoodies.
 func _tee(parent: Node3D, center: Vector3, color: Color, hoodie: bool, face_out: bool = false) -> void:
 	var t: Node3D = Node3D.new()
 	t.position = center
 	t.rotation_degrees.y = 0.0 if face_out else 90.0
 	parent.add_child(t)
-	var length: float = 0.66 if hoodie else 0.56
-	_box(t, Vector3(0, -length * 0.5 - 0.06, 0), Vector3(0.46, length, 0.05), color)
-	_box(t, Vector3(-0.27, -0.16, 0), Vector3(0.2, 0.2 if not hoodie else 0.42, 0.045), color.darkened(0.06), Vector3(0, 0, -30 if not hoodie else -12))
-	_box(t, Vector3(0.27, -0.16, 0), Vector3(0.2, 0.2 if not hoodie else 0.42, 0.045), color.darkened(0.06), Vector3(0, 0, 30 if not hoodie else 12))
+	var meshes: Dictionary = _garment_meshes(hoodie)
+	var cloth: Material = Toon.material(color)
+	var cloth2: Material = Toon.material(color.darkened(0.1))
+	var trim: Material = Toon.material(color.darkened(0.25))
+	_place(t, meshes["body"] as Mesh, Vector3.ZERO, cloth)
+	var sleeve_y: float = -0.115 if not hoodie else -0.13
+	var ang: float = 62.0 if not hoodie else 16.0
+	var sx: float = 0.185 if not hoodie else 0.215
+	_place(t, meshes["sleeve"] as Mesh, Vector3(sx, sleeve_y, 0.0), cloth2, Vector3(0, 0, ang))
+	_place(t, meshes["sleeve"] as Mesh, Vector3(-sx, sleeve_y, 0.0), cloth2, Vector3(0, 0, -ang))
+	var collar: TorusMesh = TorusMesh.new()
+	collar.inner_radius = 0.045
+	collar.outer_radius = 0.07
+	_place(t, collar, Vector3(0, -0.095, 0.012), trim, Vector3(0, 0, 0), Vector3(1.0, 0.45, 0.8))
 	if hoodie:
-		_ball(t, Vector3(0, -0.06, -0.06), 0.14, color.darkened(0.12), Vector3(1.0, 0.8, 0.6))
-		_box(t, Vector3(0, -length + 0.08, 0.03), Vector3(0.3, 0.12, 0.02), color.darkened(0.12))
+		_ball(t, Vector3(0, -0.13, -0.075), 0.1, color.darkened(0.12), Vector3(1.2, 0.8, 0.7))
+		_box(t, Vector3(0, -0.46, 0.062), Vector3(0.3, 0.12, 0.02), color.darkened(0.12))
+		_box(t, Vector3(0, -0.665, 0.0), Vector3(0.45, 0.04, 0.1), color.darkened(0.2))
+		for cx: float in [-0.04, 0.04]:
+			_cyl(t, Vector3(cx, -0.22, 0.066), 0.007, 0.007, 0.16, CREAM, Vector3.ZERO, 5)
 	else:
-		_ball(t, Vector3(0, -0.28, 0.028), 0.07, CREAM if color.get_luminance() < 0.6 else INK, Vector3(1.0, 1.0, 0.1))
-	# hanger hook
-	_cyl(t, Vector3(0, 0.0, 0), 0.008, 0.008, 0.1, METAL, Vector3.ZERO, 6)
-	_box(t, Vector3(0, -0.05, 0), Vector3(0.44, 0.02, 0.02), WOOD_DARK)
+		_ball(t, Vector3(0, -0.28, 0.05), 0.075, CREAM if color.get_luminance() < 0.6 else INK, Vector3(1.0, 1.0, 0.08))
+	# wire hanger: hook, two arms to the shoulders
+	_cyl(t, Vector3(0, 0.02, 0), 0.006, 0.006, 0.1, METAL, Vector3.ZERO, 6)
+	for sgn: float in [-1.0, 1.0]:
+		_cyl(t, Vector3(sgn * 0.065, -0.04, 0.0), 0.005, 0.005, 0.18, METAL, Vector3(0, 0, sgn * 47.0), 5)
 
 
 func _rack(parent: Node3D, x0: float, x1: float, z: float, colors: Array[Color], hoodies: bool) -> void:
@@ -506,15 +606,28 @@ func _rack(parent: Node3D, x0: float, x1: float, z: float, colors: Array[Color],
 	# face-out sample on an arm at the aisle end
 	_cyl(parent, Vector3(x1 + 0.2, bar_y - 0.05, z), 0.012, 0.012, 0.4, METAL, Vector3(0, 0, 90), 6)
 	_tee(parent, Vector3(x1 + 0.38, bar_y - 0.07, z), colors[0], hoodies, true)
-	_tee(parent, Vector3(x1 + 0.38, bar_y - 0.07, z + 0.001), colors[0], hoodies, true)
 	_solid(Vector3((x0 + x1) * 0.5 + 0.2, 0.8, z), Vector3(x1 - x0 + 0.5, 1.6, 0.6))
 
 
-func _shoe(parent: Node3D, center: Vector3, color: Color, high: bool) -> void:
-	_box(parent, center + Vector3(0, 0.018, 0), Vector3(0.1, 0.036, 0.27), CREAM)
-	_box(parent, center + Vector3(0, 0.07 + (0.03 if high else 0.0), 0.03), Vector3(0.095, 0.08 + (0.07 if high else 0.0), 0.18), color)
-	_ball(parent, center + Vector3(0, 0.05, -0.08), 0.05, color, Vector3(0.95, 0.7, 1.1))
-	_box(parent, center + Vector3(0, 0.04, -0.03), Vector3(0.1, 0.012, 0.1), CREAM)
+## A real skate shoe (SkateShoe / ShoeStyles meshes, toon-shaded) standing on the floor of `parent`'s origin, toe along -Z.
+## Built once per (style, colour, side) and then copied, so a full shelf stays cheap.
+func _shoe(parent: Node3D, center: Vector3, color: Color, style: int, side: String, yaw_deg: float) -> void:
+	var key: String = "%d|%s|%s" % [style, color.to_html(false), side]
+	if not _shoe_cache.has(key):
+		var foot: Node3D = Node3D.new()
+		var mats: Dictionary = {}
+		var cw: Dictionary = SkateShoe.colourway_from(color)
+		var ankle: float = PlaceholderSkater.ANKLE_HEIGHT
+		match style % 3:
+			0: SkateShoe.build(foot, side, ankle, mats, cw)
+			1: ShoeStyles.build_cupsole(foot, side, ankle, mats, cw)
+			_: ShoeStyles.build_puffy(foot, side, ankle, mats, cw)
+		Toon.apply_to(foot)
+		_shoe_cache[key] = foot
+	var copy: Node3D = (_shoe_cache[key] as Node3D).duplicate() as Node3D
+	copy.position = center + Vector3(0, PlaceholderSkater.ANKLE_HEIGHT, 0)
+	copy.rotation_degrees.y = yaw_deg
+	parent.add_child(copy)
 
 
 func _build_clothes() -> void:
@@ -538,19 +651,16 @@ func _build_clothes() -> void:
 	_box(shoes, Vector3(-W + 0.02, 1.55, (z0 + z1) * 0.5), Vector3(0.03, 2.3, z1 - z0 + 0.1), CREAM)
 	var shoe_colors: Array[Color] = [Color("#FF5A5F"), CREAM, Color("#1B1B2F"), Color("#4FC3F7"), Color("#FFD84D"),
 			Color("#7C83FD"), Color("#FF9F1C"), Color("#2EC4B6"), Color("#E0455A"), Color("#FF7EB6")]
-	for s: int in 5:
-		var y: float = 0.55 + float(s) * 0.47
+	for sh: int in 5:
+		var y: float = 0.55 + float(sh) * 0.47
 		_box(shoes, Vector3(-W + 0.17, y, (z0 + z1) * 0.5), Vector3(0.3, 0.03, z1 - z0), WOOD)
-		for i: int in 6:
-			var z: float = z0 + 0.3 + float(i) * 0.6
-			var c: Color = shoe_colors[(s * 3 + i) % shoe_colors.size()]
-			var high: bool = (s + i) % 3 == 0
-			for side: float in [-0.065, 0.065]:
-				var holder: Node3D = Node3D.new()
-				holder.position = Vector3(-W + 0.17, y + 0.015, z + side)
-				holder.rotation_degrees.y = 90.0
-				shoes.add_child(holder)
-				_shoe(holder, Vector3.ZERO, c, high)
+		for i: int in 5:
+			var z: float = z0 + 0.36 + float(i) * 0.72
+			var c: Color = shoe_colors[(sh * 3 + i) % shoe_colors.size()]
+			var style: int = (i + sh) % 3
+			# a pair, toes out into the room (-90 degrees turns toe -Z to +X)
+			_shoe(shoes, Vector3(-W + 0.12, y + 0.015, z - 0.07), c, style, "Left", -90.0 - 6.0)
+			_shoe(shoes, Vector3(-W + 0.12, y + 0.015, z + 0.07), c, style, "Right", -90.0 + 6.0)
 	_solid(Vector3(-W + 0.17, 1.2, (z0 + z1) * 0.5), Vector3(0.34, 2.4, z1 - z0))
 	_plaque(g, "KICKS", Vector3(-W + 0.04, 3.0, 0.85), 90.0, 1.0, Color("#FF9F1C"))
 	# A bench to try shoes on.
@@ -923,11 +1033,11 @@ func _build_decor() -> void:
 	_plant(g, Vector3(4.55, 0, -4.55), 1.0)
 	_plant(g, Vector3(-0.3, 0, -4.55), 0.8)
 	# Hanging planter by the window.
-	_cyl(g, Vector3(2.5, 2.75, 4.4), 0.004, 0.004, 0.7, INK, Vector3.ZERO, 4)
-	_cyl(g, Vector3(2.5, 2.35, 4.4), 0.16, 0.12, 0.18, CREAM)
+	_cyl(g, Vector3(-3.2, 2.75, 4.4), 0.004, 0.004, 0.7, INK, Vector3.ZERO, 4)
+	_cyl(g, Vector3(-3.2, 2.35, 4.4), 0.16, 0.12, 0.18, CREAM)
 	for i: int in 5:
 		var a: float = float(i) * TAU / 5.0
-		_ball(g, Vector3(2.5 + cos(a) * 0.15, 2.3 - 0.1 * float(i % 2), 4.4 + sin(a) * 0.15), 0.09, LEAF_LIGHT, Vector3(1.0, 1.6, 1.0))
+		_ball(g, Vector3(-3.2 + cos(a) * 0.15, 2.3 - 0.1 * float(i % 2), 4.4 + sin(a) * 0.15), 0.09, LEAF_LIGHT, Vector3(1.0, 1.6, 1.0))
 	# "OPEN" neon in the east window, readable from inside, and a small "SKATE / SURF" neon over the door.
 	var open_sign: Label3D = _label(g, "OPEN", Vector3(3.15, 2.05, D - 0.08), 110, Color(1.8, 0.55, 1.1), Color(1.0, 0.25, 0.55), 180.0, 0.0035)
 	open_sign.outline_size = 18
@@ -970,7 +1080,7 @@ func _build_lights() -> void:
 		var l: OmniLight3D = OmniLight3D.new()
 		l.position = Vector3(p.x, y - 0.4, p.z)
 		l.light_color = Color("#FFC98A")
-		l.light_energy = 0.42
+		l.light_energy = 0.28
 		l.omni_range = 3.6
 		l.omni_attenuation = 1.2
 		g.add_child(l)

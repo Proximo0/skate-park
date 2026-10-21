@@ -5,6 +5,7 @@ extends Node3D
 ## bubble (ShopHud draws it) for LINE_TIME; it won't repeat until the player has walked away and come back.
 ## Standing talkers turn to face the player while they talk.
 
+const CHAR_SHADER: Shader = preload("res://game/shop/shop_char.gdshader")
 const TALK_RADIUS: float = 2.6
 const LEAVE_RADIUS: float = 3.4  ## the player must get this far away before the next line can start
 const LINE_TIME: float = 4.5
@@ -38,11 +39,12 @@ static func create(role_: String, name_: String, look: SkaterLoadout, extra: Dic
 	n.board = SkaterBuilder.build_board(look)
 	n.board.name = "Skateboard"
 	n.add_child(n.board)
-	n.body = PlaceholderSkater.build_body(palette)
+	n.body = PlaceholderSkater.build_body(palette, SkaterBuilder.body_options(look))
 	n.body.name = "SkaterBody"
 	n.body.position.y = PlaceholderSkater.DECK_TOP_Y
 	n.add_child(n.body)
 	Toon.apply_to(n)
+	_soften_lighting(n)
 	n.poser = ShopPoser.new()
 	n.poser.name = "Poser"
 	n.poser.body = n.body
@@ -53,6 +55,32 @@ static func create(role_: String, name_: String, look: SkaterLoadout, extra: Dic
 	if mode == "counter":
 		n.board.visible = false
 	return n
+
+
+## Swaps the shared toon materials under `root` for the shop character shader (same albedo, lower light), so skin and
+## clothes keep their colour under the lamps and the sun.
+static func _soften_lighting(root: Node) -> void:
+	var cache: Dictionary = {}
+	_soften_node(root, cache)
+
+
+static func _soften_node(node: Node, cache: Dictionary) -> void:
+	if node is MeshInstance3D:
+		var mi: MeshInstance3D = node as MeshInstance3D
+		var src: ShaderMaterial = mi.material_override as ShaderMaterial
+		if src != null and src.shader == Toon.TOON_SHADER:
+			var a: Color = src.get_shader_parameter("albedo") as Color if src.get_shader_parameter("albedo") != null else Color.WHITE
+			var vc: float = float(src.get_shader_parameter("vertex_color_amount") if src.get_shader_parameter("vertex_color_amount") != null else 0.0)
+			var key: String = "%s|%s" % [a.to_html(true), vc]
+			if not cache.has(key):
+				var m: ShaderMaterial = ShaderMaterial.new()
+				m.shader = CHAR_SHADER
+				m.set_shader_parameter("albedo", a)
+				m.set_shader_parameter("vertex_color_amount", vc)
+				cache[key] = m
+			mi.material_override = cache[key] as ShaderMaterial
+	for c: Node in node.get_children():
+		_soften_node(c, cache)
 
 
 func _ready() -> void:
@@ -127,21 +155,26 @@ static func cast(spots: Dictionary) -> Array[ShopNpc]:
 		"Ever try surfing a bowl? It's basically a frozen wave, dude.",
 	]
 	var specs: Array[Dictionary] = [
-		{"role": "keeper", "name": "Mika", "mode": "counter", "lines": keeper_lines, "sway": 0.0, "scale": 1.03,
-			"skin": "#C98E64", "hair": "#1F1F33", "eyes": "#4A2C1A", "top": ["top_flannel", 1], "bottom": ["bottom_skate_jeans", 0],
-			"shoes": 2, "extra": {"hair_tie": "#FFD84D", "band": "#E0455A", "top_trim": "#FFD84D"}},
-		{"role": "racks", "name": "Rin", "mode": "stand", "lines": racks_lines, "sway": 1.7, "scale": 0.97,
-			"skin": "#F8D9C4", "hair": "#FF7EB6", "eyes": "#8A6BE0", "top": ["top_hoodie", 2], "bottom": ["bottom_cargo_shorts", 1],
-			"shoes": 3, "extra": {"hair_tie": "#4FC3F7", "band": "#4FC3F7", "top_trim": "#FFFFFF"}},
-		{"role": "deckwall", "name": "Jun", "mode": "stand", "lines": PackedStringArray(), "sway": 3.1, "scale": 1.0,
-			"skin": "#9A6445", "hair": "#4FC3F7", "eyes": "#2F86E0", "top": ["top_surf_tee", 3], "bottom": ["bottom_joggers", 0],
-			"shoes": 1, "extra": {"hair_tie": "#FF5A5F", "band": "#FFD84D"}},
-		{"role": "couch", "name": "Nami", "mode": "sit", "lines": PackedStringArray(), "sway": 0.6, "scale": 0.98,
-			"skin": "#E6B085", "hair": "#D9722B", "eyes": "#2F86E0", "top": ["top_crop_tank", 2], "bottom": ["bottom_board_shorts", 2],
-			"shoes": 0, "extra": {"hair_tie": "#A6E22E", "band": "#FF9F1C"}},
-		{"role": "ramp", "name": "Sora", "mode": "stand", "lines": PackedStringArray(), "sway": 4.4, "scale": 1.0,
-			"skin": "#6B4430", "hair": "#8A6BE0", "eyes": "#4A2C1A", "top": ["top_rash_guard", 1], "bottom": ["bottom_board_shorts", 1],
-			"shoes": 2, "extra": {"hair_tie": "#FFD84D", "band": "#FF7EB6"}},
+		{"role": "keeper", "name": "Mika", "mode": "counter", "lines": keeper_lines, "sway": 0.0, "scale": 1.03, "body": "female",
+			"skin": "#C98E64", "hair": "#1F1F33", "eyes": "#4A2C1A", "hair_style": "hair_bob",
+			"top": ["top_flannel", 1], "bottom": ["bottom_skate_jeans", 0], "socks": ["socks_ankle", 0], "shoes": ["shoes_low_vulc", 2],
+			"acc": ["acc_wristbands", 1], "extra": {"hair_tie": "#FFD84D", "band": "#E0455A", "top_trim": "#FFD84D"}},
+		{"role": "racks", "name": "Rin", "mode": "stand", "lines": racks_lines, "sway": 1.7, "scale": 0.97, "body": "female",
+			"skin": "#F1C9AC", "hair": "#FF7EB6", "eyes": "#8A6BE0", "hair_style": "hair_ponytail",
+			"top": ["top_hoodie", 2], "bottom": ["bottom_cargo_shorts", 1], "socks": ["socks_tube", 0], "shoes": ["shoes_high_top", 3],
+			"acc": ["acc_headband", 0], "extra": {"hair_tie": "#4FC3F7", "band": "#4FC3F7", "top_trim": "#FFFFFF"}},
+		{"role": "deckwall", "name": "Jun", "mode": "stand", "lines": PackedStringArray(), "sway": 3.1, "scale": 1.0, "body": "male",
+			"skin": "#9A6445", "hair": "#4FC3F7", "eyes": "#2F86E0", "hair_style": "hair_short_spiky",
+			"top": ["top_surf_tee", 3], "bottom": ["bottom_joggers", 0], "socks": ["socks_crew", 0], "shoes": ["shoes_cupsole", 1],
+			"acc": ["acc_cap", 1], "extra": {"hair_tie": "#FF5A5F", "band": "#FFD84D"}},
+		{"role": "couch", "name": "Nami", "mode": "sit", "lines": PackedStringArray(), "sway": 0.6, "scale": 0.98, "body": "female",
+			"skin": "#E0A97E", "hair": "#D9722B", "eyes": "#2F86E0", "hair_style": "hair_bun",
+			"top": ["top_crop_tank", 2], "bottom": ["bottom_joggers", 2], "socks": ["socks_striped", 0], "shoes": ["shoes_puffy", 0],
+			"acc": ["acc_sunnies", 0], "extra": {"hair_tie": "#A6E22E", "band": "#FF9F1C"}},
+		{"role": "ramp", "name": "Sora", "mode": "stand", "lines": PackedStringArray(), "sway": 4.4, "scale": 1.0, "body": "male",
+			"skin": "#6B4430", "hair": "#8A6BE0", "eyes": "#4A2C1A", "hair_style": "hair_undercut",
+			"top": ["top_hoodie", 0], "bottom": ["bottom_board_shorts", 1], "socks": ["socks_crew", 1], "shoes": ["shoes_low_vulc", 2],
+			"acc": ["", 0], "extra": {"hair_tie": "#FFD84D", "band": "#FF7EB6"}},
 	]
 	for s: Dictionary in specs:
 		var role_: String = str(s["role"])
@@ -152,9 +185,11 @@ static func cast(spots: Dictionary) -> Array[ShopNpc]:
 		look.skin_tone = Color(str(s["skin"]))
 		look.hair_color = Color(str(s["hair"]))
 		look.eye_color = Color(str(s["eyes"]))
-		look.set_item("top", str((s["top"] as Array)[0]), int((s["top"] as Array)[1]))
-		look.set_item("bottom", str((s["bottom"] as Array)[0]), int((s["bottom"] as Array)[1]))
-		look.shoes_color = int(s["shoes"])
+		look.body_type = str(s["body"])
+		look.hair_style = str(s["hair_style"])
+		for slot: String in ["top", "bottom", "socks", "shoes"]:
+			look.set_item(slot, str((s[slot] as Array)[0]), int((s[slot] as Array)[1]))
+		look.set_item("accessory", str((s["acc"] as Array)[0]), int((s["acc"] as Array)[1]))
 		look.deck_graphic = out.size() % 3
 		look.wheel_color = (out.size() + 1) % 3
 		var extra: Dictionary = {}

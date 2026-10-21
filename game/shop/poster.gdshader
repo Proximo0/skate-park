@@ -9,6 +9,7 @@ render_mode unshaded;
 uniform int kind = 0;
 uniform vec3 tint : source_color = vec3(0.92, 0.9, 0.88);
 uniform float aspect = 0.68;  // width / height
+uniform float banner = 0.0;  // 1 draws a title banner strip along the bottom (the title text sits on it)
 
 float ps_circle(vec2 p, vec2 c, float r) {
 	return step(length(p - c), r);
@@ -129,6 +130,11 @@ void fragment() {
 	else if (kind == 1) col = ps_skate(p);
 	else if (kind == 2) col = ps_face(p);
 	else col = ps_street(p);
+	if (banner > 0.5) {
+		float edge = step(0.15, p.y) * step(p.y, 0.165);
+		col = mix(col, vec3(0.1, 0.1, 0.18), step(p.y, 0.165));
+		col = mix(col, vec3(1.0, 0.84, 0.3), edge);
+	}
 	// paper border
 	float border = step(p.x, 0.035) + step(0.965, p.x) + step(p.y, 0.025) + step(0.975, p.y);
 	col = mix(col, vec3(0.98, 0.96, 0.9), clamp(border, 0.0, 1.0));
