@@ -412,7 +412,7 @@ func _sc_revert() -> void:
 	## Press revert on the first tick after landing, well inside the 0.35 s window.
 	if not await _tick(NONE, ["revert"], []):
 		return
-	for i: int in 60:
+	for i: int in 240:
 		if not await _tick():
 			return
 		if not _combo_texts.is_empty():

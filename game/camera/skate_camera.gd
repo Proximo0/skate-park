@@ -8,8 +8,8 @@ extends Camera3D
 
 const DISTANCE := 4.5
 const HEIGHT := 2.0
-const VERT_DISTANCE := 6.0
-const VERT_HEIGHT := 3.0
+const VERT_DISTANCE := 7.5
+const VERT_HEIGHT := 3.6
 const LOOK_HEIGHT := 0.9
 const LOOK_AHEAD_FACTOR := 0.12  ## seconds of velocity projected ahead of the look point
 const LOOK_AHEAD_MAX := 1.5
@@ -109,7 +109,7 @@ func _physics_process(delta: float) -> void:
 	# The wall ray starts at the skater's head, not at the lookahead point: the lookahead can sit inside the
 	# deck of a ramp, and a ray that starts inside solid geometry always reports a hit.
 	var eye: Vector3 = skater_pos + Vector3.UP * LOOK_HEIGHT
-	var goal_look: Vector3 = look_target(skater_pos, target.velocity)
+	var goal_look: Vector3 = look_target(skater_pos, target.velocity) + Vector3.UP * (1.0 if vert else 0.0)
 
 	if not _primed:
 		_primed = true

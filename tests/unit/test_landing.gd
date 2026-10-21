@@ -44,15 +44,16 @@ func test_heading_within_35_backward_is_clean_switch() -> void:
 	_assert_result(_judge(FORWARD, UP, _heading_velocity(145.5)), "clean", true, "145.5 back")
 
 
-func test_heading_35_to_70_forward_is_sketchy_not_switch() -> void:
-	_assert_result(_judge(FORWARD, UP, _heading_velocity(50.0)), "sketchy", false, "50 fwd")
-	_assert_result(_judge(FORWARD, UP, _heading_velocity(60.0)), "sketchy", false, "60 fwd")
+func test_heading_50_to_80_forward_is_sketchy_not_switch() -> void:
+	_assert_result(_judge(FORWARD, UP, _heading_velocity(45.0)), "clean", false, "45 fwd still clean")
+	_assert_result(_judge(FORWARD, UP, _heading_velocity(55.0)), "sketchy", false, "55 fwd")
+	_assert_result(_judge(FORWARD, UP, _heading_velocity(75.0)), "sketchy", false, "75 fwd")
 
 
-func test_heading_70_to_110_is_bail() -> void:
-	_assert_result(_judge(FORWARD, UP, _heading_velocity(80.0)), "bail", false, "80")
+func test_heading_80_to_100_is_bail() -> void:
+	_assert_result(_judge(FORWARD, UP, _heading_velocity(83.0)), "bail", false, "83")
 	_assert_result(_judge(FORWARD, UP, _heading_velocity(90.0)), "bail", false, "90")
-	_assert_result(_judge(FORWARD, UP, _heading_velocity(100.0)), "bail", false, "100")
+	_assert_result(_judge(FORWARD, UP, _heading_velocity(97.0)), "bail", false, "97")
 
 
 func test_heading_110_to_145_is_sketchy_switch() -> void:
@@ -148,11 +149,11 @@ func test_unnormalized_inputs_are_accepted() -> void:
 
 func test_switch_flag_matches_heading_side_for_sketchy_band() -> void:
 	# Sweep through the sketchy bands and check switch always tracks the side.
-	for deg: int in range(40, 71, 5):
+	for deg: int in range(55, 80, 5):
 		var d: Dictionary = _judge(FORWARD, UP, _heading_velocity(float(deg)))
 		assert_eq(d["result"], "sketchy", "sweep fwd %d" % deg)
 		assert_false(d["switch"], "sweep fwd %d not switch" % deg)
-	for deg: int in range(110, 141, 5):
+	for deg: int in range(105, 126, 5):
 		var d: Dictionary = _judge(FORWARD, UP, _heading_velocity(float(deg)))
 		assert_eq(d["result"], "sketchy", "sweep back %d" % deg)
 		assert_true(d["switch"], "sweep back %d switch" % deg)

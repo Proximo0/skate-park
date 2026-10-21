@@ -16,7 +16,7 @@ const GRAVITY := 18.0  ## a bit floatier-than-real arcs (9.8 feels heavy for a c
 const PUSH_ACCEL := 9.0
 const PUSH_MAX := 12.0  ## pushing alone tops out here; slopes can go faster
 const MAX_SPEED := 22.0
-const BRAKE := 10.0
+const BRAKE := 6.0
 const ROLL_FRICTION := 0.6
 const TURN_RATE := 2.6  ## rad/s at low speed
 const TURN_RATE_FAST := 1.7  ## rad/s at MAX_SPEED
@@ -33,6 +33,14 @@ const DOUBLE_FLIP_TIME := 0.68
 const WALLRIDE_TIME := 1.2
 const LIP_MAX_TIME := 2.5
 const SPIN_POINTS_PER_180 := 100
+const PUMP_ACCEL := 4.0  ## holding forward on the way down a transition pumps speed, as on a real halfpipe
+const RAIL_GRAVITY := 10.0  ## down rails speed up a little less than free rolling
+const RAIL_FRICTION := 0.5
+const EDGE_ANGLE_COS := 0.64  ## the surface ahead turning away by more than ~50 degrees is a lip: go airborne
+const KILL_Y := -6.0
+const PUSH_PLANT := 0.18  ## matches SkaterPoser: first push steps off the tail, then each cycle kicks
+const PUSH_CYCLE := 0.6
+const PUSH_CONTACT := 0.55
 
 var db: TrickDB
 var state := SkateState.new()
@@ -75,6 +83,10 @@ var _stick: Vector2 = Vector2.ZERO
 var _recent_grind_press: int = 100  ## ticks since grind was pressed (buffered for rails and walls)
 var _visual: Node3D
 var _pending_air: Array = []
+var _snap_offset: Vector3 = Vector3.ZERO  ## visual-only catch-up after a rail or lip snap
+var _left_rail: GrindRail
+var _left_rail_t: float = -10.0
+var _left_edge: bool = false
 
 
 func _ready() -> void:
@@ -153,6 +165,9 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("restart"):
 		respawn()
 		return
+	if global_position.y < KILL_Y:
+		respawn()
+		return
 	var requests: Array = tricks.feed(_stick, _just_pressed, _held)
 	_recent_grind_press = 0 if _just_pressed.has("grind") else _recent_grind_press + 1
 	anim_time += delta
@@ -182,7 +197,7 @@ func _physics_process(delta: float) -> void:
 
 func _tick_rolling(delta: float, requests: Array) -> void:
 	_ground_move(delta, true)
-	if not is_on_floor():
+	if not is_on_floor() or _left_edge:
 		_go_airborne(false)
 		return
 	if _just_pressed.has("revert") and state.event("revert"):
@@ -219,11 +234,13 @@ func _handle_ollie(delta: float) -> void:
 
 
 func _ollie(power: float) -> void:
-	var up: Vector3 = _floor_normal if state.state != SkateState.State.GRIND else Vector3.UP
-	if up.y < 0.5:
-		up = (up + Vector3.UP).normalized()
+	# Pop straight up off anything you can stand on: popping along a kicker's normal would brake you.
+	var up: Vector3 = Vector3.UP
+	if state.state != SkateState.State.GRIND and _floor_normal.y < 0.5:
+		up = (_floor_normal + Vector3.UP).normalized()
 	velocity += up * power
-	position += up * 0.05
+	if state.state != SkateState.State.GRIND:
+		position += up * 0.05
 	if state.event("ollie"):
 		_set_anim("ollie")
 		_enter_air(false)
@@ -239,7 +256,7 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		facing = facing.slide(n).normalized() if facing.slide(n).length() > 0.01 else _fallback_facing(n)
 	# steering: rotate travel direction around the surface normal
 	var turn_rate: float = lerpf(TURN_RATE, TURN_RATE_FAST, clampf(v.length() / MAX_SPEED, 0.0, 1.0))
-	var steer: float = -_stick.x * turn_rate * delta
+	var steer: float = -_stick.x * turn_rate * delta * clampf(v.length() / 1.5, 0.25, 1.0)
 	if absf(steer) > 0.0:
 		facing = facing.rotated(n.normalized(), steer).normalized()
 		v = facing * v.length() * (1.0 if v.dot(facing) >= 0.0 else -1.0)
@@ -247,14 +264,17 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	v += Vector3.DOWN.slide(n) * GRAVITY * delta
 	var along: float = v.dot(facing)
 	if allow_push and _stick.y < -0.3 and along < PUSH_MAX and n.y > 0.8:
-		along = minf(along + PUSH_ACCEL * delta, PUSH_MAX)
 		if anim != "push" and crouch == 0.0:
 			_set_anim("push")
+		# Speed comes from the kicks: only while the push foot is on the ground (same timing as the pose).
+		along = minf(along + PUSH_ACCEL * _push_pulse() * delta, PUSH_MAX)
+	elif _stick.y < -0.3 and n.y < 0.95 and n.y > 0.15 and v.y < 0.0:
+		along += PUMP_ACCEL * delta
 	elif _stick.y > 0.5 and n.y > 0.8 and state.state == SkateState.State.ROLLING:
 		along = move_toward(along, 0.0, BRAKE * delta)
 	along = move_toward(along, 0.0, ROLL_FRICTION * delta)
 	var side: Vector3 = v - facing * v.dot(facing)
-	side = side.move_toward(Vector3.ZERO, 30.0 * delta)  # wheels resist sliding sideways
+	side = side.move_toward(Vector3.ZERO, 10.0 * delta)  # wheels grip sideways; a steep bank still slides you down
 	v = facing * along + side
 	if v.length() > MAX_SPEED:
 		v = v.normalized() * MAX_SPEED
@@ -270,16 +290,35 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	floor_snap_length = 0.0 if climbing_vert else 0.6
 	move_and_slide()
 	floor_snap_length = 0.6
+	_left_edge = false
 	if is_on_floor():
 		var fn: Vector3 = get_floor_normal()
 		var was: Vector3 = _floor_normal
+		if fn.dot(was) < EDGE_ANGLE_COS and v.length() > 1.0 and fn.dot(v.normalized()) > 0.2:
+			# Over a lip (kicker top, ledge edge, funbox end): the new face falls away from the travel
+			# direction, so carry on along the old surface into the air instead of sticking to the face.
+			_left_edge = true
+			velocity = v
+			_launch_normal = was
+			return
 		_floor_normal = fn
 		if was.y < VERT_NORMAL_Y and velocity.dot(Vector3.UP) > 0.0:
 			_launch_normal = was
+		elif fn.y >= VERT_NORMAL_Y:
+			_launch_normal = Vector3.UP
 		board_up = _turn_toward(board_up, fn, clampf(delta * 20.0, 0.0, 1.0))
 	else:
 		# leaving a surface: was it the top of a vert ramp?
 		_launch_normal = _floor_normal
+
+
+## 0..1 push strength this tick, from the push anim's time: 0 while stepping off and swinging the foot forward,
+## a burst while the foot sweeps the ground. Averages to 1 over a cycle.
+func _push_pulse() -> float:
+	if anim != "push" or anim_time < PUSH_PLANT:
+		return 0.3
+	var u: float = fposmod(anim_time - PUSH_PLANT, PUSH_CYCLE) / PUSH_CYCLE
+	return 1.0 / PUSH_CONTACT if u < PUSH_CONTACT else 0.0
 
 
 func _fallback_facing(n: Vector3) -> Vector3:
@@ -293,7 +332,7 @@ func _tick_manual(delta: float) -> void:
 	if not balance.update(delta, -_stick.y):
 		_bail()
 		return
-	if not is_on_floor():
+	if not is_on_floor() or _left_edge:
 		state.event("fall_off")
 		_enter_air(false)
 		return
@@ -323,8 +362,7 @@ func _enter_air(_from_rail: bool) -> void:
 		var out: Vector3 = Vector3(_launch_normal.x, 0.0, _launch_normal.z).normalized()
 		var lateral: Vector3 = velocity - out * velocity.dot(out)
 		lateral.y = 0.0
-		velocity = Vector3(0.0, maxf(velocity.y, 0.0) + absf(velocity.dot(out)) * 0.3, 0.0) + lateral * 0.6 + out * 0.4
-		board_up = _launch_normal
+		velocity = Vector3(0.0, maxf(velocity.y, 0.0) + absf(velocity.dot(out)) * 0.6, 0.0) + lateral * 0.15 + out * 0.7
 	_floor_normal = Vector3.UP
 	up_direction = Vector3.UP
 	spin.start(_yaw())
@@ -344,8 +382,9 @@ func _tick_air(delta: float, requests: Array) -> void:
 		spin_in += 1.0
 	if _held.has("spin_right"):
 		spin_in -= 1.0
-	if spin_in == 0.0 and absf(_stick.x) > 0.3:
-		spin_in = -signf(_stick.x)
+	if spin_in == 0.0 and absf(_stick.x) > 0.2:
+		# THUG-style stick spin, analog: a light touch turns slowly, full stick spins at SPIN_RATE.
+		spin_in = -signf(_stick.x) * clampf((absf(_stick.x) - 0.2) / 0.6, 0.25, 1.0)
 	if spin_in != 0.0:
 		facing = facing.rotated(Vector3.UP, spin_in * SPIN_RATE * delta).normalized()
 	elif not vert_air:
@@ -358,7 +397,7 @@ func _tick_air(delta: float, requests: Array) -> void:
 	var target_up: Vector3 = _predict_landing_normal()
 	if vert_air and velocity.y > 0.0:
 		target_up = _launch_normal
-	board_up = _turn_toward(board_up, target_up, clampf(delta * 4.0, 0.0, 1.0))
+	board_up = _turn_toward(board_up, target_up, clampf(delta * (12.0 if vert_air else 4.0), 0.0, 1.0))
 	# tricks
 	for r: Dictionary in requests:
 		_air_trick(r)
@@ -378,6 +417,7 @@ func _tick_air(delta: float, requests: Array) -> void:
 	velocity.y = maxf(velocity.y, -40.0)
 	up_direction = Vector3.UP
 	floor_snap_length = 0.0
+	var impact: Vector3 = velocity
 	move_and_slide()
 	floor_snap_length = 0.6
 	if is_on_wall() and not is_on_floor():
@@ -387,7 +427,7 @@ func _tick_air(delta: float, requests: Array) -> void:
 			_score_trick({"id": "wallride", "name": "Wallride", "points": 250, "kind": "wallride", "anim": "wallride", "points_per_sec": 100})
 			return
 	if is_on_floor():
-		_land(get_floor_normal())
+		_land(get_floor_normal(), impact)
 
 
 func _air_trick(r: Dictionary) -> void:
@@ -413,12 +453,17 @@ func _air_trick(r: Dictionary) -> void:
 	_score_trick(t)
 
 
-func _land(n: Vector3) -> void:
+## impact: the velocity just before touching down (move_and_slide has already removed the part into the floor).
+func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	_floor_normal = n
-	var judge: Dictionary = Landing.judge(_board_forward(), board_up, velocity, n)
+	var hit_v: Vector3 = impact if impact != Vector3.ZERO else velocity
+	var judge: Dictionary = Landing.judge(_board_forward(), board_up, hit_v, n)
 	var result: String = judge["result"]
-	if _air_trick_until > _t + 0.08:
-		result = "bail"  # landed mid-flip
+	var flip_left: float = _air_trick_until - _t
+	if flip_left > 0.2:
+		result = "bail"  # landed with the board still mid-flip
+	elif flip_left > 0.0 and result == "clean":
+		result = "sketchy"  # caught it late
 	var spins: int = spin.spins180()
 	if result == "bail":
 		_bail()
@@ -429,8 +474,8 @@ func _land(n: Vector3) -> void:
 	if bool(judge["switch"]):
 		switch_stance = not switch_stance
 	# keep speed, now along the surface
-	var v: Vector3 = velocity.slide(n)
-	var keep: float = 0.9 if result == "clean" else 0.6
+	var v: Vector3 = hit_v.slide(n)
+	var keep: float = 0.97 if result == "clean" else 0.8
 	velocity = v * keep
 	if v.length() > 0.5:
 		facing = v.normalized()
@@ -472,6 +517,8 @@ func _try_grind() -> bool:
 		var r: GrindRail = node as GrindRail
 		if r == null or r.points.size() < 2:
 			continue
+		if r == _left_rail and _t - _left_rail_t < 0.25:
+			continue  # just popped off its end: let a quick press transfer to the next rail
 		var hit: Dictionary = r.closest(global_position)
 		if hit.is_empty():
 			continue
@@ -495,11 +542,13 @@ func _try_grind() -> bool:
 	_rail_t = best_hit["t"]
 	var tan: Vector3 = best_hit["tangent"]
 	var along: float = velocity.dot(tan)
-	if absf(along) < GRIND_MIN_SPEED:
-		along = GRIND_MIN_SPEED * (1.0 if along >= 0.0 else -1.0)
+	var floor_speed: float = GRIND_MIN_SPEED * 0.5
+	if absf(along) < floor_speed:
+		along = floor_speed * (1.0 if along >= 0.0 else -1.0)
 		if absf(velocity.dot(tan)) < 0.01:
-			along = GRIND_MIN_SPEED * (1.0 if facing.dot(tan) >= 0.0 else -1.0)
+			along = floor_speed * (1.0 if facing.dot(tan) >= 0.0 else -1.0)
 	_rail_speed = along
+	_snap_offset += global_position - (best_hit["point"] as Vector3)
 	global_position = best_hit["point"] as Vector3
 	vert_air = false
 	_recent_grind_press = 100
@@ -518,10 +567,13 @@ func _tick_grind(delta: float) -> void:
 	combo.add_hold_points(_hold_pps, delta)
 	var cur: Dictionary = _rail.advance(_rail_seg, _rail_t, 0.0)
 	var tan: Vector3 = cur["tangent"]
-	_rail_speed += -GRAVITY * tan.y * delta * signf(_rail_speed) * signf(_rail_speed)  # downhill rails speed up
+	_rail_speed += -RAIL_GRAVITY * tan.y * delta  # downhill rails speed up, uphill ones slow and slide back
+	_rail_speed = move_toward(_rail_speed, 0.0, RAIL_FRICTION * delta)
 	_rail_speed = clampf(_rail_speed, -MAX_SPEED, MAX_SPEED)
-	if absf(_rail_speed) < 1.0:
-		_rail_speed = 1.0 * (1.0 if _rail_speed >= 0.0 else -1.0)
+	if absf(_rail_speed) < 0.3 and absf(tan.y) < 0.05:
+		state.event("fall_off")  # ground to a halt on a flat rail
+		_enter_air(true)
+		return
 	var next: Dictionary = _rail.advance(_rail_seg, _rail_t, _rail_speed * delta)
 	_rail_seg = next["segment"]
 	_rail_t = next["t"]
@@ -535,16 +587,20 @@ func _tick_grind(delta: float) -> void:
 		_bail()
 		return
 	if _just_pressed.has("ollie"):
-		_ollie(OLLIE_MIN)
+		_left_rail = _rail
+		_left_rail_t = _t
+		_ollie(7.5)
 		return
 	if bool(next["ended"]):
+		_left_rail = _rail
+		_left_rail_t = _t
 		state.event("fall_off")
-		velocity += Vector3.UP * 1.5
+		velocity += Vector3.UP * 3.0
 		_enter_air(true)
 
 
 func _try_lip() -> bool:
-	if velocity.y < -1.0:
+	if velocity.y < -3.0:
 		return false
 	for node: Node in get_tree().get_nodes_in_group("grind_rail"):
 		var r: GrindRail = node as GrindRail
@@ -558,7 +614,9 @@ func _try_lip() -> bool:
 		var t: Dictionary = db.find_lip(TrickInput.quantize(_stick))
 		if t.is_empty():
 			t = db.find_lip("N")
-		global_position = (hit["point"] as Vector3) + Vector3.UP * 0.1
+		var lip_at: Vector3 = (hit["point"] as Vector3) + Vector3.UP * 0.1
+		_snap_offset += global_position - lip_at
+		global_position = lip_at
 		velocity = Vector3.ZERO
 		_start_balance_trick(t, "lip")
 		return true
@@ -576,6 +634,7 @@ func _tick_lip(delta: float, _requests: Array) -> void:
 		state.event("lip_end")
 		var out: Vector3 = Vector3(_launch_normal.x, 0.0, _launch_normal.z).normalized()
 		global_position += out * 0.4
+		_snap_offset -= out * 0.4
 		velocity = out * 1.0 + Vector3.DOWN * 1.0
 		facing = out
 		_launch_normal = Vector3.UP
@@ -638,6 +697,7 @@ func _tick_bail(delta: float) -> void:
 func respawn() -> void:
 	global_transform = _spawn
 	velocity = Vector3.ZERO
+	_snap_offset = Vector3.ZERO
 	facing = -_spawn.basis.z
 	board_up = Vector3.UP
 	_floor_normal = Vector3.UP
@@ -656,7 +716,7 @@ func respawn() -> void:
 func _start_balance_trick(t: Dictionary, kind: String) -> void:
 	balance_kind = kind
 	_seed += 1
-	balance.start(_seed, 1.0 + combo.trick_count() * 0.04)
+	balance.start(_seed, 1.0 + combo.trick_count() * 0.02)
 	_hold_pps = int(t.get("points_per_sec", 0))
 	_score_trick(t)
 
@@ -750,7 +810,8 @@ func _update_visual(delta: float) -> void:
 	var target := Basis.looking_at(fwd, up)
 	var cur: Basis = _visual.global_transform.basis.orthonormalized()
 	var b: Basis = cur.slerp(target, clampf(delta * 18.0, 0.0, 1.0))
-	_visual.global_transform = Transform3D(b, global_position)
+	_snap_offset = _snap_offset.move_toward(Vector3.ZERO, delta * 8.0)
+	_visual.global_transform = Transform3D(b, global_position + _snap_offset)
 
 
 func _state_hash() -> int:

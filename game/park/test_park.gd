@@ -37,7 +37,6 @@ func _ready() -> void:
 	var board: Node3D = PlaceholderSkater.build_board()
 	visual.add_child(board)
 	body.position = Vector3(0, 0.1, 0)
-	body.rotation_degrees = Vector3(0, 90, 0)
 	visual.add_child(body)
 	Toon.apply_to(visual)
 	skater.add_child(visual)

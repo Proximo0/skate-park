@@ -13,7 +13,7 @@ func test_offset_flat_is_behind_and_above() -> void:
 
 
 func test_offset_vert_is_higher_and_farther() -> void:
-	_cam_vec_near(SkateCamera.desired_offset(Vector3(0, 0, -1), true), Vector3(0, 3.0, 6.0))
+	_cam_vec_near(SkateCamera.desired_offset(Vector3(0, 0, -1), true), Vector3(0, 3.6, 7.5))
 
 
 func test_offset_follows_facing_direction() -> void:

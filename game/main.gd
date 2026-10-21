@@ -59,7 +59,6 @@ func _make_skater(at: Transform3D) -> Skater:
 	var body: Node3D = ArtSlots.instance("skater_body", PlaceholderSkater.build_body)
 	body.name = "SkaterBody"
 	body.position = Vector3(0, PlaceholderSkater.DECK_TOP_Y, 0)
-	body.rotation_degrees = Vector3(0, 90, 0)
 	visual.add_child(body)
 	Toon.apply_to(visual)
 	s.add_child(visual)

@@ -7,8 +7,8 @@ extends RefCounted
 const UPRIGHT_BAIL_DOT: float = 0.5
 const UPRIGHT_CLEAN_DOT: float = 0.85
 const SPEED_IGNORE_HEADING: float = 1.0
-const HEADING_CLEAN_DEG: float = 35.0
-const HEADING_SKETCHY_DEG: float = 70.0
+const HEADING_CLEAN_DEG: float = 50.0
+const HEADING_SKETCHY_DEG: float = 80.0
 const DEGENERATE_EPSILON: float = 0.0001
 
 const RESULT_CLEAN: String = "clean"

@@ -59,8 +59,11 @@ static func build(width: float = 4.0, top_length: float = 5.0, bank_length: floa
 	var post_inset: float = minf(0.4, top_length * 0.25)
 	var post_z0: float = bank_end + post_inset
 	var post_z1: float = top_end - post_inset
-	root.add_child(PieceKit.box(Vector3(mid_x - POST_SIZE * 0.5, height, post_z0 - POST_SIZE * 0.5), Vector3(POST_SIZE, RAIL_HEIGHT, POST_SIZE), PieceKit.METAL, "PostA"))
-	root.add_child(PieceKit.box(Vector3(mid_x - POST_SIZE * 0.5, height, post_z1 - POST_SIZE * 0.5), Vector3(POST_SIZE, RAIL_HEIGHT, POST_SIZE), PieceKit.METAL, "PostB"))
+	# Posts are visual only: a skater riding the centre line would otherwise stop dead on a thin post.
+	for post: Array in [[post_z0, "PostA"], [post_z1, "PostB"]]:
+		var pb: StaticBody3D = PieceKit.box(Vector3(mid_x - POST_SIZE * 0.5, height, float(post[0]) - POST_SIZE * 0.5), Vector3(POST_SIZE, RAIL_HEIGHT, POST_SIZE), PieceKit.METAL, str(post[1]))
+		pb.collision_layer = 0
+		root.add_child(pb)
 	root.add_child(PieceKit.round_rail(Vector3(mid_x, rail_y, post_z0), Vector3(mid_x, rail_y, post_z1), RAIL_RADIUS, PieceKit.METAL, "MidRail"))
 
 	# Gap zones over the bottom end of each bank.

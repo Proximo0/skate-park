@@ -13,7 +13,7 @@ const NUDGE_MIN_INTERVAL: float = 0.5
 const NUDGE_MAX_INTERVAL: float = 1.0
 const START_OFFSET_MIN: float = 0.02
 const START_OFFSET_MAX: float = 0.05
-const TIME_GROWTH_SECONDS: float = 6.0
+const TIME_GROWTH_SECONDS: float = 12.0
 const FALL_ANGLE: float = 1.0
 
 ## Position on the meter, -1.0 (fell left) to 1.0 (fell right). 0.0 is centered.

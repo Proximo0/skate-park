@@ -89,12 +89,17 @@ func _build_world(vp: SubViewport) -> void:
 
 	var skater := Node3D.new()
 	skater.name = "Skater"
-	skater.add_child(PlaceholderSkater.build_board())
+	var board: Node3D = PlaceholderSkater.build_board()
+	skater.add_child(board)
 	var body: Node3D = PlaceholderSkater.build_body()
 	body.position.y = PlaceholderSkater.DECK_TOP_Y
-	body.rotation.y = PI * 0.5
 	skater.add_child(body)
 	Toon.apply_to(skater)
+	var poser := SkaterPoser.new()
+	poser.body = body
+	poser.board = board
+	poser.preview_anim = "crouch"
+	skater.add_child(poser)
 	vp.add_child(skater)
 
 	_camera = Camera3D.new()

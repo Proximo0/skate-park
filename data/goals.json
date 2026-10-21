@@ -52,7 +52,7 @@
 		},
 		{
 			"id": "kickflip_funbox",
-			"title": "Kickflip the Big Funbox",
+			"title": "Kickflip Kid",
 			"description": "Land a Kickflip.",
 			"type": "trick",
 			"trick": "kickflip"
