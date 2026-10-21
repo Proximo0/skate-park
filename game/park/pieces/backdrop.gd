@@ -6,6 +6,7 @@ extends RefCounted
 ## the fog haze finishes the job. Seeded, so the view is the same every run.
 
 const SEED: int = 7731
+const GROUND_SHADER: Shader = preload("res://game/art/ground.gdshader")
 
 const HILL_COLOURS: Array[Color] = [Color("6c8a42"), Color("5f8040"), Color("78924c"), Color("527c48")]
 const FAR_HILL_COLOURS: Array[Color] = [Color("56806a"), Color("4c7a78"), Color("608a70")]
@@ -20,7 +21,9 @@ static func build() -> Node3D:
 	rng.seed = SEED
 	root.add_child(_hills(rng))
 	root.add_child(_tree_line(rng))
-	root.add_child(_buildings(rng))
+	var foot: Array = []
+	root.add_child(_buildings(rng, foot))
+	root.add_child(_house_hedges(foot))
 	root.add_child(_mountains(rng))
 	return root
 
@@ -48,8 +51,15 @@ static func _hills(rng: RandomNumberGenerator) -> Node3D:
 		mi.name = "Hill%d" % i
 		mi.mesh = m
 		var pal: Array[Color] = FAR_HILL_COLOURS if far else HILL_COLOURS
-		mi.material_override = Toon.material(pal[rng.randi() % pal.size()], false)
 		var top: float = rng.randf_range(22.0, 44.0) if far else rng.randf_range(9.0, 24.0)
+		# ground shader in hill mode: cel bands by height instead of one flat colour
+		var hm := ShaderMaterial.new()
+		hm.shader = GROUND_SHADER
+		hm.set_shader_parameter("grass", 2.0)
+		hm.set_shader_parameter("grass_color", pal[rng.randi() % pal.size()])
+		hm.set_shader_parameter("hill_top", top)
+		hm.set_shader_parameter("hill_base", -0.5)
+		mi.material_override = hm
 		mi.position = Vector3(cos(a) * r, -0.5, sin(a) * r)
 		mi.scale = Vector3(rng.randf_range(1.0, 1.4), top / size, rng.randf_range(1.0, 1.4))
 		mi.rotation.y = rng.randf() * TAU
@@ -106,7 +116,7 @@ static func _tree_line(rng: RandomNumberGenerator) -> Node3D:
 	return node
 
 
-static func _buildings(rng: RandomNumberGenerator) -> Node3D:
+static func _buildings(rng: RandomNumberGenerator, foot: Array) -> Node3D:
 	var node := Node3D.new()
 	node.name = "Skyline"
 	var count: int = 46
@@ -127,6 +137,7 @@ static func _buildings(rng: RandomNumberGenerator) -> Node3D:
 			h = rng.randf_range(26.0, 36.0)
 		var yaw := Basis(Vector3.UP, -a + rng.randf_range(-0.2, 0.2))
 		var pos := Vector3(cos(a) * r, 0.0, sin(a) * r)
+		foot.append([pos, yaw, w, d])
 		var col: Color = BUILDING_COLOURS[rng.randi() % BUILDING_COLOURS.size()]
 		bodies.set_instance_transform(i * 2, Transform3D(yaw.scaled(Vector3(w, h, d)), pos + Vector3(0.0, h * 0.5 - 1.0, 0.0)))
 		bodies.set_instance_color(i * 2, col)
@@ -136,6 +147,62 @@ static func _buildings(rng: RandomNumberGenerator) -> Node3D:
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = "Buildings"
 	mmi.multimesh = bodies
+	mmi.material_override = Toon.material_vc(Color.WHITE)
+	_off(mmi)
+	node.add_child(mmi)
+	return node
+
+
+## A hedge and tree row hugging the foot of every skyline building so none floats: bush crowns along the four sides (footprints come from _buildings), taller trees at the corners.
+static func _house_hedges(foot: Array) -> Node3D:
+	var node := Node3D.new()
+	node.name = "HouseHedges"
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEED + 1
+	var greens: Array[Color] = [Color("447a36"), Color("4f8a3c"), Color("3a7040"), Color("5f8c36"), Color("3f6f2c"), Color("3f8058")]
+	var xfs: Array[Transform3D] = []
+	var cols: Array[Color] = []
+	var sph := SphereMesh.new()
+	sph.radius = 1.0
+	sph.height = 2.0
+	sph.radial_segments = 8
+	sph.rings = 4
+	for f: Array in foot:
+		var pos: Vector3 = f[0]
+		var yaw: Basis = f[1]
+		var w: float = f[2]
+		var d: float = f[3]
+		var hw: float = w * 0.5 + 1.2
+		var hd: float = d * 0.5 + 1.2
+		var pts: Array[Vector3] = []
+		var x: float = -hw
+		while x <= hw:
+			pts.append(Vector3(x, 0.0, hd))
+			pts.append(Vector3(x, 0.0, -hd))
+			x += 3.2
+		var z: float = -hd + 3.2
+		while z < hd:
+			pts.append(Vector3(hw, 0.0, z))
+			pts.append(Vector3(-hw, 0.0, z))
+			z += 3.2
+		for q: Vector3 in pts:
+			var s: float = rng.randf_range(1.3, 2.3)
+			var tall: bool = rng.randf() < 0.18
+			var sc := Vector3(s * 1.1, s * (1.9 if tall else 0.85), s * 1.1)
+			var p: Vector3 = pos + yaw * (q + Vector3(rng.randf_range(-0.6, 0.6), 0.0, rng.randf_range(-0.6, 0.6)))
+			xfs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(sc), Vector3(p.x, -1.0 + sc.y * 0.7, p.z)))
+			cols.append(greens[rng.randi() % greens.size()])
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = sph
+	mm.instance_count = xfs.size()
+	for k: int in xfs.size():
+		mm.set_instance_transform(k, xfs[k])
+		mm.set_instance_color(k, cols[k])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "Hedges"
+	mmi.multimesh = mm
 	mmi.material_override = Toon.material_vc(Color.WHITE)
 	_off(mmi)
 	node.add_child(mmi)

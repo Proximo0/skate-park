@@ -20,6 +20,9 @@ uniform float walk_from = 75.8;
 uniform float walk_to = 80.4;
 uniform vec4 grass_color : source_color = vec4(0.55, 0.66, 0.34, 1.0);
 uniform vec4 walk_color : source_color = vec4(0.55, 0.6, 0.66, 1.0);
+// hill mode (grass = 2): height of the hill's crown above its foot, in metres, for the cel bands
+uniform float hill_top = 20.0;
+uniform float hill_base = -0.5;
 
 varying vec3 wpos;
 varying vec3 wnormal;
@@ -65,12 +68,30 @@ void fragment() {
 	vec3 base = albedo.rgb;
 	float top = step(0.7, wnormal.y);
 
-	if (grass > 0.5) {
+	float cam_d = length(VERTEX);
+	float near = 1.0 - smoothstep(12.0, 48.0, cam_d);
+
+	if (grass > 1.5) {
+		// rolling hill: three cel bands by height (dark foot, body, sunlit crown) plus a few wandering mow stripes
+		vec3 g = grass_color.rgb;
+		float h = clamp((wpos.y - hill_base) / max(hill_top, 1.0), 0.0, 1.0);
+		float hn = h + (vnoise(p * 0.05) - 0.5) * 0.16;
+		g = mix(g * vec3(0.8, 0.88, 0.86), g, smoothstep(0.22, 0.26, hn));
+		g = mix(g, g * vec3(1.14, 1.1, 0.88), smoothstep(0.58, 0.62, hn));
+		g = mix(g, g * vec3(1.08, 1.05, 0.85), smoothstep(0.84, 0.87, hn));
+		float hs = step(0.5, fract((p.x * 0.8 + p.y) / 22.0 + vnoise(p * 0.03) * 1.4));
+		g *= 1.0 - 0.05 * hs;
+		ALBEDO = g;
+	} else if (grass > 0.5) {
 		vec3 g = grass_color.rgb;
 		float drift = vnoise(p * 0.02) * 0.6 + vnoise(p * 0.07) * 0.4;
 		g = mix(g * vec3(0.9, 0.95, 0.85), g * vec3(1.1, 1.05, 0.9), drift);
-		float stripe = step(0.5, fract((p.x + p.y) / 14.0));
-		g *= 1.0 - 0.045 * stripe;
+		// mowed stripes: the period wanders with slow noise so they bend and pinch instead of ticking like a ruler
+		float sp = (p.x + p.y) / 13.0 + vnoise(p * 0.025) * 2.2 + vnoise(p * 0.11) * 0.35;
+		float stripe = smoothstep(0.46, 0.54, fract(sp));
+		float stripe2 = smoothstep(0.46, 0.54, fract((p.x - p.y * 0.6) / 31.0 + vnoise(p * 0.04 + 5.0) * 1.5));
+		g *= 1.0 - 0.05 * stripe - 0.035 * stripe2;
+		g *= 0.97 + 0.06 * vnoise(p * 0.6) * near;
 		// darker lawn right at the slab edge (where it meets the curb)
 		ALBEDO = mix(base, g, top);
 	} else {
@@ -110,6 +131,23 @@ void fragment() {
 		float jw2 = max(joint(p.x, 2.0, 0.03, aa), joint(p.y, 2.0, 0.03, aa));
 		c = mix(c, c * 0.9, mix(j, jw2, on_walk));
 
+		// speed readability: a finer 1 m joint grid and grain that fade in near the camera, tyre-streaks along x and z,
+		// gum and paint-scatter dots (all subtle, so pieces and the skater still read first)
+		float jf = max(joint(p.x + 0.5, 1.0, 0.012, aa), joint(p.y + 0.5, 1.0, 0.012, aa));
+		c *= 1.0 - 0.055 * jf * near * (1.0 - j) * (1.0 - on_walk);
+		c *= 1.0 + (vnoise(p * 9.0) - 0.5) * 0.045 * near;
+		c *= 1.0 + (vnoise(p * 1.6) - 0.5) * 0.03;
+		float streak_x = smoothstep(0.66, 0.8, vnoise(vec2(p.x * 0.12, p.y * 2.2) + 31.0));
+		float streak_z = smoothstep(0.7, 0.82, vnoise(vec2(p.x * 2.0, p.y * 0.1) + 57.0));
+		c *= 1.0 - 0.045 * max(streak_x, streak_z);
+		vec2 dc = floor(p / 2.5);
+		float dh = hash21(dc + 91.0);
+		vec2 dctr = (dc + 0.2 + hash22(dc + 13.0) * 0.6) * 2.5;
+		float dr = 0.05 + hash21(dc + 4.0) * 0.12;
+		float dot_m = (1.0 - smoothstep(dr - aa, dr + aa, length(p - dctr))) * step(0.9, dh);
+		vec3 dot_c = dh > 0.985 ? vec3(0.9, 0.45, 0.6) : (dh > 0.96 ? vec3(0.3, 0.75, 0.85) : (dh > 0.93 ? vec3(0.93, 0.8, 0.3) : c * 0.55));
+		c = mix(c, dot_c, dot_m * 0.8);
+
 		// lighter apron round every piece (mask baked from the piece footprints)
 		vec2 muv = (p - apron_rect.xy) / apron_rect.zw;
 		float ap = texture(apron_mask, muv).r;
@@ -134,6 +172,18 @@ void fragment() {
 		float box_l = max(rect(p, vec2(-24.0, -64.0), vec2(0.07, 4.0), aa), rect(p, vec2(-14.0, -64.0), vec2(0.07, 4.0), aa));
 		c = mix(c, paint_w, box_l * 0.8);
 		c = mix(c, paint_y, rect(p, vec2(-19.0, -64.0), vec2(0.07, 4.0), aa) * 0.9);
+		// white edge line just inside the fence, dashed; chevrons along the south street; a stop bar at the plaza mouth
+		float edge_d = max(abs(p.x), abs(p.y));
+		float edge_ln = (1.0 - smoothstep(0.08 - aa, 0.08 + aa, abs(edge_d - 74.3)));
+		float edge_dash = step(0.5, fract((p.x + p.y) / 4.0));
+		c = mix(c, paint_w, edge_ln * edge_dash * 0.7);
+		vec2 cv = vec2(fract((p.x + 6.0) / 12.0) * 12.0 - 6.0, p.y - 57.5);
+		float chev = (1.0 - smoothstep(0.1 - aa, 0.1 + aa, abs(cv.y + abs(cv.x) * 0.6))) * step(abs(cv.x), 1.4) * step(abs(p.x), 66.0);
+		c = mix(c, paint_y, clamp(chev, 0.0, 1.0) * 0.7);
+		c = mix(c, paint_w, rect(p, vec2(-12.0, 50.2), vec2(1.6, 0.25), aa) * 0.7);
+		// faded yellow curb paint along the sidewalk edge
+		float curb_y = rect(vec2(walk_d, 0.0), vec2(walk_to - 0.3, 0.0), vec2(0.25, 1.0), aa) * step(0.5, fract((p.x + p.y) / 6.0));
+		c = mix(c, paint_y * 0.9, curb_y * 0.5 * on_walk);
 
 		// sidewalk strip: warm light concrete, edge line at the curb
 		c = mix(c, walk_color.rgb * (0.97 + 0.06 * drift), on_walk);

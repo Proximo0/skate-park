@@ -124,7 +124,12 @@ static func build(placed: Array) -> Node3D:
 	var furn: Node3D = furniture()
 	root.add_child(furn)
 	counts["furniture"] = furn.get_child_count()
+	var dz: Node3D = dead_zones()
+	root.add_child(dz)
+	counts["dead_zones"] = dz.get_child_count()
 	var avoid: Array[Rect2] = footprints(placed)
+	for r: Rect2 in DEAD_ZONE_AVOID:
+		avoid.append(r)
 	for c: Node in cans.get_children():
 		var n3: Node3D = c as Node3D
 		avoid.append(Rect2(n3.position.x - 0.7, n3.position.z - 0.7, 1.4, 1.4))
@@ -379,6 +384,167 @@ static func _lamp(parent: Node3D, at: Vector3) -> void:
 	l.add_child(pm)
 	_vbox(l, Vector3(0.0, 4.55, 0.35), Vector3(0.1, 0.08, 0.8), NAVY, false, "Arm")
 	_vbox(l, Vector3(0.0, 4.45, 0.75), Vector3(0.4, 0.14, 0.3), Color("ffe6a6"), false, "Head")
+
+
+# ------------------------------------------------------------------------------------------------------------- dead-zone decor
+
+const TRUCK_BODY := Color("f2c94c")
+const TRUCK_TRIM := Color("e8665a")
+const BOX_GREY := Color("7f8f8a")
+## Keep litter off the dead-zone decor: Rect2(x, z, w, d).
+const DEAD_ZONE_AVOID: Array[Rect2] = [Rect2(70.0, -59.0, 5.0, 7.0), Rect2(19.0, -74.5, 7.0, 4.0), Rect2(13.0, -74.0, 2.0, 2.0), Rect2(29.0, -74.0, 2.0, 2.0)]
+
+
+## Decor for the plazas that were empty: the strip west of the dome bowl along the north fence, the apron south of it, and the east
+## strip beside the loop's run-out. Everything stays at the fence lines or the plaza margins, clear of the rail line to the dome
+## (z about -58.5), the dome and drop-in approaches and the loop lane (x 57 to 66). Everything is visual only: the first version's
+## solid truck and boxes against the fences showed up as snag-sweep hotspots, so none has collision.
+static func dead_zones() -> Node3D:
+	var root := Node3D.new()
+	root.name = "DeadZones"
+	# west of the dome, against the north fence: a food truck serving the plaza, tables and a sign
+	_food_truck(root, Vector3(23.0, 0.0, -73.4), 0.0)
+	_picnic(root, Vector3(19.5, 0.0, -68.2))
+	_picnic(root, Vector3(26.5, 0.0, -68.0))
+	_elec_box(root, Vector3(14.0, 0.0, -74.3), 0.0, "tag_zest", "sticker_star", true)
+	_elec_box(root, Vector3(31.5, 0.0, -74.3), 0.0, "sticker_sk8", "tag_koi", true)
+	_planter_tree(root, Vector3(16.5, 0.0, -66.0), 1.1, false)
+	_planter_tree(root, Vector3(29.5, 0.0, -66.0), 1.1, false)
+	_sign_post(root, Vector3(33.4, 0.0, -66.5), 0.0, "DOME >")
+	_lamp(root, Vector3(21.0, 0.0, -65.0))
+	# south of the dome: a bench pair and planters on the margin, a sign
+	_bench(root, Vector3(40.5, 0.0, -42.5), false)
+	_bench(root, Vector3(44.3, 0.0, -42.5), false)
+	_planter_tree(root, Vector3(49.0, 0.0, -42.5), 1.0, false)
+	_planter_tree(root, Vector3(53.5, 0.0, -42.5), 1.0, false)
+	_sign_post(root, Vector3(38.5, 0.0, -51.5), -90.0, "SKATE ZONE")
+	# the east strip, beside the loop's run-out: electrical boxes, a food truck, benches facing the loop
+	_food_truck(root, Vector3(73.8, 0.0, -57.2), -90.0)
+	_elec_box(root, Vector3(74.3, 0.0, -43.0), -90.0, "sticker_smile", "tag_drip", true)
+	_elec_box(root, Vector3(74.3, 0.0, -66.0), -90.0, "sticker_heart", "tag_spud", true)
+	var b1 := Node3D.new()
+	b1.name = "EastBenches"
+	b1.position = Vector3(73.0, 0.0, -48.5)
+	b1.rotation.y = -PI * 0.5
+	root.add_child(b1)
+	_bench(b1, Vector3.ZERO, false)
+	_planter_tree(root, Vector3(73.0, 0.0, -38.0), 1.0, false)
+	_planter_tree(root, Vector3(73.0, 0.0, -70.5), 1.0, false)
+	_sign_post(root, Vector3(70.0, 0.0, -34.0), -90.0, "SK8 ONLY")
+	return root
+
+
+## A food truck, length along local X, serving window and awning on its +Z side. Visual only.
+static func _food_truck(parent: Node3D, at: Vector3, yaw_deg: float) -> void:
+	var t := Node3D.new()
+	t.name = "FoodTruck"
+	t.position = at
+	t.rotation_degrees = Vector3(0.0, yaw_deg, 0.0)
+	parent.add_child(t)
+	var cream := Color("f4ecd8")
+	_vbox(t, Vector3(0.0, 1.35, 0.0), Vector3(5.2, 1.9, 2.1), cream, false, "Box")
+	_vbox(t, Vector3(0.0, 0.62, 0.0), Vector3(5.24, 0.5, 2.14), TRUCK_TRIM, false, "Skirt")
+	_vbox(t, Vector3(-0.2, 2.34, 0.0), Vector3(4.9, 0.1, 2.2), TRUCK_BODY, false, "Roof")
+	_vbox(t, Vector3(3.15, 0.95, 0.0), Vector3(1.2, 1.3, 2.0), TRUCK_BODY, false, "Cab")
+	_vbox(t, Vector3(3.5, 1.5, 0.0), Vector3(0.5, 0.55, 1.7), Color("8fd0e0"), false, "Windscreen")
+	_vbox(t, Vector3(-0.3, 1.5, 1.07), Vector3(2.6, 0.8, 0.06), Color("2c3050"), false, "Window")
+	_vbox(t, Vector3(-0.3, 1.1, 1.14), Vector3(2.8, 0.08, 0.3), Color("d9cfbd"), false, "Counter")
+	for k: int in 7:
+		var c: Color = TRUCK_TRIM if k % 2 == 0 else Color("fff4dc")
+		var m := BoxMesh.new()
+		m.size = Vector3(0.4, 0.06, 0.7)
+		var mi := MeshInstance3D.new()
+		mi.name = "Awn%d" % k
+		mi.mesh = m
+		mi.position = Vector3(-1.5 + float(k) * 0.4, 2.05, 1.42)
+		mi.rotation.x = 0.45
+		mi.material_override = Toon.material(c, false)
+		t.add_child(mi)
+	for wx: float in [-1.7, 2.9]:
+		var wm := CylinderMesh.new()
+		wm.top_radius = 0.38
+		wm.bottom_radius = 0.38
+		wm.height = 0.3
+		wm.radial_segments = 10
+		wm.rings = 1
+		for wz: float in [-1.0, 1.0]:
+			var w := MeshInstance3D.new()
+			w.name = "Wheel"
+			w.mesh = wm
+			w.position = Vector3(wx, 0.38, wz)
+			w.rotation.x = PI * 0.5
+			w.material_override = Toon.material(TYRE, false)
+			t.add_child(w)
+	var label := Label3D.new()
+	label.name = "TruckLabel"
+	label.text = "SURF TACOS"
+	label.font_size = 48
+	label.pixel_size = 0.008
+	label.outline_size = 8
+	label.modulate = Color("e8665a")
+	label.position = Vector3(-0.3, 2.0, 1.1)
+	t.add_child(label)
+	t.add_child(decal("sticker_smile", 0.5, Vector3(-2.2, 1.2, 1.065), 0.0, "TruckSticker"))
+
+
+## A utility box, 0.9 x 1.4 x 0.5, front toward local +Z, two stickers and a tag on the front. Visual only.
+static func _elec_box(parent: Node3D, at: Vector3, yaw_deg: float, tag_id: String, sticker_id: String, _solid: bool = false) -> void:
+	var b := Node3D.new()
+	b.name = "ElecBox"
+	b.position = at
+	b.rotation_degrees = Vector3(0.0, yaw_deg, 0.0)
+	parent.add_child(b)
+	_vbox(b, Vector3(0.0, 0.7, 0.0), Vector3(0.9, 1.4, 0.5), BOX_GREY, false, "Body")
+	_vbox(b, Vector3(0.0, 1.43, 0.0), Vector3(1.0, 0.08, 0.6), BOX_GREY.darkened(0.25), false, "Cap")
+	_vbox(b, Vector3(0.0, 0.05, 0.0), Vector3(1.0, 0.1, 0.6), Color("5a5a6a"), false, "Foot")
+	b.add_child(decal(tag_id, 0.8, Vector3(0.0, 0.85, 0.265), 0.0, "Tag"))
+	b.add_child(decal(sticker_id, 0.28, Vector3(-0.28, 0.3, 0.265), 0.0, "StickerA"))
+	b.add_child(decal("sticker_heart" if sticker_id != "sticker_heart" else "sticker_star", 0.24, Vector3(0.25, 1.2, 0.265), 0.0, "StickerB"))
+
+
+static func _picnic(parent: Node3D, at: Vector3) -> void:
+	var p := Node3D.new()
+	p.name = "PicnicTable"
+	p.position = at
+	parent.add_child(p)
+	_vbox(p, Vector3(0.0, 0.75, 0.0), Vector3(1.8, 0.07, 0.8), CORAL, false, "Top")
+	_vbox(p, Vector3(0.0, 0.45, 0.65), Vector3(1.8, 0.06, 0.3), CORAL, false, "SeatA")
+	_vbox(p, Vector3(0.0, 0.45, -0.65), Vector3(1.8, 0.06, 0.3), CORAL, false, "SeatB")
+	for x: float in [-0.7, 0.7]:
+		_vbox(p, Vector3(x, 0.38, 0.0), Vector3(0.07, 0.76, 1.2), NAVY, false, "Leg")
+	_vbox(p, Vector3(0.0, 1.9, 0.0), Vector3(0.05, 2.3, 0.05), NAVY, false, "UmbrellaPole")
+	var um := CylinderMesh.new()
+	um.top_radius = 0.06
+	um.bottom_radius = 1.2
+	um.height = 0.35
+	um.radial_segments = 8
+	um.rings = 1
+	var umi := MeshInstance3D.new()
+	umi.name = "Umbrella"
+	umi.mesh = um
+	umi.position = Vector3(0.0, 3.0, 0.0)
+	umi.material_override = Toon.material(TEAL, false)
+	p.add_child(umi)
+
+
+static func _sign_post(parent: Node3D, at: Vector3, yaw_deg: float, text: String) -> void:
+	var s := Node3D.new()
+	s.name = "SignPost"
+	s.position = at
+	s.rotation_degrees = Vector3(0.0, yaw_deg, 0.0)
+	parent.add_child(s)
+	_vbox(s, Vector3(0.0, 1.1, 0.0), Vector3(0.08, 2.2, 0.08), NAVY, false, "Post")
+	_vbox(s, Vector3(0.0, 2.15, 0.0), Vector3(1.9, 0.6, 0.07), SUNNY, false, "Board")
+	_vbox(s, Vector3(0.0, 2.15, -0.01), Vector3(1.98, 0.68, 0.04), NAVY, false, "Rim")
+	var l := Label3D.new()
+	l.name = "Text"
+	l.text = text
+	l.font_size = 40
+	l.pixel_size = 0.008
+	l.outline_size = 0
+	l.modulate = NAVY
+	l.position = Vector3(0.0, 2.15, 0.045)
+	s.add_child(l)
 
 
 # --------------------------------------------------------------------------------------------------------------- graffiti
