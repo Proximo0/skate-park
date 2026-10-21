@@ -98,6 +98,7 @@ func test_manual_pad_zones_on_each_end() -> void:
 		var z_max: float = cs.position.z + box.size.z * 0.5
 		if z.get_meta("zone_id") == "manual_pad_a":
 			assert_near(z_min, 0.0, 0.0001, "zone a at z = 0 end")
+			assert_near(z_max, 3.0, 0.0001, "zone a covers the first half, where an ollie lands into a manual")
 		else:
 			assert_near(z_max, 6.0, 0.0001, "zone b at z = length end")
 

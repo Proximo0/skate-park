@@ -1489,6 +1489,7 @@ func _on_combo_bailed() -> void:
 
 
 func _on_state_changed(from: SkateState.State, to: SkateState.State) -> void:
+	_restart_gaps_in_zones()
 	if from == SkateState.State.GRIND:
 		_ev("grind_end")
 	if to == SkateState.State.WALK or from == SkateState.State.WALK:
@@ -1507,6 +1508,16 @@ func _on_state_changed(from: SkateState.State, to: SkateState.State) -> void:
 			_ev("bail")
 		_:
 			pass
+
+
+## A state change inside a gap zone (an ollie landing into a manual on a pad) can start a gap that needs that state.
+func _restart_gaps_in_zones() -> void:
+	if not is_inside_tree():
+		return
+	for z: Node in get_tree().get_nodes_in_group("gap_zone"):
+		var a := z as Area3D
+		if a != null and a.monitoring and a.overlaps_body(self):
+			gaps.start_in_zone(str(a.get_meta("zone_id", "")), state.state_name(), _t)
 
 
 func _on_zone_entered(body: Node3D, area: Area3D) -> void:

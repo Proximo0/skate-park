@@ -34,6 +34,7 @@ const LAND_H: float = 3.0  ## landing top edge height
 const LAND_DEG: float = 30.0  ## landing slope at its top edge
 const LAND_STEPS: int = 24
 const RUNOUT_LEN: float = 10.0  ## flat between the landing and the quarter pipe
+const RUNOUT_ZONE_START: float = 5.0  ## mega_runout begins this far past the landing, so the Mega Gap combo close (0.35 s) is over first
 const QP_RADIUS_FRAC: float = 0.8  ## quarter pipe radius = this * qp_height
 const QP_DECK: float = 3.0  ## deck behind the coping
 const SIDE_RAIL_H: float = 0.9
@@ -87,7 +88,7 @@ static func build(width: float = 8.0, start_height: float = 18.0, gap: float = 1
 	root.add_child(_landing(width, L))
 	# Extra gap zones so the data can pair them: "mega_land" over the landing's top, "mega_runout" over the flat after it.
 	root.add_child(PieceKit.gap_zone("mega_land", Vector3(0.0, 0.0, float(L["land_top_z"])), Vector3(width, 6.0, 6.0)))
-	root.add_child(PieceKit.gap_zone("mega_runout", Vector3(0.0, 0.0, float(L["land_bottom_z"]) + 1.0), Vector3(width, 2.0, RUNOUT_LEN - 3.0)))
+	root.add_child(PieceKit.gap_zone("mega_runout", Vector3(0.0, 0.0, float(L["land_bottom_z"]) + RUNOUT_ZONE_START), Vector3(width, 2.0, RUNOUT_LEN - RUNOUT_ZONE_START - 2.0)))
 	root.add_child(PieceKit.floor_pad(Vector3(0.0, -0.5, float(L["land_bottom_z"])), Vector3(width, 0.5, RUNOUT_LEN), PieceKit.CONCRETE, "RunOutFloor"))
 	_quarter_pipe(root, width, qp_height, L)
 	return root

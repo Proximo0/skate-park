@@ -95,6 +95,14 @@ func enter_zone(zone_id: String, state_name: String, now: float) -> Array:
 	return completed
 
 
+## Registers starts for gaps that begin in `zone_id` and require `state_name`, for a player already inside the
+## zone who has just switched into that state (landing into a manual on a pad). Never completes a gap.
+func start_in_zone(zone_id: String, state_name: String, now: float) -> void:
+	for gap: Dictionary in _gaps:
+		if gap["start_zone"] == zone_id and gap["require"] == state_name:
+			_pending[str(gap["id"])] = {"time": now, "state": state_name}
+
+
 ## Clears all pending start entries (call when a combo lands or bails).
 func reset_combo() -> void:
 	_pending.clear()

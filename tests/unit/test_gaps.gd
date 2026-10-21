@@ -162,3 +162,20 @@ func test_load_default_reads_real_json() -> void:
 		assert_eq(first["id"], "over_the_funbox")
 		assert_eq(first["points"], 300)
 		assert_eq(first["name"], "Over The Funbox")
+
+
+func test_start_in_zone_lets_a_landing_into_the_required_state_start_a_gap() -> void:
+	var g: Gaps = _gaps_test_make([_gaps_test_gap("m", "a", "b", "MANUAL", 5.0)])
+	g.enter_zone("a", "AIR", 0.0)
+	assert_eq(g.enter_zone("b", "MANUAL", 1.0).size(), 0, "an AIR entry cannot start a manual gap")
+	g.enter_zone("a", "AIR", 2.0)
+	g.start_in_zone("a", "MANUAL", 2.1)
+	assert_eq(g.enter_zone("b", "MANUAL", 3.0).size(), 1, "landing into a manual inside the start zone counts")
+
+
+func test_start_in_zone_ignores_other_states_and_never_completes() -> void:
+	var g: Gaps = _gaps_test_make([_gaps_test_gap("m", "a", "a", "MANUAL", 5.0)])
+	g.start_in_zone("a", "GRIND", 0.0)
+	assert_eq(g._pending.size(), 0, "wrong state registers nothing")
+	g.start_in_zone("a", "MANUAL", 0.0)
+	assert_eq(g._pending.size(), 1, "the matching state registers a start")

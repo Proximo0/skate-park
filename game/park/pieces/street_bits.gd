@@ -44,7 +44,7 @@ static func ledge(length: float = 8.0, height: float = 0.5, depth: float = 0.8, 
 
 
 ## Low wide manual pad along Z. Chamfered top edges (45-degree bevel strips), ledge rails on both long sides.
-## Gap zones, if given, sit on each end of the top surface.
+## Gap zones, if given: zone_a covers the first half of the top (an ollie lands into a manual inside it), zone_b the far end.
 static func manual_pad(length: float = 6.0, width: float = 2.5, height: float = 0.3, zone_a: String = "", zone_b: String = "") -> Node3D:
 	var root := Node3D.new()
 	root.name = "ManualPad"
@@ -57,7 +57,7 @@ static func manual_pad(length: float = 6.0, width: float = 2.5, height: float = 
 	root.add_child(PieceKit.rail(PackedVector3Array([Vector3(0.0, height, 0.0), Vector3(0.0, height, length)]), "ledge", "LedgeLeft"))
 	root.add_child(PieceKit.rail(PackedVector3Array([Vector3(width, height, 0.0), Vector3(width, height, length)]), "ledge", "LedgeRight"))
 	if zone_a != "":
-		root.add_child(PieceKit.gap_zone(zone_a, Vector3(0.0, height, 0.0), Vector3(width, GAP_ZONE_HEIGHT, FLAT_RAIL_END)))
+		root.add_child(PieceKit.gap_zone(zone_a, Vector3(0.0, height, 0.0), Vector3(width, GAP_ZONE_HEIGHT, length * 0.5)))
 	if zone_b != "":
 		root.add_child(PieceKit.gap_zone(zone_b, Vector3(0.0, height, length - FLAT_RAIL_END), Vector3(width, GAP_ZONE_HEIGHT, FLAT_RAIL_END)))
 	return root
