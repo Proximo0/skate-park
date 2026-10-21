@@ -52,6 +52,7 @@ func _ready() -> void:
 	_fences()
 	_boundary()
 	_decor()
+	_dressing()
 	_collectibles()
 
 
@@ -331,6 +332,11 @@ static func _wall_body(node_name: String, centre: Vector3, size: Vector3) -> Sta
 	cs.shape = shape
 	body.add_child(cs)
 	return body
+
+
+## Graffiti, trash cans, litter and parked cars (game/park/pieces/dressing.gd). Not tracked in `placed`.
+func _dressing() -> void:
+	add_child(ParkDressing.build(placed))
 
 
 func _decor() -> void:
