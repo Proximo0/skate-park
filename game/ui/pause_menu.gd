@@ -85,6 +85,16 @@ func _build() -> void:
 	drop_loop.pressed.connect(_on_drop_in_pressed.bind("loop"))
 	col.add_child(drop_loop)
 
+	var hair_btn := _pause_button("", UiStyle.SKY_BLUE, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	_set_toggle_text(hair_btn, "Hair physics", GameSettings.hair_on())
+	hair_btn.pressed.connect(_on_toggle.bind(hair_btn, "Hair physics", true))
+	col.add_child(hair_btn)
+
+	var body_btn := _pause_button("", UiStyle.SKY_BLUE, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	_set_toggle_text(body_btn, "Body physics", GameSettings.body_on())
+	body_btn.pressed.connect(_on_toggle.bind(body_btn, "Body physics", false))
+	col.add_child(body_btn)
+
 	_controls_button = _pause_button("Controls", UiStyle.SKY_BLUE)
 	_controls_button.pressed.connect(_on_controls_pressed)
 	col.add_child(_controls_button)
@@ -94,7 +104,7 @@ func _build() -> void:
 	col.add_child(quit)
 
 	# Up and down wrap around the buttons.
-	var buttons: Array[Button] = [_resume_button, restart, drop_mega, drop_loop, _controls_button, quit]
+	var buttons: Array[Button] = [_resume_button, restart, drop_mega, drop_loop, hair_btn, body_btn, _controls_button, quit]
 	var n: int = buttons.size()
 	for i: int in n:
 		var b: Button = buttons[i]
@@ -177,6 +187,19 @@ func _on_drop_in_pressed(spot: String) -> void:
 func _on_quit_pressed() -> void:
 	_hide_menu()
 	quit_requested.emit()
+
+
+func _set_toggle_text(b: Button, label: String, on: bool) -> void:
+	b.text = "%s: %s" % [label, "On" if on else "Off"]
+
+
+func _on_toggle(b: Button, label: String, hair: bool) -> void:
+	var on: bool = not (GameSettings.hair_on() if hair else GameSettings.body_on())
+	if hair:
+		GameSettings.set_hair(on)
+	else:
+		GameSettings.set_body(on)
+	_set_toggle_text(b, label, on)
 
 
 func _on_controls_pressed() -> void:

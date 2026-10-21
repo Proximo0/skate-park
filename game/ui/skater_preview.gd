@@ -119,6 +119,9 @@ func _rebuild() -> void:
 		poser.board = board
 		poser.preview_anim = "crouch"
 		root.add_child(poser)
+		var sway: SecondaryMotion = SecondaryMotion.new()
+		root.add_child(sway)
+		sway.bind(root)
 	else:
 		Toon.apply_to(root)
 		root.rotation.x = deg_to_rad(-22.0)

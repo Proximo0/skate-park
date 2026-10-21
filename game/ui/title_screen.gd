@@ -7,6 +7,7 @@ const GAME_SCENE: String = "res://game/main.tscn"
 const CONTROLS_SCRIPT: String = "res://game/ui/controls_screen.gd"
 const CREATOR_SCRIPT: String = "res://game/ui/character_creator.gd"
 const SHOP_SCRIPT: String = "res://game/ui/skate_shop.gd"
+const SHOP_SCENE: String = "res://game/shop/shop.tscn"  ## the walk-in shop
 const TITLE: String = "SKATE PARK"
 const SUBTITLE: String = "Shred. Grind. Have fun!"
 const TITLE_COLORS: PackedColorArray = [
@@ -33,6 +34,7 @@ const BUTTON_FONT_SIZE: int = 48
 @onready var _play: Button = $Ui/Menu/Play
 @onready var _create: Button = $Ui/Menu/Create
 @onready var _shop: Button = $Ui/Menu/Shop
+@onready var _visit: Button = $Ui/Menu/Visit
 @onready var _controls: Button = $Ui/Menu/Controls
 @onready var _quit: Button = $Ui/Menu/Quit
 
@@ -56,11 +58,13 @@ func _ready() -> void:
 	_style_button(_play, UiStyle.LIME)
 	_style_button(_create, UiStyle.SKY_BLUE)
 	_style_button(_shop, UiStyle.SUNSHINE)
+	_style_button(_visit, Color("#FF9F1C"))
 	_style_button(_controls, Color("#B79CFF"))
 	_style_button(_quit, UiStyle.BUBBLEGUM)
 	_play.pressed.connect(_on_play)
 	_create.pressed.connect(_open_overlay.bind(CREATOR_SCRIPT, _create))
 	_shop.pressed.connect(_open_overlay.bind(SHOP_SCRIPT, _shop))
+	_visit.pressed.connect(_on_visit_shop)
 	_controls.pressed.connect(_on_controls)
 	_quit.pressed.connect(_on_quit)
 	_play.grab_focus()
@@ -130,6 +134,9 @@ func _build_skater(vp: SubViewport) -> void:
 	poser.board = board
 	poser.preview_anim = "crouch"
 	skater.add_child(poser)
+	var sway := SecondaryMotion.new()
+	skater.add_child(sway)
+	sway.bind(skater)
 	vp.add_child(skater)
 	_skater_node = skater
 
@@ -196,6 +203,14 @@ func _on_play() -> void:
 		return
 	_leaving = true
 	get_tree().change_scene_to_file(GAME_SCENE)
+
+
+## Walks into the 3D skate shop (game/shop/shop.tscn).
+func _on_visit_shop() -> void:
+	if _leaving:
+		return
+	_leaving = true
+	get_tree().change_scene_to_file(SHOP_SCENE)
 
 
 func _on_controls() -> void:

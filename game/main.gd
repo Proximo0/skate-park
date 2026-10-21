@@ -108,6 +108,10 @@ func _attach_poser() -> void:
 	poser.board = visual.get_node_or_null("Skateboard")
 	if poser.body != null and poser.board != null:
 		skater.add_child(poser)
+	var sway := SecondaryMotion.new()  # visual-only hair and body sway; not in the physics snapshot
+	sway.name = "SecondaryMotion"
+	skater.add_child(sway)
+	sway.bind(visual)
 
 
 func _setup_goals() -> void:
