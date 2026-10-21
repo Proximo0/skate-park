@@ -17,3 +17,4 @@ The full build guide is a Claude Doc: https://claude.ai/artifact/WtmrkVRtizP8oJB
 | A fix looked plausible but the bug predated the changed code | Check git history for when a bug first appeared. |
 | Feel bugs were found by the player, not by us | Build the debug layer and the bot before content: tunables, debug frame, snapshot/replay, recorder, overlay, lab, bot. |
 | Ramps had knife-edge side walls under 0.3 m | Piece rule: no collision edge under the skater's radius, side walls run below ground, no coplanar floors. |
+| A gap needing MANUAL at its start was unreachable: the rider enters the zone in AIR, then lands into the manual inside it | Gaps.start_in_zone runs on every state change for zones the rider is inside; size start zones to cover where the landing happens |
