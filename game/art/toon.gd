@@ -11,10 +11,13 @@ const INK: Color = Color(0.106, 0.106, 0.184, 1.0)
 
 static var _outline_material: ShaderMaterial = null
 static var _cache: Dictionary = {}
+## Ink outlines are off by default (the playtest found they made the scene look busier, not better).
+## set_outlines() switches every toon material that asked for one; F5 does this in game.
+static var outlines_enabled: bool = false
 
 
-## Toon material for a flat colour. With outline, the ink outline pass is its next_pass. Cached per colour:
-## the same colour and outline flag return the same instance.
+## Toon material for a flat colour. With outline (and outlines_enabled), the ink outline pass is its next_pass.
+## Cached per colour: the same colour and outline flag return the same instance.
 static func material(color: Color, outline: bool = true) -> ShaderMaterial:
 	var key: String = "%s|%s" % [color.to_html(true), str(outline)]
 	if _cache.has(key):
@@ -22,10 +25,18 @@ static func material(color: Color, outline: bool = true) -> ShaderMaterial:
 	var mat: ShaderMaterial = ShaderMaterial.new()
 	mat.shader = TOON_SHADER
 	mat.set_shader_parameter("albedo", color)
-	if outline:
+	if outline and outlines_enabled:
 		mat.next_pass = _shared_outline()
 	_cache[key] = mat
 	return mat
+
+
+## Turns the ink outline on or off for every toon material made with outline = true, now and from here on.
+static func set_outlines(on: bool) -> void:
+	outlines_enabled = on
+	for key: String in _cache:
+		if key.ends_with("|true"):
+			(_cache[key] as ShaderMaterial).next_pass = _shared_outline() if on else null
 
 
 ## Replaces the material of every MeshInstance3D under root (root included) with a toon material that keeps

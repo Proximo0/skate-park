@@ -8,7 +8,7 @@ const LAYER: int = 127
 const FONT_SIZE: int = 15
 const PLATE_COLOR := Color(0.05, 0.06, 0.09, 0.8)
 
-var outlines: bool = true
+var outlines: bool = Toon.outlines_enabled
 var particles: bool = true
 var msaa: bool = true
 var shadows: bool = true
@@ -16,7 +16,6 @@ var labels: bool = true
 var see_through: bool = true
 
 var _label: Label
-var _saved_passes: Dictionary = {}  ## toon material -> its outline next_pass
 var _saved_msaa: Viewport.MSAA = Viewport.MSAA_DISABLED
 
 
@@ -72,13 +71,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func set_outlines(on: bool) -> void:
 	outlines = on
-	for key: String in Toon._cache:
-		var mat: ShaderMaterial = Toon._cache[key]
-		if on and _saved_passes.has(mat):
-			mat.next_pass = _saved_passes[mat]
-		elif not on and mat.next_pass != null:
-			_saved_passes[mat] = mat.next_pass
-			mat.next_pass = null
+	Toon.set_outlines(on)
 	_refresh()
 
 

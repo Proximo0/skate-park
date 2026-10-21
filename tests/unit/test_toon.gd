@@ -2,11 +2,19 @@ extends TestCase
 
 
 func test_material_is_shader_material_with_outline_next_pass() -> void:
+	Toon.set_outlines(true)
 	var mat: ShaderMaterial = Toon.material(Color.RED)
 	assert_true(mat != null, "material returned")
 	assert_true(mat.shader != null, "toon shader set")
 	assert_true(mat.next_pass != null, "outline next_pass set")
 	assert_true(mat.next_pass is ShaderMaterial, "next_pass is a ShaderMaterial")
+	Toon.set_outlines(false)
+	assert_true(mat.next_pass == null, "outlines off clears the pass")
+
+
+func test_outlines_off_by_default() -> void:
+	assert_false(Toon.outlines_enabled, "outlines start off")
+	assert_true(Toon.material(Color(0.3, 0.1, 0.9)).next_pass == null, "no outline pass while off")
 
 
 func test_material_without_outline_has_no_next_pass() -> void:
@@ -70,7 +78,9 @@ func test_sky_environment_is_bright_sky() -> void:
 
 
 func test_outline_is_screen_width_with_depth_push() -> void:
+	Toon.set_outlines(true)
 	var outline: ShaderMaterial = Toon.material(Color.GREEN).next_pass as ShaderMaterial
+	Toon.set_outlines(false)
 	assert_true(outline != null, "outline material present")
 	if outline == null:
 		return

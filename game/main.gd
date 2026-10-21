@@ -23,6 +23,7 @@ func _ready() -> void:
 		add_child(park)
 		skater = _make_skater((park as Park).spawn)
 		add_child(skater)
+	_skater_only_shadows()
 	_attach_poser()
 	var cam := SkateCamera.new()
 	cam.name = "SkateCamera"
@@ -46,6 +47,7 @@ func _ready() -> void:
 	pause.quit_requested.connect(func() -> void: get_tree().change_scene_to_file("res://game/ui/title_screen.tscn"))
 	add_child(FrameStamp.new())
 	add_child(RenderToggles.new())
+	add_child(TuningPanel.new())
 	_setup_goals()
 
 
@@ -130,3 +132,13 @@ func _drop_in(spot: String) -> void:
 	var spots: Dictionary = (park as Park).drop_ins
 	if spots.has(spot):
 		DropIn.teleport(skater, spots[spot] as Transform3D)
+
+
+## Only the skater casts a shadow: it shows where you'll land, while park shadows only cluttered the scene
+## (playtest feedback). The ground still receives it. A shorter shadow range keeps it crisp.
+func _skater_only_shadows() -> void:
+	for n: Node in park.find_children("*", "GeometryInstance3D", true, false):
+		if not skater.is_ancestor_of(n):
+			(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for n: Node in park.find_children("*", "DirectionalLight3D", true, false):
+		(n as DirectionalLight3D).directional_shadow_max_distance = 40.0
