@@ -117,7 +117,7 @@ static func _roll_in(width: float, start_height: float, L: Dictionary) -> Node3D
 	var curve: PackedVector2Array = _roll_curve(start_height)
 	for p: Vector2 in curve:
 		prof.append(p)
-	var tower: StaticBody3D = PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_SIDE, "RollIn")
+	var tower: StaticBody3D = shade_by_height(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_SIDE, "RollIn"), PieceKit.RAMP_SIDE, start_height, 0.74, 1.12)
 	node.add_child(tower)
 	# Visual handrails along the roll-in (no collision, no grind rails).
 	for x: float in [SIDE_RAIL_INSET, width - SIDE_RAIL_INSET]:
@@ -253,7 +253,7 @@ static func _kicker(width: float, L: Dictionary) -> StaticBody3D:
 	for i: int in KICK_STEPS + 1:
 		var a: float = th * float(i) / float(KICK_STEPS)
 		prof.append(Vector2(r * (1.0 - cos(a)), z0 + r * sin(a)))
-	return PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.PAINT_YELLOW, "Kicker")
+	return shade_by_height(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.PAINT_YELLOW, "Kicker"), PieceKit.PAINT_YELLOW, KICK_H, 0.78, 1.0)
 
 
 static func _landing(width: float, L: Dictionary) -> StaticBody3D:
@@ -267,7 +267,7 @@ static func _landing(width: float, L: Dictionary) -> StaticBody3D:
 	for i: int in LAND_STEPS + 1:
 		var b: float = th * (1.0 - float(i) / float(LAND_STEPS))
 		prof.append(Vector2(r * (1.0 - cos(b)), bottom_z - r * sin(b)))
-	return PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_WOOD, "Landing")
+	return shade_by_height(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_WOOD, "Landing"), PieceKit.RAMP_WOOD, LAND_H, 0.8, 1.05)
 
 
 static func _gap(root: Node3D, width: float, L: Dictionary) -> void:
@@ -305,13 +305,37 @@ static func _quarter_pipe(root: Node3D, width: float, qp_height: float, L: Dicti
 		prof.append(Vector2(r * (1.0 - cos(th)), a + r * sin(th)))
 	prof.append(Vector2(qp_height, lip_z))
 	prof.append(Vector2(qp_height, end_z))
-	root.add_child(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_WOOD, "QuarterPipe"))
+	root.add_child(shade_by_height(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_WOOD, "QuarterPipe"), PieceKit.RAMP_WOOD, qp_height, 0.72, 1.05))
 	root.add_child(PieceKit.rail(PackedVector3Array([Vector3(0.0, qp_height, lip_z), Vector3(width, qp_height, lip_z)]), "coping", "Coping"))
 	var pipe: Node3D = PieceKit.round_rail(Vector3(0.0, qp_height, lip_z), Vector3(width, qp_height, lip_z), 0.05, PieceKit.COPING, "CopingPipe")
 	# the visual pipe only; the GrindRail above is the coping line
 	pipe.get_node("Line").free()
 	root.add_child(pipe)
 	root.add_child(PieceKit.gap_zone("mega_qp_air", Vector3(0.0, qp_height, lip_z - 1.0), Vector3(width, 3.0, 2.0)))
+
+
+## Gives a body's mesh a vertical gradient through vertex colour: a darker, cooler base where the surface meets the
+## ground, and a lighter tone near the top (coping), so big flat surfaces read as form instead of one flat colour.
+static func shade_by_height(sb: StaticBody3D, color: Color, top_y: float, base_mul: float = 0.66, top_mul: float = 1.1) -> StaticBody3D:
+	var mi: MeshInstance3D = sb.get_node("Mesh") as MeshInstance3D
+	var src: ArrayMesh = mi.mesh as ArrayMesh
+	if src == null or src.get_surface_count() == 0:
+		return sb
+	var arrays: Array = src.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var cols := PackedColorArray()
+	cols.resize(verts.size())
+	for i: int in verts.size():
+		var t: float = clampf(verts[i].y / maxf(top_y, 0.01), 0.0, 1.0)
+		var m: float = lerpf(base_mul, top_mul, smoothstep(0.0, 1.0, t))
+		# darker bases also shift cooler/more saturated, lighter tops warm up a touch
+		cols[i] = Color(clampf(m * lerpf(0.92, 1.03, t), 0.0, 1.5), clampf(m, 0.0, 1.5), clampf(m * lerpf(1.04, 0.97, t), 0.0, 1.5))
+	arrays[Mesh.ARRAY_COLOR] = cols
+	var out := ArrayMesh.new()
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mi.mesh = out
+	mi.material_override = Toon.material_vc(color)
+	return sb
 
 
 static func _visual_box(min_corner: Vector3, size: Vector3, color: Color, node_name: String) -> MeshInstance3D:

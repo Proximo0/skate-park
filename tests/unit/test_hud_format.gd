@@ -34,3 +34,16 @@ func test_balance_meter_is_vertical_only_for_manual() -> void:
 	assert_false(Hud.balance_is_vertical("grind"))
 	assert_false(Hud.balance_is_vertical("lip"))
 	assert_false(Hud.balance_is_vertical(""))
+
+
+func test_zero_point_landing_spawns_no_pop() -> void:
+	var tree: SceneTree = Engine.get_main_loop() as SceneTree
+	var hud: Hud = Hud.new()
+	tree.root.add_child(hud)
+	hud._land_points = 0
+	hud._flush_landing()
+	assert_eq(hud._fx.get_child_count(), 0, "0-point landing shows nothing")
+	hud._land_points = 150
+	hud._flush_landing()
+	assert_true(hud._fx.get_child_count() > 0, "a real landing still pops")
+	hud.queue_free()

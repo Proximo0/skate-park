@@ -16,13 +16,14 @@ const LAND_TAG_SKETCHY: Color = Color(1.0, 0.55, 0.2)
 const BANNER_HOLD: float = 2.2
 const SPECIAL_W: int = 44
 const SPECIAL_H: int = 380
-const BAL_W: int = 520
+const BAL_W: int = 340
 const BAL_H: int = 40
 const BAL_TALL_W: int = 40
 const BAL_TALL_H: int = 320
 const BAL_HORIZ_Y: float = 0.15  ## screen height fraction for the horizontal balance meter
 const BAL_MANUAL_X: float = 300.0  ## pixels right of centre for the manual (vertical) meter
-const TRICK_Y: float = 0.255
+const COMBO_BOTTOM: float = 22.0  ## px (1080 layout) between the combo readout and the screen bottom
+const TRICK_Y: float = 0.265
 const FLOAT_Y: float = 0.78
 const BANNER_TOP: float = 215.0  ## px (1080 layout) under the score chip, away from the centre readouts
 const TRACK_COLOUR := SkateThemeBuilder.CREAM
@@ -37,6 +38,9 @@ var _root: Control
 var _fx: Control
 var _score_value: Label
 var _gaps_label: Label
+var _pending_label: Label  ## live combo value (base x mult) under the SCORE chip while a combo is open
+var _pending_text: String = ""
+var _pop_text: String = ""
 var _combo_box: VBoxContainer
 var _combo_trick: Label
 var _combo_pts: AnimeText
@@ -238,8 +242,14 @@ func _update_trick_hold(delta: float) -> void:
 func _update_combo(combo: Combo) -> void:
 	var active: bool = combo.is_active()
 	_combo_box.visible = active
+	_pending_label.visible = active
 	if active:
-		_combo_trick.text = combo.display_text()
+		var names: String = combo.display_text()
+		## The big pop already shows the newest trick: drop the small duplicate when it is the same single word.
+		_combo_trick.visible = not (_trick_shown and names.to_upper() == _pop_text)
+		_combo_trick.text = names
+		_pending_text = "+" + format_points(combo.total())
+		_pending_label.text = _pending_text
 		_combo_pts.text = combo_line(combo.base_sum(), combo.multiplier())
 
 
@@ -266,7 +276,8 @@ func _update_balance() -> void:
 	var vertical: bool = balance_is_vertical(kind)
 	if vertical != _vertical_balance:
 		_apply_balance_layout(vertical)
-	_bal_title.text = "MANUAL" if vertical else "BALANCE"
+	_bal_title.text = "MANUAL"
+	_bal_title.visible = vertical  ## the horizontal bar is compact: no title, keeps the skater clear
 	_bal_view.angle = _skater.balance.angle
 	_bal_view.queue_redraw()
 
@@ -347,6 +358,9 @@ func _build_score() -> void:
 	col.add_child(UiStyle.label("SCORE", UiStyle.SIZE_SMALL, UiStyle.WHITE))
 	_score_value = UiStyle.label("0", UiStyle.SIZE_BIG, UiStyle.WHITE)
 	col.add_child(_score_value)
+	_pending_label = UiStyle.label("", UiStyle.SIZE_BODY, UiStyle.SUNSHINE)
+	_pending_label.visible = false
+	col.add_child(_pending_label)
 
 
 func _build_gaps() -> void:
@@ -364,6 +378,8 @@ func _build_combo() -> void:
 	_combo_box.add_theme_constant_override("separation", 0)
 	_combo_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_anchor_bottom_centre(_combo_box)
+	_combo_box.offset_top = -COMBO_BOTTOM
+	_combo_box.offset_bottom = -COMBO_BOTTOM
 	_combo_box.visible = false
 	_root.add_child(_combo_box)
 	_combo_trick = UiStyle.label("", COMBO_TRICK_SIZE, UiStyle.WHITE)
@@ -495,11 +511,27 @@ func _flush_landing() -> void:
 		return
 	var pts: int = _land_points
 	_land_points = -1
+	if pts <= 0:
+		_land_result = "clean"
+		return
 	var sketchy: bool = _land_result == "sketchy"
 	_land_result = "clean"
+	_fly_pending_to_score(pts)
 	var size: int = land_size(pts)
 	_spawn_float("+%s!" % format_points(pts), LAND_TAG_SKETCHY if sketchy else UiStyle.LIME, false, size)
 	_spawn_tag("SKETCHY" if sketchy else "CLEAN!", LAND_TAG_SKETCHY if sketchy else LAND_TAG_CLEAN, sketchy)
+
+
+## The pending "+N" under the SCORE chip slides up into the score value and fades as the count-up starts.
+func _fly_pending_to_score(pts: int) -> void:
+	var lbl: Label = UiStyle.label("+" + format_points(pts), UiStyle.SIZE_BODY, UiStyle.SUNSHINE)
+	_fx.add_child(lbl)
+	lbl.global_position = _pending_label.global_position
+	var target: Vector2 = _score_value.global_position + Vector2(0.0, 6.0)
+	var fly := lbl.create_tween().set_parallel(true)
+	fly.tween_property(lbl, "global_position", target, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	fly.tween_property(lbl, "modulate:a", 0.0, 0.2).set_delay(0.3)
+	fly.finished.connect(lbl.queue_free)
 
 
 ## Font size of the +N! pop: grows with the combo, from SIZE_BIG up to 1.5 x SIZE_TITLE.
@@ -535,7 +567,8 @@ func _on_gap_hit(gap_name: String, points: int) -> void:
 func _pop_trick(text: String) -> void:
 	if _trick_tween != null and _trick_tween.is_valid():
 		_trick_tween.kill()
-	_trick_pop.pop(text.to_upper())
+	_pop_text = text.to_upper()
+	_trick_pop.pop(_pop_text)
 	_trick_shown = true
 	_trick_hold_left = TRICK_HOLD
 

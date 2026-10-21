@@ -13,6 +13,9 @@ const COOLDOWN: float = 2.0
 const RADIUS: float = 1.8
 ## A drop-in starts with a small nudge so the skater rolls off the deck edge without having to push.
 const NUDGE_SPEED: float = 2.5
+const LABEL_Y: float = 3.6
+const HIDE_SPEED: float = 6.0  ## riding faster than this, away from the pad: the marker is hidden
+const HIDE_DIST: float = 6.0
 const GLOW := Color("ffb02e")
 
 @export var spot: String = ""
@@ -21,6 +24,9 @@ var held: float = 0.0
 var cooldown: float = 0.0
 
 var _skater: Skater
+var _label: Label3D
+var _beam: MeshInstance3D
+var _watch: Skater  ## any skater in the scene, found once: the label hides while it is riding the ramp
 var _disc: MeshInstance3D
 var _mat: StandardMaterial3D
 
@@ -85,17 +91,20 @@ func _ready() -> void:
 	beam_mi.material_override = bm
 	beam_mi.position.y = 2.5
 	add_child(beam_mi)
-	var lbl := Label3D.new()
-	lbl.name = "Label"
-	lbl.text = "DROP IN"
-	lbl.font_size = 96
-	lbl.pixel_size = 0.012
-	lbl.outline_size = 14
-	lbl.modulate = Color.WHITE
-	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.no_depth_test = false
-	lbl.position.y = 2.6
-	add_child(lbl)
+	_label = Label3D.new()
+	_label.name = "Label"
+	_label.text = "DROP IN"
+	_label.font_size = 110
+	_label.pixel_size = 0.012
+	_label.outline_size = 40
+	_label.outline_modulate = Color("1b1b2f")
+	_label.modulate = Color("fff3c4")
+	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_label.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS  # solid and depth-sorted, not a see-through sprite
+	_label.no_depth_test = false
+	_label.position.y = LABEL_Y
+	add_child(_label)
+	_beam = beam_mi
 	body_entered.connect(_on_enter)
 	body_exited.connect(_on_exit)
 
@@ -111,10 +120,29 @@ func _on_exit(body: Node3D) -> void:
 		held = 0.0
 
 
+## The label and beam only show while the skater is near the pad or slow: while already riding the ramp they would
+## hang in the sky and be clipped by the wall.
+func _update_marker() -> void:
+	if _label == null:
+		return
+	if (_watch == null or not is_instance_valid(_watch)) and Engine.get_physics_frames() % 30 == 0:
+		var found: Array[Node] = get_tree().root.find_children("*", "Skater", true, false) if is_inside_tree() else []
+		_watch = found[0] as Skater if not found.is_empty() else null
+	var show: bool = true
+	if _watch != null and is_instance_valid(_watch):
+		var d: float = Vector2(_watch.global_position.x - global_position.x, _watch.global_position.z - global_position.z).length()
+		var up: float = _watch.global_position.y - global_position.y
+		if up > 1.5 or (_watch.speed > HIDE_SPEED and d > HIDE_DIST):
+			show = false
+	_label.visible = show
+	_beam.visible = show
+
+
 func _physics_process(delta: float) -> void:
 	cooldown = maxf(cooldown - delta, 0.0)
 	var stopped: bool = _skater != null and cooldown <= 0.0 and _skater.velocity.length() < STOP_SPEED
 	held = held + delta if stopped else 0.0
+	_update_marker()
 	if _mat != null:
 		_mat.emission_energy_multiplier = 1.2 + 0.8 * sin(Time.get_ticks_msec() * 0.006) + held * 2.0
 	if held >= HOLD_TIME:

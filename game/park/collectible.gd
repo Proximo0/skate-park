@@ -10,6 +10,8 @@ const PICKUP_RADIUS: float = 0.7
 const SPIN_SPEED: float = 2.2
 const BOB_HEIGHT: float = 0.12
 const BOB_SPEED: float = 2.5
+const FADE_NEAR: float = 4.0  ## m from the camera inside which the pickup shrinks and fades so it never covers the view
+const FADE_FAR: float = 1.5  ## m: fully gone this close
 const POP_SCALE: float = 1.35
 const POP_TIME: float = 0.12
 const SHRINK_TIME: float = 0.1
@@ -59,6 +61,24 @@ func _process(delta: float) -> void:
 	_visual.position.y = sin(_phase) * BOB_HEIGHT
 	if _label != null:
 		_label.position.y = _visual.position.y
+	_fade_near_camera()
+
+
+## Fades and shrinks the pickup as the camera gets close, so it never fills the screen as it flashes past.
+func _fade_near_camera() -> void:
+	var cam: Camera3D = get_viewport().get_camera_3d() if is_inside_tree() else null
+	var k: float = 1.0
+	if cam != null:
+		var d: float = cam.global_position.distance_to(global_position)
+		k = smoothstep(FADE_FAR, FADE_NEAR, d)
+	var vis: bool = k > 0.02
+	_visual.visible = vis
+	if _label != null:
+		_label.visible = vis
+		_label.scale = Vector3.ONE * lerpf(0.4, 1.0, k)
+		_label.modulate = Color(LETTER_COLOR.r, LETTER_COLOR.g, LETTER_COLOR.b, k)
+		_label.outline_modulate = Color(OUTLINE_COLOR.r, OUTLINE_COLOR.g, OUTLINE_COLOR.b, k)
+	_visual.scale = Vector3.ONE * lerpf(0.4, 1.0, k)
 
 
 func _on_body_entered(body: Node3D) -> void:
@@ -76,21 +96,22 @@ func _on_body_entered(body: Node3D) -> void:
 
 func _build_letter() -> void:
 	# The coin spins; the letter is a billboard that stays readable from any angle, so it sits outside the spin.
-	var coin: MeshInstance3D = MeshInstance3D.new()
-	var disc: CylinderMesh = CylinderMesh.new()
-	disc.top_radius = 0.42
-	disc.bottom_radius = 0.42
-	disc.height = 0.12
-	coin.mesh = disc
-	coin.rotation_degrees.x = 90.0
-	coin.material_override = Toon.material(COIN_COLOR)
-	_visual.add_child(coin)
+	var ring: MeshInstance3D = MeshInstance3D.new()
+	var torus: TorusMesh = TorusMesh.new()
+	torus.inner_radius = 0.27
+	torus.outer_radius = 0.31
+	torus.rings = 24
+	torus.ring_segments = 6
+	ring.mesh = torus
+	ring.rotation_degrees.x = 90.0
+	ring.material_override = Toon.material(COIN_COLOR)
+	_visual.add_child(ring)
 
 	_label = Label3D.new()
 	_label.text = item
 	_label.font_size = 200
-	_label.pixel_size = 0.0045
-	_label.outline_size = 32
+	_label.pixel_size = 0.003
+	_label.outline_size = 24
 	_label.outline_modulate = OUTLINE_COLOR
 	_label.modulate = LETTER_COLOR
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED

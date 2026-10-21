@@ -5,7 +5,7 @@ extends CanvasLayer
 
 const FADE_LO: float = 12.0
 const FADE_HI: float = 24.0
-const MAX_ALPHA: float = 0.55
+const MAX_ALPHA: float = 0.5
 
 const SHADER_CODE: String = """
 shader_type canvas_item;
@@ -16,6 +16,8 @@ float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 void fragment() {
 	vec2 p = (UV - 0.5) * vec2(aspect, 1.0);
 	float r = length(p) / (0.5 * sqrt(aspect * aspect + 1.0));
+	// Lines converge on the vanishing point (a little above centre, where the skater looks) and thin out toward it.
+	p -= vec2(0.0, -0.04);
 	float ang = atan(p.y, p.x);
 	float cells = 90.0;
 	float f = (ang / 6.2831853 + 0.5) * cells;
@@ -26,8 +28,10 @@ void fragment() {
 	float line = smoothstep(width, 0.0, d);
 	float phase = fract(scroll * (0.8 + h) + h * 5.0);
 	float s = fract(r * 1.3 - phase);
+	float taper = smoothstep(0.0, 0.5, r);
+	line = smoothstep(width * (0.3 + 0.7 * taper), 0.0, d);
 	float seg = smoothstep(0.0, 0.08, s) * (1.0 - smoothstep(0.08, 0.3, s));
-	float edge = smoothstep(0.42, 0.85, r);
+	float edge = smoothstep(0.55, 0.95, r);  // clear centre: nothing near the vanishing point
 	float on = step(0.45, hash(id + 3.0));
 	COLOR = vec4(1.0, 1.0, 1.0, line * seg * edge * on * intensity);
 }

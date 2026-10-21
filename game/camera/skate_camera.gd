@@ -35,6 +35,8 @@ const PUNCH_DIP := 0.14  ## m the camera drops at the start of a landing punch
 const RAY_UP := 1.0
 const RAY_DOWN := 40.0
 const WORLD_MASK := 1
+const ARM_RADIUS := 0.22  ## m: the spring-arm sphere swept from the skater's head to the desired camera position
+const TELEPORT_DIST := 4.0  ## m a skater moves in one physics tick only when respawned or dropped in: the camera snaps
 
 var target: Skater
 
@@ -48,6 +50,13 @@ var _fov: float = FOV_BASE
 var _push: float = 0.0
 var _punch: float = 0.0  ## 1 at the landing, decays to 0 over PUNCH_TIME
 var _punch_target: Skater
+var _last_skater_pos: Vector3 = Vector3.ZERO
+var _have_last: bool = false
+
+
+## Forget the damped state: the next physics tick puts the camera straight behind the skater.
+func snap() -> void:
+	_primed = false
 
 
 static func yaw_from_facing(facing: Vector3) -> float:
@@ -126,9 +135,17 @@ func _physics_process(delta: float) -> void:
 	var steep: bool = target.board_up.y < 0.5 and not grinding
 	var vert: bool = target.vert_air or steep
 	var skater_pos: Vector3 = target.global_position
+	if _have_last and skater_pos.distance_to(_last_skater_pos) > TELEPORT_DIST:
+		_primed = false  # respawn, restart or drop-in: hard snap instead of gliding through the park
+	_last_skater_pos = skater_pos
+	_have_last = true
 	# The wall ray starts at the skater's head, not at the lookahead point: the lookahead can sit inside the
 	# deck of a ramp, and a ray that starts inside solid geometry always reports a hit.
+	# On a steep surface the head is offset along the board's up so the arm starts in the air, not inside the wall.
 	var eye: Vector3 = skater_pos + Vector3.UP * LOOK_HEIGHT
+	if steep or target.vert_air:
+		var up: Vector3 = target.board_up.normalized() if target.board_up.length() > 0.1 else Vector3.UP
+		eye = skater_pos + up * LOOK_HEIGHT
 	var goal_look: Vector3 = look_target(skater_pos, target.velocity) + Vector3.UP * (1.0 if vert else 0.0)
 
 	if not _primed:
@@ -136,6 +153,9 @@ func _physics_process(delta: float) -> void:
 		_yaw = yaw_from_facing(target.facing)
 		_vert_blend = 1.0 if vert else 0.0
 		_look = goal_look
+		_fov = fov_for_speed(target.speed)
+		_push = 0.0
+		_punch = 0.0
 		_cam_pos = _constrain(skater_pos + desired_offset(facing_from_yaw(_yaw), vert), eye)
 
 	if bailing:
@@ -178,10 +198,33 @@ func _constrain(p: Vector3, look: Vector3) -> Vector3:
 	var down: Dictionary = _ray(out + Vector3.UP * RAY_UP, out + Vector3.DOWN * RAY_DOWN)
 	if not down.is_empty():
 		out = ground_lift(out, (down["position"] as Vector3).y, MIN_GROUND_CLEARANCE)
-	var wall: Dictionary = _ray(look, out)
-	if not wall.is_empty():
-		out = pulled_in(look, out, wall["position"] as Vector3, WALL_MARGIN)
+	out = _arm(look, out)
 	return out
+
+
+## Spring arm: sweeps a small sphere from the head to the desired position and stops short of the first wall.
+## When the sphere starts inside geometry the thin ray is the fallback. Pulling in is instant; easing back out
+## comes from the position damping.
+func _arm(look: Vector3, goal: Vector3) -> Vector3:
+	var motion: Vector3 = goal - look
+	var len: float = motion.length()
+	if len < 0.001:
+		return goal
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var sphere: SphereShape3D = SphereShape3D.new()
+	sphere.radius = ARM_RADIUS
+	var q: PhysicsShapeQueryParameters3D = PhysicsShapeQueryParameters3D.new()
+	q.shape = sphere
+	q.transform = Transform3D(Basis.IDENTITY, look)
+	q.motion = motion
+	q.collision_mask = WORLD_MASK
+	var res: PackedFloat32Array = space.cast_motion(q)
+	if res.size() >= 2 and res[0] < 1.0 and res[1] < 1.0 and res[0] > 0.0:
+		return look + motion * res[0]
+	var wall: Dictionary = _ray(look, goal)
+	if not wall.is_empty():
+		return pulled_in(look, goal, wall["position"] as Vector3, WALL_MARGIN)
+	return goal
 
 
 func _ray(from: Vector3, to: Vector3) -> Dictionary:
