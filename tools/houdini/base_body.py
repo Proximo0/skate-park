@@ -12,7 +12,7 @@ Pipeline:
   3. Subdivide (OpenSubdiv Catmull-Clark, 2 levels) for smooth parts, then VDB from polygons + smooth SDF + convert
      fuses them into one watertight skin with soft junctions.
   4. Female bust: the game's two-lobe height field (AnimeOutfit.bust_height) raised along the front normal.
-  5. PolyReduce to the triangle budget (quads kept where possible), smooth normals.
+  5. Remesh to even triangles at the budget, smooth normals.
   6. KineFX: skeleton from the dump (17 SkaterPoser joints, BustL/R on the BodySway pivots for the female, a
      non-deforming HeadTop at the crown), Joint Capture Biharmonic, glTF export with the ROP glTF Character.
 Space: Godot body space (Y up, metres, faces -Z, Left = -X, origin between the feet).
@@ -40,6 +40,7 @@ HEAD_TOP = 1.61
 TRI_BUDGET = 10000
 SKIN = (0.96, 0.80, 0.69)
 VOXEL = 0.0025
+REMESH_EDGE = 0.0168  # metres; about TRI_BUDGET triangles over the body's ~1.6 m2
 
 # Model-pose joint names in SkaterPoser.JOINTS order (the dump's other nodes are the BodySway pivots).
 JOINTS = ["Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm",
@@ -344,11 +345,10 @@ def build_body(body):
     smo.setInput(0, vdb)
     conv = setp(geo.createNode("convertvdb", "to_polygons"), conversion="poly")
     conv.setInput(0, smo)
-    red = geo.createNode("polyreduce::2.0", "budget")
+    # Even, near-equilateral triangles at the budget (not PolyReduce's long slivers), so the game's region cuts
+    # (HoudiniBody._region_cuts) follow clean lines and joints bend smoothly.
+    red = setp(geo.createNode("remesh::2.0", "budget"), targetsize=REMESH_EDGE, iterations=3)
     red.setInput(0, conv)
-    red.parm("target").set("poly_count")
-    red.parm("finalcount").set(TRI_BUDGET)
-    red.parm("preservequads").set(0)
     clean = geo.createNode("attribwrangle", "tag")
     clean.setInput(0, red)
     clean.parm("class").set("primitive")
