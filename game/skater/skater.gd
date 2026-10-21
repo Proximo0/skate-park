@@ -72,7 +72,7 @@ var _spawn: Transform3D
 var _just_pressed: Array = []
 var _held: Array = []
 var _stick: Vector2 = Vector2.ZERO
-var _recent_grind_press: int = 0  ## ticks since grind was pressed (buffered for rails and walls)
+var _recent_grind_press: int = 100  ## ticks since grind was pressed (buffered for rails and walls)
 var _visual: Node3D
 var _pending_air: Array = []
 
@@ -262,9 +262,14 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		_set_anim("idle_ride")
 	if crouch > 0.0 and anim != "crouch":
 		_set_anim("crouch")
-	velocity = v - n * 0.5
+	# Going up a steep wall: no snap and no push into the surface, so the skater leaves the lip
+	# into vert air instead of wrapping over onto the deck.
+	var climbing_vert: bool = n.y < VERT_NORMAL_Y and v.y > 0.3
+	velocity = v if climbing_vert else v - n * 0.5
 	up_direction = n
+	floor_snap_length = 0.0 if climbing_vert else 0.6
 	move_and_slide()
+	floor_snap_length = 0.6
 	if is_on_floor():
 		var fn: Vector3 = get_floor_normal()
 		var was: Vector3 = _floor_normal

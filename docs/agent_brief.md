@@ -8,7 +8,7 @@ Read `CLAUDE.md` first. This file lists the contracts other modules already prov
   change there, describe it in your final report.
 - Never call any `mcp__hearthbot__` tool and never message the user. Report only through your final answer.
 - Do not run git.
-- Wrap every Godot call in the shared lock: `(flock 9; <godot command>) 9>/tmp/skate_godot.lock`.
+- Only `godot --import` needs the shared lock: `(flock 9; godot --headless --path . --import) 9>/tmp/skate_import.lock`. Run everything else WITHOUT a lock, and never wrap `tools/*.sh` in flock (they lock their own import; nesting deadlocks).
   `tools/run_tests.sh` and `tools/capture.sh` already take it.
 - Rendering check: `xvfb-run -a -s "-screen 0 1920x1080x24" godot --path /home/claude/skate --rendering-driver opengl3 --resolution 1280x720 <scene or -s script> -- --scripted`.
   Put throwaway render scripts in `/tmp/<your task>/`, not in the project, and look at the PNG you produce.

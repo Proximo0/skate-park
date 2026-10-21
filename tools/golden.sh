@@ -40,7 +40,7 @@ ACTUAL_ABS="$(realpath "$ACTUAL")"
 GOLDEN_ABS="$(realpath -m "$GOLDEN")"
 # One Godot at a time: parallel agents share the .godot import cache.
 (
-	exec 9>/tmp/skate_godot.lock
+	exec 9>/tmp/skate_import.lock
 	flock 9
 	"$GODOT" --headless --path . -s res://tools/golden.gd -- \
 		"--actual=$ACTUAL_ABS" "--golden=$GOLDEN_ABS" >"$LOG" 2>&1

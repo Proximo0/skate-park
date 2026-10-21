@@ -3,7 +3,12 @@ extends SceneTree
 ## Exit code 0 = all pass, 1 = any failure or a script that would not load.
 
 
-func _init() -> void:
+## Deferred so autoload singletons (Flags, Controls) exist before test scripts compile.
+func _initialize() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
 	var only: String = ""
 	for a: String in OS.get_cmdline_user_args():
 		if a.begins_with("--only="):

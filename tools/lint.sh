@@ -4,10 +4,11 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
-# One Godot at a time: parallel agents share the .godot import cache.
-exec 9>/tmp/skate_godot.lock
+# Imports take turns: parallel agents share the .godot import cache.
+exec 9>/tmp/skate_import.lock
 flock 9
 "$GODOT" --headless --path . --import >/tmp/godot_import.log 2>&1 || { cat /tmp/godot_import.log; exit 1; }
+flock -u 9  # only the import needs the lock; runs after it can overlap
 
 # Every script, except the parse checker itself (it is the running script).
 RES=()

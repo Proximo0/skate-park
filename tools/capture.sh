@@ -14,12 +14,13 @@ mkdir -p "$2"
 OUT="$(realpath "$2")"
 [ -f "$VIEWS" ] || [[ "$VIEWS" == res://* ]] || { echo "capture: no views file $VIEWS" >&2; exit 1; }
 
-# One Godot at a time: parallel agents share the .godot import cache.
-exec 9>/tmp/skate_godot.lock
+# Imports take turns: parallel agents share the .godot import cache.
+exec 9>/tmp/skate_import.lock
 flock 9
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT
 "$GODOT" --headless --path . --import >"$LOG" 2>&1 || { cat "$LOG"; exit 1; }
+flock -u 9  # only the import needs the lock; runs after it can overlap
 
 timeout 300 xvfb-run -a -s "-screen 0 1920x1080x24" "$GODOT" --path . \
 	--rendering-driver opengl3 --resolution 1920x1080 --audio-driver Dummy \

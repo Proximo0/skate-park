@@ -1,0 +1,89 @@
+{
+	"run_seconds": 120,
+	"goals": [
+		{
+			"id": "high_score_10k",
+			"title": "High Score: 10,000",
+			"description": "Land 10,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 10000
+		},
+		{
+			"id": "pro_score_30k",
+			"title": "Pro Score: 30,000",
+			"description": "Land 30,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 30000
+		},
+		{
+			"id": "sick_score_75k",
+			"title": "Sick Score: 75,000",
+			"description": "Land 75,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 75000
+		},
+		{
+			"id": "combo_champ_5k",
+			"title": "Combo Champ: 5,000",
+			"description": "Land a single combo worth 5,000 points.",
+			"type": "combo",
+			"target": 5000
+		},
+		{
+			"id": "collect_skate",
+			"title": "Collect S-K-A-T-E",
+			"description": "Pick up the letters S, K, A, T and E.",
+			"type": "collect",
+			"items": ["S", "K", "A", "T", "E"]
+		},
+		{
+			"id": "collect_pizza",
+			"title": "Collect the 5 Pizza Slices",
+			"description": "Grab five pizza slices hidden around the park.",
+			"type": "collect",
+			"items": ["pizza", "pizza", "pizza", "pizza", "pizza"]
+		},
+		{
+			"id": "gap_hunter_5",
+			"title": "Gap Hunter: find 5 gaps",
+			"description": "Discover 5 gaps by jumping between park pieces.",
+			"type": "gaps",
+			"target": 5
+		},
+		{
+			"id": "kickflip_funbox",
+			"title": "Kickflip the Big Funbox",
+			"description": "Land a Kickflip.",
+			"type": "trick",
+			"trick": "kickflip"
+		},
+		{
+			"id": "heelflip_hero",
+			"title": "Heelflip Hero",
+			"description": "Land a Heelflip.",
+			"type": "trick",
+			"trick": "heelflip"
+		},
+		{
+			"id": "super_special",
+			"title": "Super Special",
+			"description": "Land any special trick.",
+			"type": "special",
+			"target": 1
+		},
+		{
+			"id": "balance_beam_5",
+			"title": "Balance Beam: manual 5 seconds",
+			"description": "Hold one manual for 5 seconds.",
+			"type": "manual_time",
+			"target": 5
+		},
+		{
+			"id": "grind_machine_3",
+			"title": "Grind Machine: 3 second grind",
+			"description": "Grind a rail for 3 seconds in one go.",
+			"type": "grind_time",
+			"target": 3
+		}
+	]
+}

@@ -97,7 +97,8 @@ static func mesh_from_triangles(tris: PackedVector3Array) -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i: int in range(0, tris.size(), 3):
 		var n: Vector3 = (tris[i + 1] - tris[i]).cross(tris[i + 2] - tris[i]).normalized()
-		for k: int in 3:
+		# Godot treats clockwise as front-facing, so emit the outside-CCW triangle reversed.
+		for k: int in [0, 2, 1]:
 			st.set_normal(n)
 			st.add_vertex(tris[i + k])
 	return st.commit()
