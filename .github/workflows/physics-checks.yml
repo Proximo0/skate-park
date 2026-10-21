@@ -1,0 +1,117 @@
+# Every physics check as a parallel job matrix, one GitHub runner per job (the repo is public, so minutes are free).
+# Locally the same checks run together with tools/check_all.sh; here each one gets its own 4-core machine,
+# so the bot and the snag sweep can use many more shards (and the full snag grid).
+name: physics-checks
+
+on:
+  push:
+    branches: [main, step1-foundation]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tune:
+        description: "Optional tuning preset path in the repo (applied to lab and bot runs)"
+        required: false
+        default: ""
+
+concurrency:
+  group: physics-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2
+  GODOT: godot
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: unit, cmd: "tools/run_tests.sh" }
+          - { name: lint, cmd: "tools/lint.sh" }
+          - { name: sims-controller, cmd: "timeout 600 godot --headless --path . res://tests/sim/controller_sims.tscn | tee out.log; grep -q 'SIMS passed=.* failed=0$' out.log" }
+          - { name: sims-suite, cmd: "timeout 600 godot --headless --path . res://tests/sim/sim_suite.tscn | tee out.log; grep -q 'SIMS passed=.* failed=0$' out.log" }
+          - { name: lab, cmd: "tools/physics_report.sh $TUNE_ARG" }
+          - { name: bot-0, cmd: "timeout 300 godot --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- --shard=0 --nshards=6 --record $TUNE_ARG | tee out.log; grep -q '^BOT score=' out.log && ! grep -q '^BOT .* FAIL ' out.log" }
+          - { name: bot-1, cmd: "timeout 300 godot --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- --shard=1 --nshards=6 --record $TUNE_ARG | tee out.log; grep -q '^BOT score=' out.log && ! grep -q '^BOT .* FAIL ' out.log" }
+          - { name: bot-2, cmd: "timeout 300 godot --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- --shard=2 --nshards=6 --record $TUNE_ARG | tee out.log; grep -q '^BOT score=' out.log && ! grep -q '^BOT .* FAIL ' out.log" }
+          - { name: bot-3, cmd: "timeout 300 godot --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- --shard=3 --nshards=6 --record $TUNE_ARG | tee out.log; grep -q '^BOT score=' out.log && ! grep -q '^BOT .* FAIL ' out.log" }
+          - { name: bot-4, cmd: "timeout 300 godot --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- --shard=4 --nshards=6 --record $TUNE_ARG | tee out.log; grep -q '^BOT score=' out.log && ! grep -q '^BOT .* FAIL ' out.log" }
+          - { name: bot-5, cmd: "timeout 300 godot --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- --shard=5 --nshards=6 --record $TUNE_ARG | tee out.log; grep -q '^BOT score=' out.log && ! grep -q '^BOT .* FAIL ' out.log" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+      - name: Run ${{ matrix.name }}
+        shell: bash
+        env:
+          TUNE_ARG: ${{ inputs.tune != '' && format('--tune={0}/{1}', github.workspace, inputs.tune) || '' }}
+        run: |
+          set -o pipefail
+          mkdir -p /tmp/bot /tmp/lab
+          godot --headless --path . --import > /tmp/import.log 2>&1 || { cat /tmp/import.log; exit 1; }
+          bash -c "${{ matrix.cmd }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            out.log
+            /tmp/bot/
+            /tmp/lab/report.json
+            /tmp/lab/report.md
+          if-no-files-found: ignore
+
+  # The full snag grid (--keep=100, ~75k runs) split over 8 runners, then merged into one ranked hotspot list.
+  snag-shard:
+    name: snags-${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+      - name: Sweep shard ${{ matrix.shard }}
+        shell: bash
+        run: |
+          mkdir -p /tmp/lab
+          godot --headless --path . --import > /tmp/import.log 2>&1 || { cat /tmp/import.log; exit 1; }
+          timeout 900 godot --headless --fixed-fps 60 --path . res://tests/lab/snag_sweep.tscn -- --keep=100 \
+            --shard=${{ matrix.shard }} --nshards=8 | tee /tmp/lab/snag_shard_${{ matrix.shard }}.log
+          grep -q "^SNAG shard ${{ matrix.shard }} done" /tmp/lab/snag_shard_${{ matrix.shard }}.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snags-raw-${{ matrix.shard }}
+          path: /tmp/lab/snags_raw_${{ matrix.shard }}.json
+
+  snag-merge:
+    name: snags-merge
+    needs: snag-shard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: snags-raw-*
+          path: /tmp/lab
+          merge-multiple: true
+      - name: Merge and rank hotspots
+        shell: bash
+        run: |
+          godot --headless --path . --import > /tmp/import.log 2>&1 || { cat /tmp/import.log; exit 1; }
+          godot --headless --path . res://tests/lab/snag_sweep.tscn -- --merge=8 --keep=100 | tee snags.log
+          grep -q '^SNAG summary' snags.log
+          grep '^SNAG summary' snags.log >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snags-merged
+          path: |
+            snags.log
+            /tmp/lab/snags.json
