@@ -211,3 +211,13 @@ func test_two_bone_reaches_a_reachable_target() -> void:
 	assert_near(j[1].distance_to(j[0]), 0.3, 0.0001, "upper bone length kept")
 	assert_near(j[2].distance_to(j[1]), 0.22, 0.0001, "lower bone length kept")
 	assert_true(j[1].z < 0.0, "knee bends toward the pole")
+
+
+func test_drop_in_hangs_nose_up_then_stomps_nose_down() -> void:
+	var hang: Dictionary = SkaterPoser.pose_for("drop_in", 0.1, 0.0, 0.0)
+	var stomp: Dictionary = SkaterPoser.pose_for("drop_in", RampSnap.HANG_TIME + RampSnap.STOMP_TIME, 0.0, 0.0)
+	assert_true(_has_full_pose(hang) and _has_full_pose(stomp), "full drop-in poses")
+	assert_true((hang["board_rot"] as Vector3).x > 10.0, "tail hooked on the coping: nose up")
+	assert_true((stomp["board_rot"] as Vector3).x < -15.0, "stomped: nose down the ramp")
+	assert_true(float(stomp["pitch"]) > float(hang["pitch"]), "weight goes from the tail onto the front foot")
+	assert_true((hang["foot_L"] as Vector3).y > (SkaterPoser.deck_point(hang, SkaterPoser.FRONT_FOOT) as Vector3).y + 0.05, "front foot hovers while hanging")

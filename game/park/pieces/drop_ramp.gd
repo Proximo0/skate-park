@@ -60,6 +60,8 @@ static func build(width: float = 4.0, start_height: float = 12.0, flat_len: floa
 	for p: Vector2 in curve:
 		prof.append(p)
 	root.add_child(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_SIDE, "RollIn"))
+	# the start deck's edge: a roll-in for the ramp snap
+	root.add_child(RampLip.line(PackedVector3Array([Vector3(0.0, start_height, DECK_LEN), Vector3(width, start_height, DECK_LEN)]), Vector3.BACK, "roll_in", "RollInLip"))
 	var end_z: float = roll_end(start_height)
 	if flat_len > 0.0:
 		root.add_child(PieceKit.floor_pad(Vector3(0.0, -0.5, end_z), Vector3(width, 0.5, flat_len), PieceKit.CONCRETE, "RunFloor"))

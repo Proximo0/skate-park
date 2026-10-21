@@ -16,9 +16,10 @@ const CTRL_BUTTON_MIN := 330
 const CTRL_TIP_WIDTH := 580  ## three equal tip cards across the screen
 
 ## [heading, [[label, action], ...]]. "move" stands for the four move_* actions. Balance rides the move stick.
-## Pick shows the ollie binding (Cross, Space): the menus accept it as well.
+## Pick shows the ollie binding (Cross, Space): the menus accept it as well. Chorded actions (Controls.CHORDS) show
+## their two buttons joined with "+".
 const CTRL_SECTIONS := [
-	["Riding", [["Move", "move"], ["Ollie", "ollie"]]],
+	["Riding", [["Move", "move"], ["Ollie", "ollie"], ["Ramp snap", "ramp_snap"]]],
 	["Tricks", [["Flip", "flip"], ["Grab", "grab"], ["Spin left", "spin_left"], ["Spin right", "spin_right"], ["Revert", "revert"], ["Nollie", "nollie"]]],
 	["Grinds and Balance", [["Grind", "grind"], ["Balance", "move"]]],
 	["Menus", [["Pick", "ollie"], ["Pause", "pause"], ["Restart run", "restart"]]],
@@ -177,6 +178,8 @@ func _events(action: String) -> Array:
 
 ## PlayStation names for the joypad events bound to an action, e.g. "Cross" or "Left stick / D-pad".
 func _joy_text(action: String) -> String:
+	if Controls.CHORDS.has(action):
+		return _chord_text(action, true)
 	var names: PackedStringArray = []
 	for e: InputEvent in _events(action):
 		var n: String = ""
@@ -193,6 +196,8 @@ func _joy_text(action: String) -> String:
 func _key_text(action: String) -> String:
 	if action == "move":
 		return "WASD / Arrows"
+	if Controls.CHORDS.has(action):
+		return _chord_text(action, false)
 	var names: PackedStringArray = []
 	for e: InputEvent in _events(action):
 		if e is InputEventKey:
@@ -204,6 +209,18 @@ func _key_text(action: String) -> String:
 			if n != "" and not names.has(n):
 				names.append(n)
 	return " / ".join(names)
+
+
+## "L1 + R1 / LB + RB" or "Q + E": the chord's two buttons, PlayStation then Xbox names for the pad.
+func _chord_text(action: String, joy: bool) -> String:
+	var parts: Array = Controls.CHORDS[action]
+	if not joy:
+		return "%s + %s" % [_key_text(str(parts[0])), _key_text(str(parts[1]))]
+	var a: PackedStringArray = _joy_text(str(parts[0])).split(" / ")
+	var b: PackedStringArray = _joy_text(str(parts[1])).split(" / ")
+	if a.size() == 2 and b.size() == 2:
+		return "%s + %s / %s + %s" % [a[0], b[0], a[1], b[1]]
+	return "%s + %s" % [" / ".join(a), " / ".join(b)]
 
 
 func _button_name(b: int) -> String:

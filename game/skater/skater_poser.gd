@@ -36,6 +36,14 @@ const CATCH: float = 0.8  ## fraction of a flip where the feet come back down on
 const PUSH_CYCLE: float = 0.6
 const PUSH_PLANT: float = 0.18  ## first push only: seconds to step off the tail to the plant point
 const PUSH_CONTACT: float = 0.55  ## fraction of a push cycle with the foot on the ground
+## Push stance (stance frame, metres / degrees).
+const PUSH_YAW: float = 78.0  ## hips and shoulders open toward the nose
+const PUSH_PITCH: float = 12.0  ## body tipped toward the nose so the hips sit over the front foot
+const PUSH_FRONT: Vector3 = Vector3(0.01, 0.0, -0.17)  ## front foot over the front bolts
+const PUSH_STEP: Vector3 = Vector3(0.2, 0.0, -0.2)  ## push foot plant on the ground, beside the front truck
+const PUSH_END: Vector3 = Vector3(0.22, 0.0, 0.42)  ## end of the drive, just past the tail
+const PUSH_FRONT_TOE: float = 84.0  ## front foot pivoted to point down the board
+const PUSH_BACK_TOE: float = 86.0  ## push foot toes forward
 
 ## Live push timing. Start at the consts above; a poser whose skater has a `tune` copies its push_* fields in
 ## each frame so the pose stays in step with the push kicks.
@@ -51,6 +59,12 @@ const FALL_TIME: float = 0.5
 const LEAN_MAX: float = 25.0
 const MANUAL_PITCH: float = 12.0
 const LIP_PITCH: float = 70.0
+## "drop_in" (the ramp snap): tail hooked on the coping with the nose up for RampSnap.HANG_TIME, then the front foot
+## stomps the nose down over RampSnap.STOMP_TIME and the rider leans into the ramp; the board eases back flat on
+## the wall over DROP_SETTLE_TIME while dropping.
+const DROP_HANG_PITCH: float = 16.0
+const DROP_STOMP_PITCH: float = -24.0
+const DROP_SETTLE_TIME: float = 0.25
 
 ## Stance geometry, stance frame. Feet sit over the bolts; the back foot is a little further out, near the tail.
 const FRONT_FOOT: Vector3 = Vector3(0.0, 0.0, -0.18)
@@ -332,6 +346,8 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 				_pose_land(pose, t, c)
 			"revert":
 				_pose_revert(pose, t)
+			"drop_in":
+				_pose_drop_in(pose, t)
 			"bail_fall":
 				_pose_bail_fall(pose, t)
 			"bail_getup":
@@ -421,40 +437,48 @@ static func _pose_idle(pose: Dictionary, c: float) -> void:
 	_feet_on_board(pose)
 
 
-## Back foot steps off beside the board on the toe side, plants ahead of the tail, sweeps back along the ground and
-## swings forward again; the front foot turns to point down the board and the front knee takes the weight.
+## A real push: hips and shoulders open toward the nose, the front foot pivots to point down the board over the front
+## bolts and its knee bends to take the weight (the body tips forward so the hips sit over it). The back foot steps
+## off to the toe side, plants beside the front truck with its toes forward, drives straight back past the tail,
+## then swings forward low to plant again. The arms counter-swing (back arm forward as the push leg goes back).
 static func _pose_push(pose: Dictionary, t: float, c: float) -> void:
-	var plant: Vector3 = Vector3(0.21, PlaceholderSkater.ANKLE_HEIGHT, 0.02)
-	var finish: Vector3 = Vector3(0.24, PlaceholderSkater.ANKLE_HEIGHT, 0.5)
 	var ankle: Vector3 = Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)
-	var contact: float = 0.0  ## 1 while the foot is on the ground
+	var plant: Vector3 = PUSH_STEP + ankle
+	var finish: Vector3 = PUSH_END + ankle
 	var foot: Vector3
-	var reach: float = 0.0  ## 0 foot forward, 1 foot fully back (arm swing)
+	var drive: float = 0.0  ## 0 foot planted forward, 1 at the end of the drive (hips lowest, arms widest)
+	var settle: float = 1.0  ## 0 on the deck, 1 stepped off into the push stance (first step only)
 	if t < _push_plant:
 		var k: float = _smooth(t / _push_plant)
-		foot = deck_point(pose, BACK_FOOT + ankle).lerp(ground_point(pose, plant), k) + Vector3.UP * 0.07 * sin(PI * k)
-		contact = k
+		var out: float = _smooth(minf(t / _push_plant * 1.6, 1.0))  ## out to the side first, then forward
+		var from: Vector3 = deck_point(pose, BACK_FOOT + ankle)
+		var to: Vector3 = ground_point(pose, plant)
+		foot = Vector3(lerpf(from.x, to.x, out), lerpf(from.y, to.y, k), lerpf(from.z, to.z, k))
+		foot += Vector3.UP * 0.08 * sin(PI * k)
+		settle = k
 	else:
 		var u: float = fposmod(t - _push_plant, _push_cycle) / _push_cycle
 		if u < _push_contact:
-			reach = _smooth(u / _push_contact)
-			foot = ground_point(pose, plant.lerp(finish, reach))
-			contact = 1.0
+			drive = _smooth(u / _push_contact)
+			foot = ground_point(pose, plant.lerp(finish, drive))
 		else:
 			var k: float = _smooth((u - _push_contact) / (1.0 - _push_contact))
-			reach = 1.0 - k
-			foot = ground_point(pose, finish.lerp(plant, k)) + Vector3.UP * 0.1 * sin(PI * k)
-			contact = 1.0 - sin(PI * k)
-	pose["hips_y"] = IDLE_HIPS - 0.17 * maxf(contact, 0.6) - 0.08 * c
-	pose["body_yaw"] = float(pose["body_yaw"]) + 38.0  ## torso turns to face down the board
-	pose["pitch"] = 7.0
-	_curl(pose, 14.0)
-	pose["foot_L"] = deck_point(pose, Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, -0.13))
+			drive = 1.0 - k
+			var arc: float = sin(PI * k)
+			foot = ground_point(pose, finish.lerp(plant, k) + Vector3(0.03 * arc, 0.07 * arc, 0.0))
+	pose["body_yaw"] = float(pose["body_yaw"]) + PUSH_YAW * (0.4 + 0.6 * settle)
+	pose["pitch"] = (PUSH_PITCH + 3.0 * drive) * settle
+	pose["lean"] = 3.0 * settle
+	pose["Hips"] = Vector3(PUSH_PITCH * 0.4 * settle, 0.0, 0.0)  ## pelvis tipped back so the chest stays up
+	pose["hips_y"] = IDLE_HIPS - (0.085 + 0.09 * drive) * settle - 0.06 * c
+	_curl(pose, 10.0 + 4.0 * drive)
+	pose["Head"] = Vector3(8.0 * settle, 0.0, 0.0)  ## chin up, eyes down the line
+	pose["foot_L"] = deck_point(pose, PUSH_FRONT + ankle)
 	pose["foot_R"] = foot
-	pose["toe_L"] = 70.0
-	pose["toe_R"] = 60.0
-	var swing: float = 2.0 * reach - 1.0
-	_arms(pose, Vector3(-30.0 * swing, 0.0, -10.0), Vector3(30.0 * swing, 0.0, 10.0), 25.0)
+	pose["toe_L"] = PUSH_FRONT_TOE
+	pose["toe_R"] = PUSH_BACK_TOE
+	var swing: float = (2.0 * drive - 1.0) * settle
+	_arms(pose, Vector3(-34.0 * swing, 0.0, -12.0), Vector3(34.0 * swing, 0.0, 12.0), 22.0 + 10.0 * absf(swing))
 
 
 ## Tail snaps down (board pitched nose up about the tail tip), then the board levels and rises into the tucked feet
@@ -631,6 +655,23 @@ static func _pose_revert(pose: Dictionary, t: float) -> void:
 	# The board turns with the rider; it is symmetric, so it ends where it started.
 	_board_turn(pose, Vector3(0.0, yaw - 180.0, 0.0), Vector3.ZERO)
 	_feet_on_board(pose)
+
+
+## Drop-in: hang on the tail (weight back, front foot hovering over the bolts, arms out), stomp the nose down
+## (front foot plants, weight forward, crouch) and ride it in.
+static func _pose_drop_in(pose: Dictionary, t: float) -> void:
+	var s: float = _smooth((t - RampSnap.HANG_TIME) / RampSnap.STOMP_TIME)
+	var settle: float = _smooth((t - RampSnap.HANG_TIME - RampSnap.STOMP_TIME) / DROP_SETTLE_TIME)
+	var sway: float = 4.0 * sin(t * 9.0) * (1.0 - s)  ## a little balance wobble on the coping
+	_board_turn(pose, Vector3(lerpf(DROP_HANG_PITCH, DROP_STOMP_PITCH, s) * (1.0 - settle), 0.0, 0.0), REAR_TRUCK)
+	pose["hips_y"] = IDLE_HIPS - 0.04 - 0.14 * s
+	pose["pitch"] = lerpf(-9.0, 15.0, s) * (1.0 - 0.6 * settle)
+	pose["lean"] = sway
+	_curl(pose, 10.0 + 16.0 * s)
+	_arms(pose, Vector3(-25.0 + 35.0 * s, 0.0, -50.0 + 20.0 * s), Vector3(25.0 - 35.0 * s, 0.0, 50.0 - 20.0 * s), 25.0)
+	var ankle: Vector3 = Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)
+	pose["foot_R"] = deck_point(pose, BACK_FOOT + Vector3(0.0, 0.0, 0.06) + ankle)  ## on the tail
+	pose["foot_L"] = deck_point(pose, FRONT_FOOT + ankle) + Vector3(0.0, 0.1 * (1.0 - s), 0.0)
 
 
 static func _pose_bail_fall(pose: Dictionary, t: float) -> void:

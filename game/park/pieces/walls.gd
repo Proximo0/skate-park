@@ -40,6 +40,7 @@ static func bank(width: float = 6.0, length: float = 4.0, height: float = 1.6, z
 	var prof := PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.0, far), Vector2(height, BANK_DECK), Vector2(height, 0.0)])
 	root.add_child(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_WOOD, "Ramp"))
 	root.add_child(PieceKit.rail(PackedVector3Array([Vector3(0.0, height, BANK_DECK), Vector3(width, height, BANK_DECK)]), "coping", "Coping"))
+	root.add_child(RampLip.line(PackedVector3Array([Vector3(0.0, height, BANK_DECK), Vector3(width, height, BANK_DECK)]), Vector3.BACK))
 	if zone_id != "":
 		root.add_child(PieceKit.gap_zone(zone_id, Vector3(0.0, height, BANK_DECK - 0.5), Vector3(width, 2.5, 2.0)))
 	return root

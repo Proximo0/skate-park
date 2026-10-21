@@ -54,6 +54,10 @@ static func spine(length: float = 8.0, radius: float = 2.2, height: float = 2.4)
 	var cop := PieceKit.round_rail(Vector3(0.0, height, radius), Vector3(length, height, radius), 0.05, PieceKit.COPING, "Coping")
 	(cop.get_node("Line") as GrindRail).kind = "coping"
 	root.add_child(cop)
+	# one lip per face: the -Z pipe and the +Z pipe share the fin's coping
+	var lip_pts := PackedVector3Array([Vector3(0.0, height, radius), Vector3(length, height, radius)])
+	root.add_child(RampLip.line(lip_pts, Vector3.FORWARD, "drop_in", "LipNorth"))
+	root.add_child(RampLip.line(lip_pts, Vector3.BACK, "drop_in", "LipSouth"))
 	return root
 
 
@@ -84,6 +88,8 @@ static func hip(size: float = 8.0, radius: float = 2.5, height: float = 2.8, zon
 	root.add_child(pipe_x)
 	root.add_child(pipe_z)
 	root.add_child(PieceKit.rail(PackedVector3Array([Vector3(s, height, r), Vector3(r, height, r), Vector3(r, height, s)]), "coping", "Coping"))
+	root.add_child(RampLip.make(PackedVector3Array([Vector3(s, height, r), Vector3(r, height, r), Vector3(r, height, s)]),
+			PackedVector3Array([Vector3.FORWARD, Vector3.LEFT]), "drop_in", "Lip"))
 	# gap zones over each lip, clear of the corner: _n over the X lip, _s over the Z lip
 	root.add_child(PieceKit.gap_zone(zone_prefix + "_n", Vector3(r + 1.0, height, r - 1.0), Vector3(s - r - 1.0, 3.0, 2.0)))
 	root.add_child(PieceKit.gap_zone(zone_prefix + "_s", Vector3(r - 1.0, height, r + 1.0), Vector3(2.0, 3.0, s - r - 1.0)))

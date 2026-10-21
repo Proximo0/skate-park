@@ -18,6 +18,7 @@ const WALL_MARGIN := 0.3
 const POS_RATE := 6.0  ## 1/s, framerate-independent damping
 const LOOK_RATE := 8.0
 const YAW_RATE := 4.0  ## 1/s: time constant 0.25 s, the yaw lag
+const SNAP_YAW_FACTOR := 3.0  ## yaw follow rate during a ramp snap (the skater often turns right round onto the coping)
 const WALK_YAW_FACTOR := 0.2  ## yaw follow rate on foot, as a share of YAW_RATE
 const WALK_ZOOM := 0.62  ## on foot the camera sits closer and lower: the offset is scaled by this
 const VERT_BLEND_RATE := 3.0
@@ -163,7 +164,8 @@ func _physics_process(delta: float) -> void:
 	elif not vert:
 		# On foot the stick is camera-relative, so a fast follow would chase its own tail: swing slowly instead.
 		var walking: bool = target.state.state == SkateState.State.WALK
-		_yaw = damp_angle(_yaw, yaw_from_facing(target.facing), YAW_RATE * (WALK_YAW_FACTOR if walking else 1.0), delta)
+		var rate: float = YAW_RATE * (WALK_YAW_FACTOR if walking else 1.0) * (SNAP_YAW_FACTOR if target.snapping() else 1.0)
+		_yaw = damp_angle(_yaw, yaw_from_facing(target.facing), rate, delta)
 	# else: hold the last ground yaw so the camera does not swing under the ramp.
 
 	_vert_blend = damp(_vert_blend, 1.0 if vert else 0.0, VERT_BLEND_RATE, delta)
@@ -175,9 +177,15 @@ func _physics_process(delta: float) -> void:
 	offset += Vector3(offset.x, 0.0, offset.z).normalized() * PUSH_DISTANCE * _push
 	var goal_pos: Vector3 = _constrain(skater_pos + offset, eye)
 
-	_cam_pos = damp_vec(_cam_pos, goal_pos, POS_RATE, delta)
-	_cam_pos = _constrain(_cam_pos, eye)
-	_look = damp_vec(_look, goal_look, LOOK_RATE, delta)
+	if target.camera_hold > 0.0:
+		# a ramp snap's drop-in: rise up behind the coping and watch the skater drop down the wall (following it round
+		# would swing the arm into the ramp)
+		_cam_pos = damp_vec(_cam_pos, target.camera_anchor, POS_RATE, delta)
+		_look = damp_vec(_look, skater_pos + Vector3.UP * 0.6, LOOK_RATE * 1.5, delta)
+	else:
+		_cam_pos = damp_vec(_cam_pos, goal_pos, POS_RATE, delta)
+		_cam_pos = _constrain(_cam_pos, eye)
+		_look = damp_vec(_look, goal_look, LOOK_RATE, delta)
 	_fov = damp(_fov, fov_for_speed(target.speed), FOV_RATE, delta)
 
 	var hit: float = _punch * _punch

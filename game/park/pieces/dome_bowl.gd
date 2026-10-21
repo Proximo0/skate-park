@@ -62,6 +62,7 @@ static func build(radius: float = 8.0, depth_ratio: float = 0.85, rings: int = 1
 		var phi: float = TAU * float(j) / float(n)
 		loop.append(Vector3(half + a * cos(phi), 0.0, half + a * sin(phi)))
 	root.add_child(PieceKit.rail(loop, "coping", "Coping"))
+	root.add_child(RampLip.ring(loop, Vector3(half, 0.0, half)))
 	var pipe := MeshInstance3D.new()
 	pipe.name = "CopingPipe"
 	pipe.mesh = _pipe_mesh(a, half, n)

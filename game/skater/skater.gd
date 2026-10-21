@@ -13,6 +13,10 @@ signal gap_hit(gap_name: String, points: int)
 signal bailed
 ## Emitted at the end of every physics tick with `debug` (see docs/physics_debug_brief.md).
 signal physics_ticked(frame: Dictionary)
+## The ramp snap (Q + E / L1 + R1) started: mode is "drop_in", "roll_in", "air_in", "out" or "out_deck".
+signal ramp_snapped(mode: String)
+## The ramp snap was pressed with no ramp in reach (the HUD shows a hint).
+signal ramp_snap_missed
 
 const SPIN_POINTS_PER_180 := 100
 ## Floor contacts bending more than about 25 degrees from the current floor in one tick are checked against the
@@ -70,7 +74,8 @@ var tune: PhysicsTuning = PhysicsTuning.shared()
 ## Per-tick debug frame (same dictionary the physics_ticked signal carries).
 var debug: Dictionary = {}
 ## Events raised this tick: "ollie", "air", "land:<result>", "bail", "grind", "grind_end", "manual", "lip",
-## "wallride", "leave_edge", "overhang_drop", "speed_restore", "respawn", "dismount", "mount".
+## "wallride", "leave_edge", "overhang_drop", "speed_restore", "respawn", "dismount", "mount", "ramp_snap:<mode>",
+## "ramp_snap_release", "ramp_snap_miss".
 var events: Array[String] = []
 
 var db: TrickDB
@@ -82,6 +87,7 @@ var balance := Balance.new()
 var gaps: Gaps
 var spin := SpinTracker.new()
 var walker := Walker.new()  ## on-foot movement while state is WALK (the poser reads phase and speed from it)
+var chord := ChordInput.new()  ## spin_left + spin_right together: the ramp snap
 
 ## Read by the poser, camera and HUD.
 var anim: String = "idle_ride"
@@ -95,6 +101,10 @@ var facing: Vector3 = Vector3.FORWARD  ## horizontal-ish travel direction on the
 var board_up: Vector3 = Vector3.UP
 var speed: float = 0.0
 var vert_air: bool = false
+## Seconds the chase camera holds its place and just watches (a ramp snap's drop-in: the camera stays up over the coping
+## while the skater drops down the wall, instead of swinging round into the ramp).
+var camera_hold: float = 0.0
+var camera_anchor: Vector3 = Vector3.ZERO  ## where the camera waits while camera_hold runs: up behind the coping
 var _ragdoll: SkaterRagdoll = null
 var _getup_left: float = 0.0
 
@@ -136,6 +146,10 @@ var _carve_left: float = 0.0  ## seconds of topple carve left
 var _since_bend: float = 1.0  ## seconds since the floor normal last bent by over a degree (curving transition)
 var _touch_wall_n: Vector3 = Vector3.ZERO  ## the upright wall rolled along last tick (steering can't turn into it)
 var _recent_revert_press: int = 100  ## ticks since revert was pressed (buffered across the touchdown)
+## The ramp snap in progress (see _tick_snap), {} when none. Plain Variants, so it snapshots.
+var _snap: Dictionary = {}
+var _snap_hold_up: Vector3 = Vector3.ZERO  ## dropping in after a snap: the wall normal the board holds until it lands
+var _lone_spin: float = 0.0  ## rad the shoulder buttons spun since both were last up (undone if they make a chord)
 
 
 func _ready() -> void:
@@ -231,13 +245,30 @@ func _step(delta: float) -> void:
 	if global_position.y < tune.kill_y:
 		respawn()
 		return
+	var snap_fired: bool = chord.feed(_just_pressed, _held)
+	if chord.suppressing():
+		# the buttons of a fired chord do not also spin
+		_held = _held.filter(func(b: Variant) -> bool: return b != "spin_left" and b != "spin_right")
+		_just_pressed = _just_pressed.filter(func(b: Variant) -> bool: return b != "spin_left" and b != "spin_right")
 	var requests: Array = tricks.feed(_stick, _just_pressed, _held)
 	_recent_grind_press = 0 if _just_pressed.has("grind") else _recent_grind_press + 1
 	_recent_revert_press = 0 if _just_pressed.has("revert") else mini(_recent_revert_press + 1, 100)
 	anim_time += delta
+	camera_hold = maxf(camera_hold - delta, 0.0)
+	if state.state == SkateState.State.ROLLING and _floor_normal.y > 0.95 and _snap.is_empty():
+		camera_hold = 0.0  # down on the flat: the chase camera takes over again
 	state.tick(delta)
 	if state.state != SkateState.State.WALK:
 		special.tick(delta, combo.is_active())  # the meter holds while on foot
+	if not _snap.is_empty():
+		_tick_snap(delta)
+		_finish_step(delta)
+		return
+	if snap_fired:
+		_undo_lone_spin()
+		if _try_ramp_snap():
+			_finish_step(delta)
+			return
 	if _just_pressed.has("dismount") and state.state == SkateState.State.ROLLING:
 		_try_dismount()
 	match state.state:
@@ -257,6 +288,10 @@ func _step(delta: float) -> void:
 			_tick_wallride(delta)
 		SkateState.State.BAIL:
 			_tick_bail(delta)
+	_finish_step(delta)
+
+
+func _finish_step(delta: float) -> void:
 	speed = velocity.length()
 	_update_visual(delta)
 	combo_changed.emit(combo.display_text(), combo.base_sum(), combo.multiplier())
@@ -730,6 +765,7 @@ func _tick_air(delta: float, requests: Array) -> void:
 		spin_in += 1.0
 	if _held.has("spin_right"):
 		spin_in -= 1.0
+	_lone_spin = _lone_spin + spin_in * tune.spin_rate * delta if spin_in != 0.0 else 0.0
 	if spin_in == 0.0 and absf(_stick.x) > 0.35:
 		# THUG-style stick spin, analog: past the steering range it spins, full stick at the spin rate.
 		spin_in = -signf(_stick.x) * clampf((absf(_stick.x) - 0.35) / 0.5, 0.3, 1.0)
@@ -745,6 +781,8 @@ func _tick_air(delta: float, requests: Array) -> void:
 	var target_up: Vector3 = _predict_landing_normal()
 	if vert_air and velocity.y > 0.0:
 		target_up = _launch_normal
+	if _snap_hold_up != Vector3.ZERO:
+		target_up = _snap_hold_up  # dropping in off a ramp snap: the board stays square to the wall it drops down
 	board_up = _turn_toward(board_up, target_up, clampf(delta * (12.0 if vert_air else 4.0), 0.0, 1.0))
 	# tricks
 	for r: Dictionary in requests:
@@ -834,6 +872,8 @@ func _air_trick(r: Dictionary) -> void:
 ## impact: the velocity just before touching down (move_and_slide has already removed the part into the floor).
 func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	_floor_normal = n
+	_snap_hold_up = Vector3.ZERO
+	_lone_spin = 0.0
 	var hit_v: Vector3 = impact if impact != Vector3.ZERO else velocity
 	var judge: Dictionary = Landing.judge(_board_forward(), board_up, hit_v, n)
 	var result: String = judge["result"]
@@ -1093,6 +1133,338 @@ func _tick_wallride(delta: float) -> void:
 			_land(get_floor_normal())
 
 
+# --- ramp snap ----------------------------------------------------------------------------------------
+
+## Q + E / L1 + R1 together. Inside a ramp (on a transition, in vert air, on a lip, down in a half pipe or bowl) it
+## takes the skater out of it; otherwise into the nearest ramp in reach (see RampSnap). Never on foot or bailing.
+## Returns true when a snap started.
+func _try_ramp_snap() -> bool:
+	var st: SkateState.State = state.state
+	if not st in [SkateState.State.ROLLING, SkateState.State.MANUAL, SkateState.State.AIR, SkateState.State.LIP]:
+		return false
+	if ragdoll_active or not is_inside_tree():
+		return false
+	var segs: Array = _lip_segments()
+	var grounded: bool = st == SkateState.State.ROLLING or st == SkateState.State.MANUAL
+	var inside: bool = RampSnap.in_ramp(grounded, _floor_normal.y, vert_air, st == SkateState.State.LIP,
+			RampSnap.enclosed(global_position, segs))
+	var plan: Dictionary = _plan_snap_out(segs) if inside else {}
+	if plan.is_empty():
+		plan = _plan_snap_in(segs, st == SkateState.State.AIR)
+	if plan.is_empty():
+		_ev("ramp_snap_miss")
+		ramp_snap_missed.emit()
+		return false
+	_begin_snap(plan)
+	return true
+
+
+static func _smooth01(x: float) -> float:
+	var p: float = clampf(x, 0.0, 1.0)
+	return p * p * (3.0 - 2.0 * p)
+
+
+## True during a ramp snap and its drop down the wall: the camera turns round faster to stay behind the skater.
+func snapping() -> bool:
+	return not _snap.is_empty() or _snap_hold_up != Vector3.ZERO
+
+
+## The chord's first button already spun the skater for a few ticks before the second came down: take it back.
+func _undo_lone_spin() -> void:
+	if state.state == SkateState.State.AIR and _lone_spin != 0.0:
+		facing = facing.rotated(Vector3.UP, -_lone_spin).normalized()
+		spin.update(_yaw())
+	_lone_spin = 0.0
+
+
+func _lip_segments() -> Array:
+	var segs: Array = []
+	for n: Node in get_tree().get_nodes_in_group("ramp_lip"):
+		var lip: RampLip = n as RampLip
+		if lip != null:
+			segs.append_array(lip.segments())
+	return segs
+
+
+## Snap in: the nearest lip in reach with a clear spot to arrive at. {} when none.
+func _plan_snap_in(segs: Array, air: bool) -> Dictionary:
+	var pos: Vector3 = global_position
+	var reach: float = tune.snap_reach_air if air else tune.snap_reach_roll
+	var cands: Array = RampSnap.candidates(pos, segs, reach)
+	for i: int in mini(cands.size(), 8):
+		var c: Dictionary = cands[i]
+		var lip: Vector3 = c["point"]
+		var inward: Vector3 = c["inward"]
+		if str(c["kind"]) == "roll_in":
+			var deck: Dictionary = _flat_under(lip - inward * RampSnap.ROLL_BACK, 1.0, 1.5)
+			if deck.is_empty() or not _clear_at(deck["pos"]):
+				continue
+			return {"mode": "roll_in", "p1": deck["pos"], "face1": inward, "lip": lip, "inward": inward}
+		var rel: Dictionary = _drop_release(lip, inward)
+		if rel.is_empty():
+			continue
+		if air and pos.y < lip.y - 0.5 and not bool(c["behind"]):
+			# already below the lip in the air: straight onto the wall, no deck to hang the tail on
+			return {"mode": "air_in", "p1": rel["pos"], "face1": inward, "rel": rel["pos"], "n": rel["n"], "lip": lip, "inward": inward}
+		var hang: Vector3 = RampSnap.hang_spot(lip, inward, AnimeBoard.TRUCK_Z)
+		if not _clear_at(hang):
+			continue
+		return {"mode": "drop_in", "p1": hang, "face1": inward, "rel": rel["pos"], "n": rel["n"], "lip": lip, "inward": inward}
+	return {}
+
+
+## Snap out: onto the flat in front of the ramp the skater is in, rolling away from it; when that flat is inside the
+## ramp too (a half pipe's flat bottom, a bowl floor), onto the deck behind the nearest coping. {} when neither fits.
+func _plan_snap_out(segs: Array) -> Dictionary:
+	var pos: Vector3 = global_position
+	var walls: Array = RampSnap.walls_around(pos, segs)
+	if walls.is_empty():
+		# high in vert air over the coping: the lip below, on the side the skater came up
+		for c: Dictionary in RampSnap.candidates(pos, segs, 4.0):
+			if not bool(c["behind"]):
+				walls.append(c)
+				break
+	if walls.is_empty():
+		return {}
+	var w: Dictionary = walls[0]
+	var lip: Vector3 = w["point"]
+	var inward: Vector3 = w["inward"]
+	# march out along the ramp to where the flat starts, then a few metres on
+	var k: float = 0.5
+	while k <= 16.0:
+		var probe: Dictionary = _flat_under(lip + inward * k, 1.0, 20.0)
+		if not probe.is_empty() and (probe["pos"] as Vector3).y < lip.y - 0.3:
+			var land: Dictionary = _flat_under(lip + inward * (k + RampSnap.OUT_FLAT), 1.0, 20.0)
+			if not land.is_empty() and absf((land["pos"] as Vector3).y - (probe["pos"] as Vector3).y) < 0.3 \
+					and _clear_at(land["pos"]) and not RampSnap.enclosed(land["pos"], segs):
+				return {"mode": "out", "p1": land["pos"], "face1": inward, "speed": tune.snap_out_speed, "over_y": lip.y + RampSnap.OUT_CLEAR}
+			break
+		k += 0.5
+	# off the side: past the nearer end of the lip, beside the ramp (a half pipe's flat bottom is inside it)
+	var tan: Vector3 = w["tangent"]
+	var ends: Array = _lip_ends(segs, lip, tan)
+	for e: Variant in ends:
+		var end_pt: Vector3 = (e as Array)[0]
+		var away: Vector3 = (e as Array)[1]
+		var side: Dictionary = _flat_under(end_pt + away * RampSnap.SIDE_OUT + inward * RampSnap.SIDE_IN, 1.0, 20.0)
+		if not side.is_empty() and (side["pos"] as Vector3).y < lip.y - 0.3 and _clear_at(side["pos"]) \
+				and not RampSnap.enclosed(side["pos"], segs):
+			return {"mode": "out", "p1": side["pos"], "face1": inward, "speed": tune.snap_out_speed, "over_y": lip.y + RampSnap.OUT_CLEAR}
+	var deck: Dictionary = _flat_under(lip - inward * RampSnap.DECK_BACK, 1.0, 1.5)
+	if deck.is_empty() or not _clear_at(deck["pos"]):
+		return {}
+	var hv: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	if hv.dot(tan) < 0.0 or (hv.length() < 0.5 and facing.dot(tan) < 0.0):
+		tan = -tan
+	return {"mode": "out_deck", "p1": deck["pos"], "face1": tan, "speed": RampSnap.DECK_SPEED, "over_y": lip.y + RampSnap.OUT_CLEAR}
+
+
+## The two ends of the straight run of lip through `lip` along `tan` (following segments that continue in line),
+## nearer first: [[end point, outward direction along the lip], ...].
+func _lip_ends(segs: Array, lip: Vector3, tan: Vector3) -> Array:
+	var lo: Vector3 = lip
+	var hi: Vector3 = lip
+	for s: Dictionary in segs:
+		var a: Vector3 = s["a"]
+		var b: Vector3 = s["b"]
+		var d: Vector3 = b - a
+		d.y = 0.0
+		if d.length() < 0.01 or absf(d.normalized().dot(tan)) < 0.999:
+			continue
+		var off: Vector3 = a - lip
+		off.y = 0.0
+		if (off - tan * off.dot(tan)).length() > 0.05 or absf(a.y - lip.y) > 0.05:
+			continue  # parallel but not on this lip's line
+		for q: Vector3 in [a, b]:
+			var t: float = (q - lip).dot(tan)
+			if t < (lo - lip).dot(tan):
+				lo = q
+			if t > (hi - lip).dot(tan):
+				hi = q
+	var out: Array = [[hi, tan], [lo, -tan]]
+	if lip.distance_to(lo) < lip.distance_to(hi):
+		out.reverse()
+	return out
+
+
+## Flat ground straight under `p`: a ray from `up` metres above it to `down` metres below. {pos, n} or {}.
+func _flat_under(p: Vector3, up: float, down: float) -> Dictionary:
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * up, p + Vector3.DOWN * down, collision_mask, [get_rid()])
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or (hit["normal"] as Vector3).y < RampSnap.ON_TRANSITION_NY:
+		return {}
+	return {"pos": hit["position"], "n": hit["normal"]}
+
+
+## Where a drop-in leaves the coping: just past it, over a wall that faces down the ramp. The body's sphere is swept
+## down from there to where it will meet the wall; the board is set square to that spot's normal for the drop (so
+## the catch is clean). {pos, n} or {}.
+func _drop_release(lip: Vector3, inward: Vector3) -> Dictionary:
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	for out: float in [RampSnap.DROP_OUT, 0.5, 0.8]:
+		var at: Vector3 = lip + inward * out + Vector3.UP * 0.05
+		if not _clear_at(at):
+			continue
+		var sphere := SphereShape3D.new()
+		sphere.radius = 0.3
+		var q := PhysicsShapeQueryParameters3D.new()
+		q.shape = sphere
+		q.transform = Transform3D(Basis.IDENTITY, at + Vector3.UP * 0.3)
+		q.motion = Vector3.DOWN * 6.0
+		q.collision_mask = collision_mask
+		q.exclude = [get_rid()]
+		var frac: PackedFloat32Array = space.cast_motion(q)
+		if frac.size() < 2 or frac[1] >= 1.0:
+			continue
+		q.transform = Transform3D(Basis.IDENTITY, at + Vector3.UP * 0.3 + q.motion * frac[1])
+		q.motion = Vector3.ZERO
+		var rest: Dictionary = space.get_rest_info(q)
+		if rest.is_empty():
+			continue
+		var n: Vector3 = rest["normal"]
+		if n.y < 0.05 or n.y > RampSnap.ON_TRANSITION_NY or Vector3(n.x, 0.0, n.z).normalized().dot(inward) < 0.5:
+			continue  # no wall facing down the ramp under this spot
+		return {"pos": at, "n": n}
+	return {}
+
+
+## True when the skater's sphere fits at origin `p` without touching the park.
+func _clear_at(p: Vector3) -> bool:
+	var sphere := SphereShape3D.new()
+	sphere.radius = 0.27
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = sphere
+	q.transform = Transform3D(Basis.IDENTITY, p + Vector3.UP * 0.32)
+	q.collision_mask = collision_mask
+	q.exclude = [get_rid()]
+	return get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty()
+
+
+func _begin_snap(plan: Dictionary) -> void:
+	if state.state != SkateState.State.AIR:
+		state.event("ollie")
+	balance_kind = ""
+	_rail = null
+	_grab_trick = {}
+	_air_trick_until = 0.0
+	_pending_air.clear()
+	tricks.clear()
+	crouch = 0.0
+	_crouch_time = 0.0
+	vert_air = false
+	_topple_side = 0.0
+	_carve_left = 0.0
+	_left_edge = false
+	_snap_hold_up = Vector3.ZERO
+	var p0: Vector3 = global_position
+	var dist: float = p0.distance_to(plan["p1"] as Vector3)
+	_snap = plan.duplicate()
+	_snap["phase"] = "arc"
+	_snap["t"] = 0.0
+	_snap["p0"] = p0
+	_snap["dur"] = RampSnap.arc_time(dist)
+	_snap["apex"] = RampSnap.arc_apex(dist, p0, plan["p1"], float(plan.get("over_y", -INF)))
+	_snap["face0"] = facing
+	_snap["speed0"] = velocity.length()
+	spin.start(_yaw())
+	_ev("ramp_snap:" + str(plan["mode"]))
+	_set_anim("ollie")
+	ramp_snapped.emit(str(plan["mode"]))
+
+
+## One tick of a ramp snap: the guided arc, then the drop-in hang and stomp. The body is placed directly (no slide):
+## every arrival spot was checked clear before the snap began.
+func _tick_snap(delta: float) -> void:
+	_snap["t"] = float(_snap["t"]) + delta
+	var t: float = _snap["t"]
+	if str(_snap["phase"]) == "hang":
+		velocity = Vector3.ZERO
+		board_up = _turn_toward(board_up, Vector3.UP, clampf(delta * 12.0, 0.0, 1.0))
+		if t >= RampSnap.HANG_TIME + RampSnap.STOMP_TIME:
+			_release_drop()
+		return
+	var u: float = clampf(t / float(_snap["dur"]), 0.0, 1.0)
+	var p: Vector3 = RampSnap.arc_point(_snap["p0"], _snap["p1"], _snap["apex"], u)
+	velocity = (p - global_position) / maxf(delta, 0.0001)
+	global_position = p
+	var k: float = u * u * (3.0 - 2.0 * u)
+	# Face the way the arc travels through its first half, then turn to the arrival facing, by yaw: a half turn (rolling
+	# straight at a ramp, arriving facing down it) is a smooth spin, not a flip, and the camera trails the flight.
+	var f0: Vector3 = _snap["face0"]
+	var f1: Vector3 = _snap["face1"]
+	var fm: Vector3 = (_snap["p1"] as Vector3) - (_snap["p0"] as Vector3)
+	fm.y = 0.0
+	fm = fm.normalized() if fm.length() > 0.5 else f1
+	var y0: float = atan2(-f0.x, -f0.z)
+	var ym: float = atan2(-fm.x, -fm.z)
+	var yaw: float = lerp_angle(y0, ym, minf(k * 2.5, 1.0))
+	if u > 0.5:
+		yaw = lerp_angle(ym, atan2(-f1.x, -f1.z), _smooth01((u - 0.5) / 0.5))
+	facing = Vector3(-sin(yaw), 0.0, -cos(yaw))
+	board_up = _turn_toward(board_up, Vector3.UP, clampf(delta * 10.0, 0.0, 1.0))
+	if u > 0.3 and anim == "ollie":
+		_set_anim("air")
+	if u >= 1.0:
+		_arrive_snap()
+
+
+func _arrive_snap() -> void:
+	var mode: String = _snap["mode"]
+	global_position = _snap["p1"]
+	facing = _snap["face1"]
+	match mode:
+		"drop_in":
+			_snap["phase"] = "hang"
+			_snap["t"] = 0.0
+			velocity = Vector3.ZERO
+			_set_anim("drop_in")
+		"air_in":
+			_release_drop()
+		_:
+			# roll_in, out, out_deck: set down on flat ground, rolling
+			var spd: float = RampSnap.ROLL_SPEED if mode == "roll_in" else float(_snap.get("speed", tune.snap_out_speed))
+			velocity = facing * spd
+			_floor_normal = Vector3.UP
+			up_direction = Vector3.UP
+			board_up = Vector3.UP
+			_launch_normal = Vector3.UP
+			_transition_ticks = 0
+			_snap = {}
+			state.event("land")
+			if mode == "roll_in":
+				_score_trick({"id": "roll_in", "name": "Roll In", "points": 50, "kind": "snap", "anim": ""})
+			_ev("land:clean")
+			_set_anim("land")
+			landed.emit("clean")
+
+
+## Off the coping: drop down the wall, square to it, at least snap_drop_speed. The landing on the wall is a normal
+## vert re-entry (_land), so a clean one keeps the whole speed.
+func _release_drop() -> void:
+	var n: Vector3 = _snap["n"]
+	var down: Vector3 = Vector3.DOWN.slide(n).normalized()
+	var v0: float = maxf(float(_snap["speed0"]), tune.snap_drop_speed)
+	var from: Vector3 = global_position
+	global_position = _snap["rel"]
+	_snap_offset += from - global_position  # a few cm past the hang spot: the visual eases over
+	velocity = down * v0
+	facing = down
+	board_up = n
+	_snap_hold_up = n
+	vert_air = true
+	_launch_normal = n
+	_transition_ticks = 0
+	up_direction = Vector3.UP
+	_snap = {}
+	spin.start(_yaw())
+	_ev("ramp_snap_release")
+	camera_hold = RampSnap.CAMERA_HOLD
+	camera_anchor = from - Vector3(n.x, 0.0, n.z).normalized() * RampSnap.CAMERA_BACK + Vector3.UP * RampSnap.CAMERA_UP
+	_score_trick({"id": "drop_in", "name": "Drop In", "points": 50, "kind": "snap", "anim": ""})
+	if anim != "drop_in":
+		_set_anim("air")
+
+
 # --- walking ------------------------------------------------------------------------------------------
 
 ## ROLLING -> WALK: hop off the board (at speed, jog a few steps to a stop) and carry it.
@@ -1160,6 +1532,8 @@ func _set_walk_physics(walking: bool) -> void:
 
 func _bail() -> void:
 	balance_kind = ""
+	_snap = {}
+	_snap_hold_up = Vector3.ZERO
 	_topple_side = 0.0
 	_carve_left = 0.0
 	_rail = null
@@ -1237,6 +1611,9 @@ func respawn() -> void:
 	_ev("respawn")
 	_end_ragdoll()
 	_getup_left = 0.0
+	_snap = {}
+	_snap_hold_up = Vector3.ZERO
+	camera_hold = 0.0
 	global_transform = _spawn
 	velocity = Vector3.ZERO
 	_snap_offset = Vector3.ZERO
@@ -1310,6 +1687,12 @@ func snapshot() -> Dictionary:
 		"ragdoll": ragdoll_active,
 		"getup_left": _getup_left,
 		"walker": walker.to_dict(),
+		"snap": _snap.duplicate(true),
+		"snap_hold_up": _snap_hold_up,
+		"lone_spin": _lone_spin,
+		"camera_hold": camera_hold,
+		"camera_anchor": camera_anchor,
+		"chord": chord.to_dict(),
 		"state": {
 			"state": int(state.state),
 			"time_in_state": state.time_in_state,
@@ -1394,6 +1777,12 @@ func restore(d: Dictionary) -> void:
 	_snap_offset = d["snap_offset"]
 	_spawn = d["spawn"]
 	_getup_left = d["getup_left"]
+	_snap = (d.get("snap", {}) as Dictionary).duplicate(true)
+	_snap_hold_up = d.get("snap_hold_up", Vector3.ZERO)
+	_lone_spin = float(d.get("lone_spin", 0.0))
+	camera_hold = float(d.get("camera_hold", 0.0))
+	camera_anchor = d.get("camera_anchor", Vector3.ZERO)
+	chord.from_dict(d.get("chord", {}))
 	var st: Dictionary = d["state"]
 	state.state = int(st["state"]) as SkateState.State
 	if d.has("walker"):

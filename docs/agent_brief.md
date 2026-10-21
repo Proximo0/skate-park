@@ -62,3 +62,8 @@ Kid-friendly, bright, rounded, readable. No blood, no swearing.
 `move_left/right/up/down` (stick, WASD, d-pad), `ollie` (Cross / Space), `flip` (Square / J), `grab` (Circle / K),
 `grind` (Triangle / I), `spin_left` (L1 / Q), `spin_right` (R1 / E), `revert` (R2 / L), `nollie` (L2 / U),
 `pause` (Start / Esc), `restart` (Select / Backspace), `debug_stamp` (F10). `Controls.move_vector()`.
+Chord `ramp_snap` = `spin_left` + `spin_right` together (Q + E / L1 + R1, within 0.1 s; `Controls.CHORDS`, read by
+`ChordInput` in the skater, and the presses do not also spin): in the air or rolling on flat ground it drops you into
+the nearest ramp lip in reach (`RampLip` nodes in group `ramp_lip`, picked by `RampSnap`): a drop-in on coping (tail
+hooked, stomp, drop down the wall) or a roll-in on a start deck; riding a transition, in vert air or down in a half pipe
+or bowl it takes you out onto the flat (or the deck). New ramp pieces add a `RampLip` on their coping or roll-in edge.

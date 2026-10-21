@@ -119,6 +119,8 @@ static func _roll_in(width: float, start_height: float, L: Dictionary) -> Node3D
 		prof.append(p)
 	var tower: StaticBody3D = shade_by_height(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_SIDE, "RollIn"), PieceKit.RAMP_SIDE, start_height, 0.74, 1.12)
 	node.add_child(tower)
+	# the start deck's edge: a roll-in for the ramp snap
+	node.add_child(RampLip.line(PackedVector3Array([Vector3(0.0, start_height, DECK_LEN), Vector3(width, start_height, DECK_LEN)]), Vector3.BACK, "roll_in", "RollInLip"))
 	# Visual handrails along the roll-in (no collision, no grind rails).
 	for x: float in [SIDE_RAIL_INSET, width - SIDE_RAIL_INSET]:
 		var i: int = 0
@@ -307,6 +309,7 @@ static func _quarter_pipe(root: Node3D, width: float, qp_height: float, L: Dicti
 	prof.append(Vector2(qp_height, end_z))
 	root.add_child(shade_by_height(PieceKit.body(PieceKit.extrude_profile(prof, width), PieceKit.RAMP_WOOD, "QuarterPipe"), PieceKit.RAMP_WOOD, qp_height, 0.72, 1.05))
 	root.add_child(PieceKit.rail(PackedVector3Array([Vector3(0.0, qp_height, lip_z), Vector3(width, qp_height, lip_z)]), "coping", "Coping"))
+	root.add_child(RampLip.line(PackedVector3Array([Vector3(0.0, qp_height, lip_z), Vector3(width, qp_height, lip_z)]), Vector3.FORWARD, "drop_in", "QpLip"))
 	var pipe: Node3D = PieceKit.round_rail(Vector3(0.0, qp_height, lip_z), Vector3(width, qp_height, lip_z), 0.05, PieceKit.COPING, "CopingPipe")
 	# the visual pipe only; the GrindRail above is the coping line
 	pipe.get_node("Line").free()

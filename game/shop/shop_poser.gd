@@ -6,7 +6,9 @@ extends SkaterPoser
 ## hands on the counter top in front), "sit" (on a seat SEAT_HEIGHT high, hands on the knees, board on the floor).
 ## All poses are in the body's "visual" space: -Z forward, the floor at y = 0 under the hips.
 
-const SEAT_HEIGHT: float = 0.5  ## hip joint height when sitting (cushion top plus a little)
+const SEAT_HEIGHT: float = 0.47  ## hip joint height when sitting: glutes on a cushion top about 0.38
+const SIT_RECLINE: float = 28.0  ## degrees the pelvis and spine lean back, onto the backrest
+const SIT_FEET: float = 0.56  ## ankles this far in front of the hips (knees just past the cushion edge)
 const SHOP_BLEND_RATE: float = 8.0
 
 var mode: String = ""
@@ -75,25 +77,29 @@ static func _shop_counter(pose: Dictionary, t: float) -> void:
 	pose["board_pos"] = Vector3(0.0, -5.0, 0.0)  ## out of sight under the floor (the caller also hides it)
 
 
-## Sitting: hips on the seat, shins down to the floor, leaning back, hands on the knees, board on the floor in front.
+## Sitting: glutes on the cushion, thighs level to knees just past its front edge, shins down to the floor, the
+## pelvis and spine reclined so the back rests on the backrest, hands on the thighs, board on the floor in front.
+## Measured on the Houdini bodies (fuller hips): SEAT_HEIGHT puts the glutes on ShopInterior's cushion top (about
+## 0.38) and SIT_RECLINE the shoulder blades on its backrest with the hips at SEAT_X.
 static func _shop_sit(pose: Dictionary, t: float) -> void:
 	pose["hips_y"] = SEAT_HEIGHT - PlaceholderSkater.HIP_HEIGHT
 	pose["lift"] = -PlaceholderSkater.DECK_TOP_Y
 	pose["pitch"] = 0.0
 	pose["lean"] = 0.0
 	pose["feet_on_board"] = 0.0
-	pose["foot_L"] = Vector3(-0.15, PlaceholderSkater.ANKLE_HEIGHT, -0.5)
-	pose["foot_R"] = Vector3(0.16, PlaceholderSkater.ANKLE_HEIGHT, -0.44)
+	pose["foot_L"] = Vector3(-0.14, PlaceholderSkater.ANKLE_HEIGHT, -SIT_FEET)
+	pose["foot_R"] = Vector3(0.15, PlaceholderSkater.ANKLE_HEIGHT, -SIT_FEET + 0.03)
 	pose["toe_L"] = -10.0
 	pose["toe_R"] = 12.0
 	var breathe: float = sin(t * 1.3)
-	pose["Spine"] = Vector3(12.0 + 1.0 * breathe, 0.0, 0.0)
-	pose["Chest"] = Vector3(6.0, 0.0, 0.0)
-	pose["Neck"] = Vector3(-6.0, 0.0, 0.0)
-	pose["Head"] = Vector3(-8.0, 6.0 * sin(t * 0.23), 4.0)
-	pose["hand_L"] = Vector3(-0.17, SEAT_HEIGHT + 0.09, -0.34)
-	pose["hand_R"] = Vector3(0.18, SEAT_HEIGHT + 0.09, -0.32)
+	pose["Hips"] = Vector3(SIT_RECLINE * 0.45, 0.0, 0.0)
+	pose["Spine"] = Vector3(SIT_RECLINE * 0.35 + 1.0 * breathe, 0.0, 0.0)
+	pose["Chest"] = Vector3(SIT_RECLINE * 0.2, 0.0, 0.0)
+	pose["Neck"] = Vector3(-10.0, 0.0, 0.0)
+	pose["Head"] = Vector3(-12.0, 6.0 * sin(t * 0.23), 4.0)  ## chin down from the recline, eyes ahead
+	pose["hand_L"] = Vector3(-0.16, SEAT_HEIGHT + 0.07, -0.22)
+	pose["hand_R"] = Vector3(0.17, SEAT_HEIGHT + 0.07, -0.2)
 	pose["grip_L"] = 1.0
 	pose["grip_R"] = 1.0
 	pose["board_rot"] = Vector3(0.0, 90.0, 0.0)
-	pose["board_pos"] = Vector3(0.05, 0.0, -0.8)
+	pose["board_pos"] = Vector3(0.05, 0.0, -0.88)

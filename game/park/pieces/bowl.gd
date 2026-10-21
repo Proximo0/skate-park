@@ -40,6 +40,7 @@ static func build(size_x: float = 14.0, size_z: float = 10.0, depth: float = 2.6
 		loop.append(Vector3(p.x, 0.0, p.y))
 	loop.append(loop[0])
 	root.add_child(PieceKit.rail(loop, "coping", "Coping"))
+	root.add_child(RampLip.ring(loop, Vector3(size_x * 0.5, 0.0, size_z * 0.5)))
 	var pipes := Node3D.new()
 	pipes.name = "CopingPipes"
 	for i: int in range(loop.size() - 1):

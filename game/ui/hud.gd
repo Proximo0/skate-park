@@ -152,6 +152,8 @@ func _connect_skater(s: Skater) -> void:
 		s.combo_bailed.connect(_on_combo_bailed)
 	if not s.gap_hit.is_connected(_on_gap_hit):
 		s.gap_hit.connect(_on_gap_hit)
+	if not s.ramp_snap_missed.is_connected(_on_ramp_snap_missed):
+		s.ramp_snap_missed.connect(_on_ramp_snap_missed)
 
 
 func _disconnect_skater(s: Skater) -> void:
@@ -165,6 +167,8 @@ func _disconnect_skater(s: Skater) -> void:
 		s.combo_bailed.disconnect(_on_combo_bailed)
 	if s.gap_hit.is_connected(_on_gap_hit):
 		s.gap_hit.disconnect(_on_gap_hit)
+	if s.ramp_snap_missed.is_connected(_on_ramp_snap_missed):
+		s.ramp_snap_missed.disconnect(_on_ramp_snap_missed)
 
 
 # --- pure helpers (unit tested) -----------------------------------------------------------------------
@@ -557,6 +561,11 @@ func _spawn_tag(text: String, color: Color, wobble: bool) -> void:
 
 func _on_combo_bailed(_text: String) -> void:
 	_spawn_float("Bail!", UiStyle.BUBBLEGUM, true, UiStyle.SIZE_TITLE)
+
+
+## Q + E with no ramp in reach: a small hint, not a banner.
+func _on_ramp_snap_missed() -> void:
+	_spawn_tag("No ramp nearby", UiStyle.SUNSHINE, false)
 
 
 func _on_gap_hit(gap_name: String, points: int) -> void:

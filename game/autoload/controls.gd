@@ -20,6 +20,12 @@ const BUTTONS := {
 	"debug_stamp": [[KEY_F10], []],
 }
 
+## Chorded actions: both buttons together (within ChordInput.WINDOW_TICKS) fire the action instead of their own.
+## Not InputMap actions: the skater reads them through ChordInput. ramp_snap = Q + E / L1 + R1 (LB + RB).
+const CHORDS := {
+	"ramp_snap": ["spin_left", "spin_right"],
+}
+
 
 func _ready() -> void:
 	_add_move("move_left", [KEY_A, KEY_LEFT], JOY_AXIS_LEFT_X, -1.0, JOY_BUTTON_DPAD_LEFT)

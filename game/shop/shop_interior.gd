@@ -19,7 +19,7 @@ const DOOR_H: float = 2.4
 const WINDOWS: Array[Vector2] = [Vector2(-4.4, -2.0), Vector2(1.3, 3.7)]  ## x ranges in the front wall
 const WINDOW_Y: Vector2 = Vector2(0.9, 2.45)
 const COUNTER_TOP: float = 1.0
-const SEAT_X: float = 6.3  ## where a seated hip sits on the couch (x)
+const SEAT_X: float = 6.36  ## where a seated hip sits on the couch (x): knees just past the cushion's front edge
 const SEAT_ZS: Array[float] = [1.15, 2.3]
 
 const WALL_PAINT := Color("#4C9BA3")  ## muted teal: deep enough that lamps never wash it to peach
@@ -1022,23 +1022,25 @@ func _build_lounge() -> void:
 	var cz1: float = 2.95
 	var czc: float = (cz0 + cz1) * 0.5
 	var fabric: Color = Color("#D9A441")
-	_box(couch, Vector3(6.45, 0.25, czc), Vector3(1.1, 0.3, cz1 - cz0), fabric.darkened(0.1))
+	# Low lounge seat (cushion top about 0.38, 0.55 deep) so a seated rider's knees clear the front edge with the
+	# feet on the floor, and a thick backrest so a reclined back rests against it (ShopPoser._shop_sit).
+	_box(couch, Vector3(6.525, 0.2, czc), Vector3(0.95, 0.2, cz1 - cz0), fabric.darkened(0.1))
 	for k: int in 2:
 		var zc: float = lerpf(cz0 + 0.2, cz1 - 0.2, (float(k) + 0.5) / 2.0)
-		_box(couch, Vector3(6.35, 0.44, zc), Vector3(0.9, 0.12, (cz1 - cz0 - 0.4) * 0.5 - 0.02), fabric, Vector3(0, 0, -2))
-		_box(couch, Vector3(6.85, 0.75, zc), Vector3(0.25, 0.55, (cz1 - cz0 - 0.4) * 0.5 - 0.02), fabric, Vector3(0, 0, 10))
+		_box(couch, Vector3(6.425, 0.33, zc), Vector3(0.75, 0.1, (cz1 - cz0 - 0.4) * 0.5 - 0.02), fabric, Vector3(0, 0, -2))
+		_box(couch, Vector3(6.8, 0.7, zc), Vector3(0.36, 0.62, (cz1 - cz0 - 0.4) * 0.5 - 0.02), fabric, Vector3(0, 0, 10))
 	for z: float in [cz0 + 0.1, cz1 - 0.1]:
-		_box(couch, Vector3(6.45, 0.55, z), Vector3(1.1, 0.3, 0.2), fabric.darkened(0.05))
-		_ball(couch, Vector3(6.0, 0.7, z), 0.1, fabric.darkened(0.05), Vector3(1.0, 1.0, 1.0))
-		_cyl(couch, Vector3(6.45, 0.7, z), 0.1, 0.1, 1.1, fabric.darkened(0.05), Vector3(0, 0, 90), 14)
-	for x: float in [5.98, 6.92]:
+		_box(couch, Vector3(6.525, 0.46, z), Vector3(0.95, 0.32, 0.2), fabric.darkened(0.05))
+		_ball(couch, Vector3(6.05, 0.62, z), 0.1, fabric.darkened(0.05), Vector3(1.0, 1.0, 1.0))
+		_cyl(couch, Vector3(6.525, 0.62, z), 0.1, 0.1, 0.95, fabric.darkened(0.05), Vector3(0, 0, 90), 14)
+	for x: float in [6.13, 6.92]:
 		for z: float in [cz0 + 0.08, cz1 - 0.08]:
 			_cyl(couch, Vector3(x, 0.05, z), 0.035, 0.025, 0.1, WOOD_DARK, Vector3.ZERO, 8)
-	_box(couch, Vector3(6.3, 0.505, 1.95), Vector3(0.28, 0.01, 0.22), Color("#7FB3D5"), Vector3(0, 12, 0))  # patched cushion
-	_box(couch, Vector3(6.3, 0.508, 1.95), Vector3(0.3, 0.005, 0.01), CREAM, Vector3(0, 12, 0))
-	_ball(couch, Vector3(6.65, 0.7, cz1 - 0.38), 0.17, Color("#FF7EB6"), Vector3(0.5, 1.0, 1.0))
-	_box(couch, Vector3(6.75, 0.62, cz0 + 0.5), Vector3(0.5, 0.05, 0.6), Color("#4FC3F7"), Vector3(0, 0, 40))  # throw blanket
-	_solid(Vector3(6.45, 0.45, czc), Vector3(1.1, 0.9, cz1 - cz0))
+	_box(couch, Vector3(6.35, 0.385, 1.95), Vector3(0.28, 0.01, 0.22), Color("#7FB3D5"), Vector3(0, 12, 0))  # patched cushion
+	_box(couch, Vector3(6.35, 0.388, 1.95), Vector3(0.3, 0.005, 0.01), CREAM, Vector3(0, 12, 0))
+	_ball(couch, Vector3(6.55, 0.6, cz1 - 0.38), 0.17, Color("#FF7EB6"), Vector3(0.5, 1.0, 1.0))
+	_box(couch, Vector3(6.7, 0.55, cz0 + 0.5), Vector3(0.5, 0.05, 0.6), Color("#4FC3F7"), Vector3(0, 0, 40))  # throw blanket
+	_solid(Vector3(6.525, 0.45, czc), Vector3(0.95, 0.9, cz1 - cz0))
 	seats.clear()
 	for z: float in SEAT_ZS:
 		seats.append(Transform3D(Basis.looking_at(Vector3(-1, 0, 0), Vector3.UP), Vector3(SEAT_X, 0.0, z)))

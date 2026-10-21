@@ -5,6 +5,7 @@ Run SkatePark.exe, press Play, and try each line. Note anything that feels off.
 - [ ] Push and steer around the flat; speed builds and the camera follows smoothly.
 - [ ] Ollie (Space / A) off the kicker; flip (J / X) and grab (K / B) in the air; land clean.
 - [ ] Ride up the halfpipe or a quarter pipe and get vert air; spin with Q/E; land back in.
+- [ ] Press Q + E together (L1 + R1) rolling near a quarter pipe: you hop onto the coping and drop in. Again on the wall: out onto the flat. In the air near a ramp: dropped into it. Far from ramps: "No ramp nearby".
 - [ ] Grind (I / Y) the handrail on the big stairs, a ledge, and the flatbar; balance with left/right.
 - [ ] Manual (up then down) across the manual pad; keep the meter centred.
 - [ ] Revert (L / RT) right after landing from vert; the skater turns around to switch.

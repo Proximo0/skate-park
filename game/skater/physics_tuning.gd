@@ -46,6 +46,10 @@ const FIELDS: Array = [
 	["walk_accel", 27.0, 5.0, 80.0, 1.0, "Walk", "Walking acceleration, m/s² (the default reaches run speed in about 0.15 s)."],
 	["walk_jump", 0.6, 0.2, 1.5, 0.05, "Walk", "Jump height on foot, m."],
 	["getup_time", 0.6, 0.1, 2.0, 0.05, "Bail", "Get-up time after a bail, s."],
+	["snap_reach_roll", 12.0, 3.0, 30.0, 0.5, "Ramp snap", "Q + E while rolling: farthest ramp lip it snaps you into, m."],
+	["snap_reach_air", 15.0, 3.0, 30.0, 0.5, "Ramp snap", "Q + E in the air: farthest ramp lip it snaps you into, m."],
+	["snap_drop_speed", 3.0, 0.5, 10.0, 0.25, "Ramp snap", "Slowest speed a snap drop-in starts down the wall with, m/s."],
+	["snap_out_speed", 5.0, 1.0, 12.0, 0.25, "Ramp snap", "Rolling speed after a snap out of a ramp, m/s."],
 ]
 
 static var _shared: PhysicsTuning = null
@@ -88,6 +92,10 @@ var run_speed: float
 var walk_accel: float
 var walk_jump: float
 var getup_time: float
+var snap_reach_roll: float
+var snap_reach_air: float
+var snap_drop_speed: float
+var snap_out_speed: float
 
 
 func _init() -> void:
