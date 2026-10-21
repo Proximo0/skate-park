@@ -32,6 +32,7 @@ Each kind is capped at 6 reports per line (the rest are counted as suppressed).
     BOT score=<0-100> issues=N lines=N failed=N landed_total=N
 
 Each BOT line also ends with `landed_total=N` (points banked on that line), and bot_run.sh prints `BOTLANDED <line> landed_total=N` per line plus a total. A `tp` waypoint waits (up to 4 s) for an open combo to land before respawning; if it has to force the teleport the line gets the note `tp_forced_with_combo_open`.
+
 `/tmp/bot/report.json` holds everything. `--record` writes `/tmp/bot/<line>.json` for each line with issues: `{snapshot (var_to_str at line start and at bot teleports), frames[]}` where frames are the skater `debug` dicts with Vector3 as arrays. `--tune=` applies a preset to `PhysicsTuning.shared()`. `--only=` takes a line name or prefix.
 
 ## Score
