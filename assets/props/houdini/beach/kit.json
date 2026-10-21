@@ -1,0 +1,364 @@
+{
+ "level": "beach",
+ "units": "metres, +Y up, front -Z, origin at the base centre",
+ "collision_note": "boxes are axis-aligned in the piece's space; \"mesh\" = use the mesh as a trimesh",
+ "pieces": [
+  {
+   "name": "palm_tree_a",
+   "file": "palm_tree_a.glb",
+   "tris": 772,
+   "bounds": {
+    "min": [
+     -1.229,
+     0.0,
+     -2.278
+    ],
+    "max": [
+     2.892,
+     7.327,
+     2.489
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0.4,
+      3.5,
+      0
+     ],
+     "size": [
+      0.85,
+      7.0,
+      0.45
+     ]
+    }
+   ]
+  },
+  {
+   "name": "palm_tree_b",
+   "file": "palm_tree_b.glb",
+   "tris": 828,
+   "bounds": {
+    "min": [
+     -3.81,
+     0.0,
+     -2.615
+    ],
+    "max": [
+     1.389,
+     8.888,
+     2.378
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      -0.65,
+      4.25,
+      0
+     ],
+     "size": [
+      1.1,
+      8.5,
+      0.45
+     ]
+    }
+   ]
+  },
+  {
+   "name": "palm_tree_c",
+   "file": "palm_tree_c.glb",
+   "tris": 716,
+   "bounds": {
+    "min": [
+     -1.694,
+     0.0,
+     -1.761
+    ],
+    "max": [
+     2.32,
+     5.821,
+     1.977
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0.2,
+      2.75,
+      0
+     ],
+     "size": [
+      0.65,
+      5.5,
+      0.45
+     ]
+    }
+   ]
+  },
+  {
+   "name": "lifeguard_tower",
+   "file": "lifeguard_tower.glb",
+   "tris": 440,
+   "bounds": {
+    "min": [
+     -1.305,
+     -0.053,
+     -4.322
+    ],
+    "max": [
+     1.47,
+     4.9,
+     1.35
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      1.6,
+      0
+     ],
+     "size": [
+      2.6,
+      3.2,
+      2.6
+     ]
+    },
+    {
+     "center": [
+      0,
+      2.86,
+      0.2
+     ],
+     "size": [
+      2.0,
+      1.6,
+      1.8
+     ]
+    },
+    {
+     "center": [
+      0.6,
+      1.0,
+      -2.8
+     ],
+     "size": [
+      0.9,
+      2.0,
+      3.0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "pier_section",
+   "file": "pier_section.glb",
+   "tris": 624,
+   "bounds": {
+    "min": [
+     -2.01,
+     0.0,
+     -3.0
+    ],
+    "max": [
+     2.01,
+     3.0,
+     3.0
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      1.9,
+      0
+     ],
+     "size": [
+      4.0,
+      0.2,
+      6.0
+     ]
+    },
+    {
+     "center": [
+      -1.9,
+      2.5,
+      0
+     ],
+     "size": [
+      0.12,
+      1.0,
+      6.0
+     ]
+    },
+    {
+     "center": [
+      1.9,
+      2.5,
+      0
+     ],
+     "size": [
+      0.12,
+      1.0,
+      6.0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "boardwalk_planks",
+   "file": "boardwalk_planks.glb",
+   "tris": 216,
+   "bounds": {
+    "min": [
+     -2.0,
+     0.0,
+     -1.0
+    ],
+    "max": [
+     2.0,
+     0.25,
+     1.0
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.125,
+      0
+     ],
+     "size": [
+      4.0,
+      0.25,
+      2.0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "food_stand",
+   "file": "food_stand.glb",
+   "tris": 420,
+   "bounds": {
+    "min": [
+     -1.7,
+     0.0,
+     -2.082
+    ],
+    "max": [
+     1.7,
+     3.1,
+     1.45
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      1.25,
+      0
+     ],
+     "size": [
+      3.0,
+      2.5,
+      2.5
+     ]
+    }
+   ]
+  },
+  {
+   "name": "surfboard_rack",
+   "file": "surfboard_rack.glb",
+   "tris": 520,
+   "bounds": {
+    "min": [
+     -1.2,
+     -0.009,
+     -0.803
+    ],
+    "max": [
+     1.2,
+     1.909,
+     0.526
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.9,
+      -0.25
+     ],
+     "size": [
+      2.4,
+      1.85,
+      1.0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "umbrella_towel_set",
+   "file": "umbrella_towel_set.glb",
+   "tris": 176,
+   "bounds": {
+    "min": [
+     -1.1,
+     0.0,
+     -1.046
+    ],
+    "max": [
+     1.51,
+     2.45,
+     1.046
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      1.2,
+      0
+     ],
+     "size": [
+      0.1,
+      2.4,
+      0.1
+     ]
+    },
+    {
+     "center": [
+      1.25,
+      0.2,
+      0.6
+     ],
+     "size": [
+      0.52,
+      0.4,
+      0.34
+     ]
+    }
+   ]
+  },
+  {
+   "name": "rocks",
+   "file": "rocks.glb",
+   "tris": 256,
+   "bounds": {
+    "min": [
+     -1.374,
+     0.0,
+     -1.145
+    ],
+    "max": [
+     1.627,
+     1.091,
+     0.84
+    ]
+   },
+   "collision": "mesh"
+  }
+ ]
+}
