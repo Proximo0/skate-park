@@ -14,6 +14,7 @@ const BUTTONS := {
 	"spin_right": [[KEY_E], [JOY_BUTTON_RIGHT_SHOULDER]],
 	"revert": [[KEY_L], []],  # plus right trigger, added below
 	"nollie": [[KEY_U], []],  # plus left trigger, added below
+	"dismount": [[KEY_C], [JOY_BUTTON_LEFT_STICK]],  # step off / on the board
 	"pause": [[KEY_ESCAPE], [JOY_BUTTON_START]],
 	"restart": [[KEY_BACKSPACE], [JOY_BUTTON_BACK]],
 	"debug_stamp": [[KEY_F10], []],

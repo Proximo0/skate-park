@@ -462,3 +462,40 @@ func test_open_combo_on_ground_lands_on_next_tick_after_window() -> void:
 	assert_eq(landed.size(), 0, "no landing during mark_trick itself")
 	k.tick(0.0)
 	assert_eq(landed.size(), 1, "a trick scored while rolling past the window lands on the next tick")
+
+
+func test_dismount_only_from_rolling_and_mount_only_from_walk() -> void:
+	var k: SkateState = SkateState.new()
+	assert_false(k.event("mount"), "mount refused while rolling")
+	assert_true(k.event("dismount"))
+	assert_eq(k.state, SkateState.State.WALK)
+	assert_eq(k.state_name(), "WALK")
+	assert_false(k.event("dismount"), "already walking")
+	assert_true(k.event("mount"))
+	assert_eq(k.state, SkateState.State.ROLLING)
+	for s: int in [SkateState.State.AIR, SkateState.State.GRIND, SkateState.State.MANUAL, SkateState.State.LIP,
+			SkateState.State.WALLRIDE, SkateState.State.BAIL]:
+		var o: SkateState = _with_state(s as SkateState.State)
+		assert_false(o.event("dismount"), "no dismount from %d" % s)
+		assert_eq(o.state, s as SkateState.State)
+
+
+func test_walk_refuses_tricks_and_takes_bail() -> void:
+	for ev: String in ["ollie", "fall_off", "land", "grind_start", "manual_start", "wallride_start", "revert"]:
+		var k: SkateState = _with_state(SkateState.State.WALK)
+		assert_false(k.event(ev), "%s refused while walking" % ev)
+		assert_eq(k.state, SkateState.State.WALK)
+	var b: SkateState = _with_state(SkateState.State.WALK)
+	assert_true(b.event("bail"))
+	assert_eq(b.state, SkateState.State.BAIL)
+
+
+func test_combo_lands_while_walking() -> void:
+	var k: SkateState = SkateState.new()
+	var landed: Array = _count_landed(k)
+	k.mark_trick()
+	k.event("dismount")
+	k.tick(0.2)
+	assert_eq(landed.size(), 0)
+	k.tick(0.2)
+	assert_eq(landed.size(), 1, "an open combo lands after the window even on foot")

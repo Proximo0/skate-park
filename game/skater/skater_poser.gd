@@ -70,6 +70,15 @@ const GRAB_CURL: float = 50.0
 const GRAB_ROLL: float = 22.0  ## grabbed edge tipped up toward the hand
 const EDGE: float = 0.12  ## deck half width plus a little, where a hand wraps the edge
 
+## Walking (anims "walk", "walk_jump", "dismount", "mount"). The body faces visual -Z with its feet on the ground, the
+## board is carried on edge under the right arm (wheels out, grip against the hip) and that hand holds the deck's top edge.
+const STEP_OFF_TIME: float = 0.25  ## "dismount": ride pose to carry pose
+const HOP_ON_TIME: float = 0.3  ## "mount": board drops in front, the rider steps onto it
+const WALK_LEG: float = 0.5  ## working leg length for the stride maths (the bones allow 0.52)
+const CARRY_ROLL: float = 90.0  ## deck on edge: grip side toward the body
+const CARRY_PITCH: float = 12.0  ## nose up
+const CARRY_CENTER: Vector3 = Vector3(0.27, 0.54, -0.02)  ## where the deck's middle hangs, visual space
+
 ## The Skater. Typed Object and read with get(): naming the Skater class would make this script (and its unit test)
 ## depend on skater.gd compiling, which needs the Flags autoload. Fields read: anim, anim_time, crouch, balance,
 ## switch_stance. Without a skater (title screen) the poser holds `preview_anim`.
@@ -97,6 +106,8 @@ func _process(delta: float) -> void:
 	var crouch: float = 0.0
 	var bal: float = 0.0
 	var switch: bool = false
+	var speed: float = 0.0
+	var phase: float = 0.0
 	if skater != null:
 		anim = str(skater.get("anim"))
 		t = float(skater.get("anim_time"))
@@ -104,6 +115,10 @@ func _process(delta: float) -> void:
 		var balance: Object = skater.get("balance")
 		bal = float(balance.get("angle")) if balance != null else 0.0
 		switch = bool(skater.get("switch_stance"))
+		var wk: Object = skater.get("walker") as Object
+		if wk != null:
+			speed = float(wk.get("h_speed"))
+			phase = float(wk.get("phase"))
 		var tn: Object = skater.get("tune") as Object
 		if tn != null:
 			_push_plant = float(tn.get("push_plant"))
@@ -112,7 +127,7 @@ func _process(delta: float) -> void:
 	else:
 		_preview_t += delta
 		t = _preview_t
-	var target: Dictionary = pose_for(anim, t, crouch, bal, switch)
+	var target: Dictionary = pose_for(anim, t, crouch, bal, switch, speed, phase)
 	if not _has_pose:
 		_current = target
 		_has_pose = true
@@ -126,7 +141,8 @@ func _process(delta: float) -> void:
 		var tb: Vector3 = target["board_rot"]
 		if absf(wrapf(tb.y - cb.y, -180.0, 180.0)) > 120.0:
 			_current["board_rot"] = Vector3(cb.x, tb.y, cb.z)
-		var rate: float = BLEND_RATE_FAST if (anim.begins_with("flip_") or anim == "ollie") else BLEND_RATE
+		var rate: float = BLEND_RATE_FAST if (anim.begins_with("flip_") or anim == "ollie" or anim.begins_with("walk")
+				or anim == "dismount") else BLEND_RATE
 		_current = _blend(_current, target, 1.0 - exp(-rate * delta))
 	_apply(_current)
 
@@ -271,7 +287,10 @@ static func _blend_angles(a: Vector3, b: Vector3, k: float) -> Vector3:
 
 ## Target pose for an anim at anim_time t. crouch 0..1 bends the knees; balance is the Balance angle -1..1;
 ## switch turns the rider round on the board.
-static func pose_for(anim: String, t: float, crouch: float, balance: float, switch: bool = false) -> Dictionary:
+## speed (m/s) and phase (stride cycles) are for the walking anims: "walk" strides by phase, the others use phase
+## for the cycle they start from.
+static func pose_for(anim: String, t: float, crouch: float, balance: float, switch: bool = false,
+		speed: float = 0.0, phase: float = 0.0) -> Dictionary:
 	var pose: Dictionary = _blank()
 	var c: float = clampf(crouch, 0.0, 1.0)
 	var b: float = clampf(balance, -1.0, 1.0)
@@ -292,6 +311,14 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 		_pose_special(pose, anim, t)
 	else:
 		match anim:
+			"walk":
+				_pose_walk(pose, phase, speed)
+			"walk_jump":
+				_pose_walk_jump(pose, speed)
+			"dismount":
+				_pose_dismount(pose, t, crouch, switch, phase, speed)
+			"mount":
+				_pose_mount(pose, t, switch)
 			"push":
 				_pose_push(pose, t, c)
 			"crouch":
@@ -696,6 +723,104 @@ static func _pose_special(pose: Dictionary, anim: String, t: float) -> void:
 		pose["foot_R"] = (pose["foot_R"] as Vector3) + Vector3(0.0, 0.12 - 0.08 * w, 0.0)
 	else:
 		pose["foot_R"] = (pose["foot_R"] as Vector3) + Vector3(0.0, -0.05, 0.3)  ## one leg kicked out behind
+
+
+## Walk cycle. Stride length and cadence grow with speed (run above ~3 m/s), standing still at 0. Feet go in visual
+## space on the ground; the free (left) arm swings against the legs; the right hand holds the carried board.
+static func _pose_walk(pose: Dictionary, phase: float, speed: float) -> void:
+	var run_k: float = clampf((speed - 2.0) / 2.0, 0.0, 1.0)
+	var amp: float = clampf(speed / 0.6, 0.0, 1.0)
+	var half: float = minf(0.18 + 0.045 * speed, 0.32) * amp  ## foot travel either side of the hips
+	var stance: float = lerpf(0.5, 0.4, run_k)  ## share of the cycle a foot is on the ground
+	var foot_lift: float = (0.05 + 0.05 * run_k) * amp
+	var reach: float = sqrt(WALK_LEG * WALK_LEG - half * half)  ## hip height that keeps the legs just reachable
+	var bob: float = 0.025 * amp * -cos(4.0 * PI * phase)  ## highest over a planted foot
+	var hips: float = PlaceholderSkater.ANKLE_HEIGHT + reach - PlaceholderSkater.HIP_HEIGHT - 0.03 * (1.0 - amp) + bob
+	var lean: float = (3.0 + 9.0 * run_k) * amp
+	pose["hips_y"] = hips
+	pose["lift"] = -PlaceholderSkater.DECK_TOP_Y  ## body root on the ground
+	pose["pitch"] = lean
+	pose["body_yaw"] = 90.0  ## facing visual -Z
+	pose["feet_yaw"] = 90.0
+	pose["toe_L"] = 0.0
+	pose["toe_R"] = 0.0
+	pose["feet_on_board"] = 0.0
+	# Centre the feet under the hips, which the forward lean pushes ahead.
+	var centre: float = -(PlaceholderSkater.HIP_HEIGHT + hips) * sin(deg_to_rad(lean))
+	var left: Vector2 = _foot_cycle(fposmod(phase, 1.0), half, stance, foot_lift)
+	var right: Vector2 = _foot_cycle(fposmod(phase + 0.5, 1.0), half, stance, foot_lift)
+	pose["foot_L"] = Vector3(-0.09, PlaceholderSkater.ANKLE_HEIGHT + left.y, centre + left.x)
+	pose["foot_R"] = Vector3(0.09, PlaceholderSkater.ANKLE_HEIGHT + right.y, centre + right.x)
+	_curl(pose, 3.0 + 8.0 * run_k)
+	var swing: float = (16.0 + 26.0 * run_k) * amp * -cos(2.0 * PI * phase)  ## forward when the right foot is
+	pose["LeftUpperArm"] = Vector3(swing, 0.0, -4.0)
+	pose["LeftLowerArm"] = Vector3(10.0 + 40.0 * run_k * amp, 0.0, 0.0)
+	pose["RightUpperArm"] = Vector3(0.0, 0.0, 6.0)
+	pose["RightLowerArm"] = Vector3(30.0, 0.0, 0.0)
+	_carry_board(pose, bob * 0.6)
+
+
+## The board on edge under the right arm and the right hand on its top edge.
+static func _carry_board(pose: Dictionary, bob: float) -> void:
+	var rot: Vector3 = Vector3(CARRY_PITCH, 0.0, CARRY_ROLL)
+	var b: Basis = Basis.from_euler(rot * (PI / 180.0))
+	var origin: Vector3 = CARRY_CENTER + Vector3(0.0, bob, 0.0) - b * Vector3(0.0, AnimeBoard.DECK_Y, 0.0)
+	pose["board_rot"] = rot
+	pose["board_pos"] = origin
+	pose["hand_R"] = origin + b * Vector3(AnimeBoard.DECK_WIDTH * 0.5 - 0.01, AnimeBoard.DECK_Y, -0.05)
+	pose["grip_R"] = 1.0
+
+
+## One foot's (forward-back offset z, height y) at cycle position u: planted and sliding back for `stance` of the
+## cycle (-Z is forward), then swung forward through the air.
+static func _foot_cycle(u: float, half: float, stance: float, lift: float) -> Vector2:
+	if u < stance:
+		return Vector2(lerpf(-half, half, u / stance), 0.0)
+	var s: float = (u - stance) / (1.0 - stance)
+	return Vector2(lerpf(half, -half, _smooth(s)), lift * sin(PI * s))
+
+
+## Jump on foot: standing pose with the knees pulled up and the free arm out.
+static func _pose_walk_jump(pose: Dictionary, speed: float) -> void:
+	_pose_walk(pose, 0.0, minf(speed, 1.0))
+	pose["foot_L"] = (pose["foot_L"] as Vector3) + Vector3(0.0, 0.12, -0.05)
+	pose["foot_R"] = (pose["foot_R"] as Vector3) + Vector3(0.0, 0.1, 0.06)
+	pose["hips_y"] = float(pose["hips_y"]) + 0.02
+	pose["LeftUpperArm"] = Vector3(-20.0, 0.0, -65.0)
+
+
+## Step off the board: the ride stance eases into the carry pose in STEP_OFF_TIME as the board comes up to the arm.
+static func _pose_dismount(pose: Dictionary, t: float, crouch: float, switch: bool, phase: float, speed: float) -> void:
+	var k: float = _smooth(t / STEP_OFF_TIME)
+	var ride: Dictionary = _blank()
+	ride["body_yaw"] = stance_yaw("idle_ride", switch)
+	ride["feet_yaw"] = stance_yaw("idle_ride", switch)
+	_pose_idle(ride, clampf(crouch, 0.0, 1.0))
+	var walk: Dictionary = _blank()
+	_pose_walk(walk, phase, speed)
+	var out: Dictionary = _blend(ride, walk, k)
+	out["lift"] = float(out["lift"]) + 0.06 * sin(PI * k)  ## a little hop off
+	out["board_pos"] = (out["board_pos"] as Vector3) + Vector3(0.0, 0.1 * sin(PI * k), 0.0)
+	for key: String in out.keys():
+		pose[key] = out[key]
+
+
+## Hop onto the board: it drops to the ground just ahead, then the rider steps up onto it and it slides under the feet.
+static func _pose_mount(pose: Dictionary, t: float, switch: bool) -> void:
+	var k: float = _smooth(t / HOP_ON_TIME)
+	var start: Dictionary = _blank()
+	_pose_walk(start, 0.0, 0.0)
+	start["board_rot"] = Vector3.ZERO
+	start["board_pos"] = Vector3(0.0, 0.0, -0.5)
+	start["grip_R"] = 0.0
+	var ride: Dictionary = _blank()
+	ride["body_yaw"] = stance_yaw("idle_ride", switch)
+	ride["feet_yaw"] = stance_yaw("idle_ride", switch)
+	_pose_idle(ride, 0.3)
+	var out: Dictionary = _blend(start, ride, k)
+	out["lift"] = float(out["lift"]) + 0.08 * sin(PI * k)
+	for key: String in out.keys():
+		pose[key] = out[key]
 
 
 static func _board_turn(pose: Dictionary, euler_deg: Vector3, pivot: Vector3) -> void:

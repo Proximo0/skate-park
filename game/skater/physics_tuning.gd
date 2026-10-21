@@ -39,6 +39,10 @@ const FIELDS: Array = [
 	["rail_friction", 0.5, 0.0, 5.0, 0.05, "Grind", "Grind friction, m/s²."],
 	["wallride_time", 1.2, 0.2, 4.0, 0.05, "Grind", "Longest wallride, s."],
 	["lip_max_time", 2.5, 0.5, 6.0, 0.1, "Grind", "Longest lip trick, s."],
+	["walk_speed", 1.6, 0.5, 3.0, 0.05, "Walk", "Walking speed at a half-tilted stick, m/s."],
+	["run_speed", 4.0, 2.0, 8.0, 0.1, "Walk", "Running speed at a full stick, m/s."],
+	["walk_accel", 27.0, 5.0, 80.0, 1.0, "Walk", "Walking acceleration, m/s² (the default reaches run speed in about 0.15 s)."],
+	["walk_jump", 0.6, 0.2, 1.5, 0.05, "Walk", "Jump height on foot, m."],
 	["getup_time", 0.6, 0.1, 2.0, 0.05, "Bail", "Get-up time after a bail, s."],
 ]
 
@@ -75,6 +79,10 @@ var rail_gravity: float
 var rail_friction: float
 var wallride_time: float
 var lip_max_time: float
+var walk_speed: float
+var run_speed: float
+var walk_accel: float
+var walk_jump: float
 var getup_time: float
 
 

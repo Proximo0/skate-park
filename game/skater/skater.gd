@@ -21,7 +21,7 @@ var tune: PhysicsTuning = PhysicsTuning.shared()
 ## Per-tick debug frame (same dictionary the physics_ticked signal carries).
 var debug: Dictionary = {}
 ## Events raised this tick: "ollie", "air", "land:<result>", "bail", "grind", "grind_end", "manual", "lip",
-## "wallride", "leave_edge", "overhang_drop", "speed_restore", "respawn".
+## "wallride", "leave_edge", "overhang_drop", "speed_restore", "respawn", "dismount", "mount".
 var events: Array[String] = []
 
 var db: TrickDB
@@ -32,6 +32,7 @@ var special := SpecialMeter.new()
 var balance := Balance.new()
 var gaps: Gaps
 var spin := SpinTracker.new()
+var walker := Walker.new()  ## on-foot movement while state is WALK (the poser reads phase and speed from it)
 
 ## Read by the poser, camera and HUD.
 var anim: String = "idle_ride"
@@ -132,7 +133,7 @@ func read_input() -> void:
 	_stick = Controls.move_vector()
 	_just_pressed.clear()
 	_held.clear()
-	for b: String in ["ollie", "flip", "grab", "grind", "spin_left", "spin_right", "revert", "nollie"]:
+	for b: String in ["ollie", "flip", "grab", "grind", "spin_left", "spin_right", "revert", "nollie", "dismount"]:
 		if Input.is_action_just_pressed(b):
 			_just_pressed.append(b)
 			Flags.commands += 1
@@ -178,8 +179,13 @@ func _step(delta: float) -> void:
 	_recent_grind_press = 0 if _just_pressed.has("grind") else _recent_grind_press + 1
 	anim_time += delta
 	state.tick(delta)
-	special.tick(delta, combo.is_active())
+	if state.state != SkateState.State.WALK:
+		special.tick(delta, combo.is_active())  # the meter holds while on foot
+	if _just_pressed.has("dismount") and state.state == SkateState.State.ROLLING:
+		_try_dismount()
 	match state.state:
+		SkateState.State.WALK:
+			_tick_walk(delta)
 		SkateState.State.ROLLING:
 			_tick_rolling(delta, requests)
 		SkateState.State.MANUAL:
@@ -757,6 +763,69 @@ func _tick_wallride(delta: float) -> void:
 			_land(get_floor_normal())
 
 
+# --- walking ------------------------------------------------------------------------------------------
+
+## ROLLING -> WALK: hop off the board (at speed, jog a few steps to a stop) and carry it.
+func _try_dismount() -> void:
+	if not is_on_floor() or _floor_normal.y < 0.7:
+		return
+	var h: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	if not state.event("dismount"):
+		return
+	walker.begin(h.normalized() if h.length() > 0.5 else facing, h.length())
+	velocity = Vector3(h.x, minf(velocity.y, 0.0), h.z)
+	facing = walker.facing
+	tricks.clear()
+	_pending_air.clear()
+	crouch = 0.0
+	_crouch_time = 0.0
+	balance_kind = ""
+	_left_edge = false
+	_set_anim("dismount")
+
+
+## WALK -> ROLLING: drop the board in front of the feet and hop on, rolling at the walking speed.
+func _try_mount() -> bool:
+	if walker.step_time < Walker.MIN_WALK_TIME or not is_on_floor() or not state.event("mount"):
+		return false
+	_floor_normal = get_floor_normal()
+	velocity = Vector3(velocity.x, 0.0, velocity.z).slide(_floor_normal)
+	facing = walker.facing
+	up_direction = _floor_normal
+	_left_edge = false
+	_set_anim("mount")
+	return true
+
+
+func _tick_walk(delta: float) -> void:
+	if _just_pressed.has("dismount") and _try_mount():
+		return
+	var cam_fwd: Vector3 = Vector3.ZERO
+	if is_inside_tree() and get_viewport() != null:
+		var cam: Camera3D = get_viewport().get_camera_3d()
+		if cam != null:
+			cam_fwd = -cam.global_basis.z
+	walker.step(self, delta, _stick, _just_pressed.has("ollie"), tune, cam_fwd)
+	facing = walker.facing
+	if is_on_floor():
+		_floor_normal = get_floor_normal()
+	else:
+		_floor_normal = Vector3.UP
+	board_up = _turn_toward(board_up, _floor_normal, clampf(delta * 12.0, 0.0, 1.0))
+	if walker.step_time < Walker.STEP_OFF_TIME:
+		_set_anim("dismount")
+	elif not walker.grounded:
+		_set_anim("walk_jump")
+	else:
+		_set_anim("walk")
+
+
+## Floor rules for a walker: it can't climb steep ramps (they act as walls it slides down) and stands still on slopes.
+func _set_walk_physics(walking: bool) -> void:
+	floor_max_angle = deg_to_rad(Walker.FLOOR_MAX_ANGLE if walking else 80.0)
+	floor_stop_on_slope = walking
+
+
 # --- bail ---------------------------------------------------------------------------------------------
 
 func _bail() -> void:
@@ -847,6 +916,7 @@ func respawn() -> void:
 		state.combo_landed.connect(_on_combo_landed)
 		state.combo_bailed.connect(_on_combo_bailed)
 		state.state_changed.connect(_on_state_changed)
+	_set_walk_physics(false)
 	combo.bail()
 	gaps.reset_combo()
 	_set_anim("idle_ride")
@@ -900,6 +970,7 @@ func snapshot() -> Dictionary:
 		"spawn": _spawn,
 		"ragdoll": ragdoll_active,
 		"getup_left": _getup_left,
+		"walker": walker.to_dict(),
 		"state": {
 			"state": int(state.state),
 			"time_in_state": state.time_in_state,
@@ -979,6 +1050,9 @@ func restore(d: Dictionary) -> void:
 	_getup_left = d["getup_left"]
 	var st: Dictionary = d["state"]
 	state.state = int(st["state"]) as SkateState.State
+	if d.has("walker"):
+		walker.from_dict(d["walker"])
+	_set_walk_physics(state.state == SkateState.State.WALK)
 	state.time_in_state = st["time_in_state"]
 	state.combo_open = st["combo_open"]
 	state._revert_armed = st["revert_armed"]
@@ -1071,6 +1145,9 @@ func _on_combo_bailed() -> void:
 func _on_state_changed(from: SkateState.State, to: SkateState.State) -> void:
 	if from == SkateState.State.GRIND:
 		_ev("grind_end")
+	if to == SkateState.State.WALK or from == SkateState.State.WALK:
+		_set_walk_physics(to == SkateState.State.WALK)
+		_ev("dismount" if to == SkateState.State.WALK else "mount")
 	match to:
 		SkateState.State.GRIND:
 			_ev("grind")

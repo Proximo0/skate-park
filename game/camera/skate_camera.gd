@@ -18,6 +18,8 @@ const WALL_MARGIN := 0.3
 const POS_RATE := 6.0  ## 1/s, framerate-independent damping
 const LOOK_RATE := 8.0
 const YAW_RATE := 4.0  ## 1/s: time constant 0.25 s, the yaw lag
+const WALK_YAW_FACTOR := 0.2  ## yaw follow rate on foot, as a share of YAW_RATE
+const WALK_ZOOM := 0.62  ## on foot the camera sits closer and lower: the offset is scaled by this
 const VERT_BLEND_RATE := 3.0
 const ORBIT_RATE := 0.35  ## rad/s while bailing
 const FOV_BASE := 70.0
@@ -34,6 +36,7 @@ var target: Skater
 var _primed: bool = false
 var _yaw: float = 0.0
 var _vert_blend: float = 0.0
+var _walk_blend: float = 0.0
 var _cam_pos: Vector3 = Vector3.ZERO
 var _look: Vector3 = Vector3.ZERO
 var _fov: float = FOV_BASE
@@ -121,12 +124,16 @@ func _physics_process(delta: float) -> void:
 	if bailing:
 		_yaw = wrapf(_yaw + ORBIT_RATE * delta, -PI, PI)
 	elif not vert:
-		_yaw = damp_angle(_yaw, yaw_from_facing(target.facing), YAW_RATE, delta)
+		# On foot the stick is camera-relative, so a fast follow would chase its own tail: swing slowly instead.
+		var walking: bool = target.state.state == SkateState.State.WALK
+		_yaw = damp_angle(_yaw, yaw_from_facing(target.facing), YAW_RATE * (WALK_YAW_FACTOR if walking else 1.0), delta)
 	# else: hold the last ground yaw so the camera does not swing under the ramp.
 
 	_vert_blend = damp(_vert_blend, 1.0 if vert else 0.0, VERT_BLEND_RATE, delta)
 	var fwd: Vector3 = facing_from_yaw(_yaw)
 	var offset: Vector3 = desired_offset(fwd, false).lerp(desired_offset(fwd, true), _vert_blend)
+	_walk_blend = damp(_walk_blend, 1.0 if target.state.state == SkateState.State.WALK else 0.0, VERT_BLEND_RATE, delta)
+	offset *= lerpf(1.0, WALK_ZOOM, _walk_blend)
 	var goal_pos: Vector3 = _constrain(skater_pos + offset, eye)
 
 	_cam_pos = damp_vec(_cam_pos, goal_pos, POS_RATE, delta)

@@ -1,13 +1,13 @@
 class_name SkateState
 extends RefCounted
-## Skater state machine: rolling, air, grind, manual, lip, wallride, bail. Pure logic: no Node, no clock.
+## Skater state machine: rolling, air, grind, manual, lip, wallride, bail, walk (on foot, carrying the board). Pure logic: no Node, no clock.
 ## Callers feed named events through event() and advance time through tick(delta).
 ## Combo rules: mark_trick() opens the combo. It lands when the skater is ROLLING and LAND_WINDOW has
 ## passed since the last landing or revert. Bailing with an open combo emits combo_bailed.
 ## Manual linking: ROLLING -> MANUAL -> ROLLING keeps the combo open, because the landing timer only runs in ROLLING.
 ## Revert: a ROLLING state reached by "land" can be reverted within REVERT_WINDOW. The window restarts.
 
-enum State { ROLLING, AIR, GRIND, MANUAL, LIP, WALLRIDE, BAIL }
+enum State { ROLLING, AIR, GRIND, MANUAL, LIP, WALLRIDE, BAIL, WALK }
 
 signal state_changed(from: State, to: State)
 signal combo_landed
@@ -47,7 +47,7 @@ func mark_trick() -> void:
 ## Advances the state timer. While ROLLING with an open combo, the combo lands once LAND_WINDOW has passed.
 func tick(delta: float) -> void:
 	time_in_state += delta
-	if state == State.ROLLING and combo_open and time_in_state >= LAND_WINDOW:
+	if (state == State.ROLLING or state == State.WALK) and combo_open and time_in_state >= LAND_WINDOW:
 		combo_open = false
 		combo_landed.emit()
 
@@ -103,6 +103,12 @@ func _target(event_name: String) -> int:
 		"wallride_start":
 			if state == State.AIR:
 				return State.WALLRIDE
+		"dismount":
+			if state == State.ROLLING:
+				return State.WALK
+		"mount":
+			if state == State.WALK:
+				return State.ROLLING
 		"recover":
 			if state == State.BAIL and time_in_state >= BAIL_TIME:
 				return State.ROLLING
