@@ -121,6 +121,7 @@ class Builder:
         return self.tag(n, mat, path) if tag else n
 
     def cyl(self, name, rad, height, center, mat, path, orient="x", cols=16, rad2=None, bevel=0.0, divs=1, rows=2):
+        """Tube along orient; rad is the top (+axis end) radius, rad2 the bottom (defaults to rad)."""
         t = self._n("tube", name)
         t.parm("type").set("poly")
         t.parm("orient").set(orient)
@@ -260,7 +261,7 @@ def preview(node, png, overrides=None, res=(800, 500), azimuth=35.0, elevation=2
     g = ground.createNode("grid")
     g.parm("sizex").set(radius * 8)
     g.parm("sizey").set(radius * 8)
-    g.parmTuple("t").set((c[0], -0.002, c[2]))
+    g.parmTuple("t").set((c[0], min(-0.002, bb.minvec()[1] - 0.002), c[2]))  # under sunken pieces too
     ground.parm("shop_materialpath").set("/mat/concrete")
     cam = hou.node("/obj").createNode("cam", "preview_cam")
     cam.parmTuple("t").set(tuple(pos))

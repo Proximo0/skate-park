@@ -1,0 +1,413 @@
+{
+ "level": "hills",
+ "units": "metres, +Y up, front -Z, origin at the base centre",
+ "collision_note": "boxes are axis-aligned in the piece's space; \"mesh\" = use the mesh as a trimesh",
+ "pieces": [
+  {
+   "name": "house_ranch",
+   "file": "house_ranch.glb",
+   "tris": 420,
+   "bounds": {
+    "min": [
+     -5.3,
+     0.0,
+     -5.449
+    ],
+    "max": [
+     9.2,
+     5.182,
+     3.781
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      2.5,
+      0
+     ],
+     "size": [
+      10.0,
+      5.0,
+      7.0
+     ]
+    },
+    {
+     "center": [
+      0,
+      0.27,
+      -4.4
+     ],
+     "size": [
+      6.0,
+      0.55,
+      1.8
+     ]
+    },
+    {
+     "center": [
+      7.0,
+      1.75,
+      0.5
+     ],
+     "size": [
+      4.0,
+      3.5,
+      6.0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "house_two_storey",
+   "file": "house_two_storey.glb",
+   "tris": 528,
+   "bounds": {
+    "min": [
+     -4.3,
+     0.0,
+     -5.449
+    ],
+    "max": [
+     4.3,
+     8.491,
+     3.779
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      4.15,
+      0
+     ],
+     "size": [
+      8.0,
+      8.3,
+      7.0
+     ]
+    },
+    {
+     "center": [
+      0,
+      0.27,
+      -4.4
+     ],
+     "size": [
+      4.8,
+      0.55,
+      1.8
+     ]
+    }
+   ]
+  },
+  {
+   "name": "house_colonial",
+   "file": "house_colonial.glb",
+   "tris": 504,
+   "bounds": {
+    "min": [
+     -4.8,
+     0.0,
+     -4.6
+    ],
+    "max": [
+     4.8,
+     10.0,
+     4.279
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      4.25,
+      0
+     ],
+     "size": [
+      9.0,
+      8.5,
+      8.0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "house_cottage",
+   "file": "house_cottage.glb",
+   "tris": 312,
+   "bounds": {
+    "min": [
+     -3.8,
+     0.0,
+     -3.6
+    ],
+    "max": [
+     3.8,
+     7.7,
+     3.268
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      3.1,
+      0
+     ],
+     "size": [
+      7.0,
+      6.2,
+      6.0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "picket_fence",
+   "file": "picket_fence.glb",
+   "tris": 384,
+   "bounds": {
+    "min": [
+     -1.57,
+     0.0,
+     -0.07
+    ],
+    "max": [
+     1.57,
+     1.145,
+     0.07
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.55,
+      0.02
+     ],
+     "size": [
+      3.1,
+      1.1,
+      0.12
+     ]
+    }
+   ]
+  },
+  {
+   "name": "mailbox",
+   "file": "mailbox.glb",
+   "tris": 96,
+   "bounds": {
+    "min": [
+     -0.125,
+     -0.005,
+     -0.385
+    ],
+    "max": [
+     0.145,
+     1.37,
+     0.15
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.65,
+      -0.05
+     ],
+     "size": [
+      0.3,
+      1.35,
+      0.6
+     ]
+    }
+   ]
+  },
+  {
+   "name": "drained_kidney_pool",
+   "file": "drained_kidney_pool.glb",
+   "tris": 1080,
+   "bounds": {
+    "min": [
+     -5.76,
+     -2.472,
+     -4.225
+    ],
+    "max": [
+     6.24,
+     0.085,
+     4.775
+    ]
+   },
+   "collision": "mesh"
+  },
+  {
+   "name": "driveway",
+   "file": "driveway.glb",
+   "tris": 576,
+   "bounds": {
+    "min": [
+     -1.75,
+     0.0,
+     -4.0
+    ],
+    "max": [
+     1.75,
+     0.107,
+     4.0
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.05,
+      0
+     ],
+     "size": [
+      3.5,
+      0.1,
+      8.0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "road_curve",
+   "file": "road_curve.glb",
+   "tris": 456,
+   "bounds": {
+    "min": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "max": [
+     17.3,
+     0.15,
+     17.3
+    ]
+   },
+   "collision": "mesh"
+  },
+  {
+   "name": "tree_round",
+   "file": "tree_round.glb",
+   "tris": 388,
+   "bounds": {
+    "min": [
+     -1.943,
+     0.0,
+     -1.538
+    ],
+    "max": [
+     1.96,
+     5.432,
+     1.84
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      1.3,
+      0
+     ],
+     "size": [
+      0.4,
+      2.6,
+      0.4
+     ]
+    },
+    {
+     "center": [
+      0,
+      3.7,
+      0
+     ],
+     "size": [
+      3.6,
+      2.4,
+      3.6
+     ]
+    }
+   ]
+  },
+  {
+   "name": "tree_pine",
+   "file": "tree_pine.glb",
+   "tris": 172,
+   "bounds": {
+    "min": [
+     -1.7,
+     0.0,
+     -1.617
+    ],
+    "max": [
+     1.7,
+     5.6,
+     1.617
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.8,
+      0
+     ],
+     "size": [
+      0.3,
+      1.6,
+      0.3
+     ]
+    },
+    {
+     "center": [
+      0,
+      3.4,
+      0
+     ],
+     "size": [
+      3.4,
+      4.2,
+      3.4
+     ]
+    }
+   ]
+  },
+  {
+   "name": "garage",
+   "file": "garage.glb",
+   "tris": 192,
+   "bounds": {
+    "min": [
+     -3.3,
+     0.0,
+     -3.531
+    ],
+    "max": [
+     3.3,
+     4.93,
+     3.531
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      2.375,
+      0
+     ],
+     "size": [
+      6.0,
+      4.75,
+      6.5
+     ]
+    }
+   ]
+  }
+ ]
+}

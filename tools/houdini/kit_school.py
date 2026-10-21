@@ -136,7 +136,7 @@ FLAG = 'float t = (@P.x - 0.12) / 1.2; @P.z += 0.08 * sin(t * 7.0) * t;'
 
 def flagpole(b):
     b.cyl("base", 0.45, 0.3, (0, 0.15, 0), "concrete", "body", orient="y", cols=12, rows=1)
-    b.cyl("pole", 0.06, 8.0, (0, 4.3, 0), "alu", "body", orient="y", cols=8, rows=1, rad2=0.035)
+    b.cyl("pole", 0.035, 8.0, (0, 4.3, 0), "alu", "body", orient="y", cols=8, rows=1, rad2=0.06)  # rad is the top
     hlib.sphere(b, "finial", (0.07, 0.07, 0.07), (0, 8.35, 0), "body", "body", rows=5, cols=8)
     for i, (mat, y) in enumerate((("flag_blue", 7.85), ("flag_white", 7.65), ("flag_blue", 7.45))):
         fl = b.net.createNode("box", "flag%d" % i)

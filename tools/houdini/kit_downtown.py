@@ -21,7 +21,7 @@ MATS = {
 
 def streetlight(b):
     b.cyl("base", 0.18, 0.5, (0, 0.25, 0), "pole_green", "body", orient="y", cols=10, rows=1)
-    b.cyl("pole", 0.08, 6.0, (0, 3.2, 0), "pole_green", "body", orient="y", cols=8, rows=1, rad2=0.06)
+    b.cyl("pole", 0.06, 6.0, (0, 3.2, 0), "pole_green", "body", orient="y", cols=8, rows=1, rad2=0.08)  # rad is the top
     b.box("arm", (0.06, 0.06, 1.4), (0, 6.1, -0.7), "pole_green", "body")
     b.box("head", (0.35, 0.14, 0.6), (0, 6.02, -1.35), "pole_green", "body", bevel=0.03, divs=1)
     b.box("lens", (0.28, 0.02, 0.5), (0, 5.94, -1.35), "lamp_glow", "body")
