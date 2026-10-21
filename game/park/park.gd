@@ -50,6 +50,10 @@ func _environment() -> void:
 	add_child(sun)
 
 
+## Darker than PieceKit.CONCRETE: a big flat slab in full sun reads as white at the lighter grey.
+const GROUND := Color("7f8a96")
+
+
 func _ground() -> void:
 	# Concrete slab with a hole for the sunken bowl (x 22..36, z -38..-28); the bowl brings its own frame.
 	var y := -1.0
@@ -61,7 +65,7 @@ func _ground() -> void:
 		[Vector3(22.0, y, -28.0), Vector3(14.0, 1.0, outer + 28.0)],  # south of the bowl
 	]
 	for i: int in parts.size():
-		add_child(PieceKit.box(parts[i][0], parts[i][1], PieceKit.CONCRETE, "Ground%d" % i))
+		add_child(PieceKit.box(parts[i][0], parts[i][1], GROUND, "Ground%d" % i))
 	# a grassy ring outside the fence
 	add_child(PieceKit.box(Vector3(-120, -1.05, -120), Vector3(240, 1.0, 240), Color("8ad16b"), "Grass"))
 

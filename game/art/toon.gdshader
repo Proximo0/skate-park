@@ -33,9 +33,8 @@ void light() {
 	float mid_band = smoothstep(mid_threshold - band_softness, mid_threshold + band_softness, lit);
 	float top_band = smoothstep(lit_threshold - band_softness, lit_threshold + band_softness, lit);
 
-	// Bands are built in display (gamma) space: the Compatibility custom light() output is not
-	// re-encoded, so a linear albedo would render too dark and oversaturated. pow 1/2.2 approximates sRGB encode.
-	vec3 base = pow(ALBEDO, vec3(1.0 / 2.2));
+	// Bands use the linear albedo directly; gamma-encoding it here washed big light surfaces out to white.
+	vec3 base = ALBEDO;
 	vec3 shadow_col = base * shadow_tint;
 	vec3 mid_col = base * mid_level;
 	vec3 toon_col = mix(shadow_col, mid_col, mid_band);
