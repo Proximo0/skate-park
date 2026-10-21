@@ -32,6 +32,10 @@ MATERIALS = {
     "bag_yellow": (0.98, 0.78, 0.12),
     "bag_purple": (0.55, 0.25, 0.75),
     "concrete": (0.64, 0.62, 0.58),
+    "plate": (0.95, 0.95, 0.9),
+    "body2": (0.96, 0.95, 0.9),
+    "surfboard": (0.98, 0.62, 0.18),
+    "can": (1.0, 1.0, 1.0),
 }
 
 
@@ -82,10 +86,13 @@ class Builder:
         b.parm("ignoreflatedges").set(1)
         return b
 
-    def box(self, name, size, center, mat, path, bevel=0.0, divs=2, taper=None, taper_below=False, divsxyz=None):
-        """Box, optionally tapered at the top (or bottom) and round-bevelled.
+    def box(self, name, size, center, mat, path, bevel=0.0, divs=2, taper=None, taper_below=False, divsxyz=None,
+            rot=None, taper_from=None, tag=True):
+        """Box, optionally rotated, tapered at the top (or bottom) and round-bevelled.
 
-        taper = (scale x, scale z, shift z) applied to points above (or below) the centre.
+        taper = (scale x, scale z, shift z) applied to points above (or below) the centre; taper_from = (x, y, z)
+        tapers about another box's centre instead, so pillars and trims follow a tapered cabin.
+        tag=False returns the untagged node (for Booleans).
         """
         b = self._n("box", name)
         b.parm("type").set("polymesh")
@@ -95,15 +102,23 @@ class Builder:
             b.parm("t" + a).set(v)
         for i, v in enumerate(divsxyz or (1, 1, 1)):
             b.parm("divrate%d" % (i + 1)).set(v + 1)
+        if rot:
+            for a, v in zip("xyz", rot):
+                b.parm("r" + a).set(v)
         n = b
         if taper:
-            cmp = "<" if taper_below else ">"
+            # Linear ramp over the tapered volume's height: unchanged at the bottom, full taper at the top
+            # (reversed with taper_below). taper_from = (cx, y bottom, cz, y top) of the volume to follow.
+            cx, y0, cz, y1 = taper_from or (center[0], center[1] - size[1] * 0.5, center[2], center[1] + size[1] * 0.5)
+            k0, k1 = (1, 0) if taper_below else (0, 1)
             n = self.wrangle(n, (
-                "if (@P.y %s %f) { @P.x = %f + (@P.x - %f) * %f; @P.z = %f + (@P.z - %f) * %f + %f; }"
-                % (cmp, center[1], center[0], center[0], taper[0], center[2], center[2], taper[1], taper[2])))
+                "float k = fit(@P.y, %f, %f, %d, %d);"
+                " @P.x = %f + (@P.x - %f) * lerp(1, %f, k);"
+                " @P.z = %f + (@P.z - %f) * lerp(1, %f, k) + %f * k;"
+                % (y0, y1, k0, k1, cx, cx, taper[0], cz, cz, taper[1], taper[2])))
         if bevel > 0:
             n = self.bevel(n, bevel, divs)
-        return self.tag(n, mat, path)
+        return self.tag(n, mat, path) if tag else n
 
     def cyl(self, name, rad, height, center, mat, path, orient="x", cols=16, rad2=None, bevel=0.0, divs=1, rows=2):
         t = self._n("tube", name)
@@ -129,7 +144,7 @@ class Builder:
         self.parts = []
         return m
 
-    def finish(self, src=None, cusp=35.0, size_expr='ch("../size")'):
+    def finish(self, src=None, cusp=35.0, size_expr='ch("../size")', normals=True):
         """Merge, split n-gons to quads/tris, cut normals at hard edges, scale, output."""
         m = src or self.merge()
         d = self._n("divide", "quads_only")
@@ -139,6 +154,7 @@ class Builder:
         d.parm("numsides").set(4)
         nrm = self._n("normal", "hard_edges")
         nrm.setInput(0, d)
+        nrm.bypass(not normals)
         nrm.parm("type").set("typevertex")
         nrm.parm("cuspangle").set(cusp)
         x = self._n("xform", "size")
@@ -281,3 +297,34 @@ def run(make, variants):
         export_glb(node, fname)
         totals[fname] = report(fname, node)
     return totals
+
+
+def set_pivot(glb_path, node_name, pivot):
+    """Move a glb node's origin to `pivot` (body space): shift its mesh positions by -pivot and give the node the
+    translation +pivot, so the part rotates about the pivot in the engine (the glTF ROP writes identity nodes)."""
+    import json
+    import struct
+    data = bytearray(open(glb_path, "rb").read())
+    jlen = struct.unpack_from("<I", data, 12)[0]
+    doc = json.loads(data[20:20 + jlen].decode("utf-8"))
+    bin_start = 20 + jlen + 8
+    node = next(n for n in doc["nodes"] if n.get("name") == node_name)
+    mesh = doc["meshes"][node["mesh"]]
+    for prim in mesh["primitives"]:
+        acc = doc["accessors"][prim["attributes"]["POSITION"]]
+        view = doc["bufferViews"][acc["bufferView"]]
+        base = bin_start + view.get("byteOffset", 0) + acc.get("byteOffset", 0)
+        stride = view.get("byteStride") or 12
+        for i in range(acc["count"]):
+            o = base + i * stride
+            x, y, z = struct.unpack_from("<3f", data, o)
+            struct.pack_into("<3f", data, o, x - pivot[0], y - pivot[1], z - pivot[2])
+        acc["min"] = [m - p for m, p in zip(acc["min"], pivot)]
+        acc["max"] = [m - p for m, p in zip(acc["max"], pivot)]
+    node["translation"] = list(pivot)
+    js = json.dumps(doc, separators=(",", ":")).encode("utf-8")
+    js += b" " * ((4 - len(js) % 4) % 4)
+    rest = data[20 + jlen:]
+    out = bytearray(data[:12]) + struct.pack("<II", len(js), 0x4E4F534A) + js + rest
+    struct.pack_into("<I", out, 8, len(out))
+    open(glb_path, "wb").write(bytes(out))

@@ -50,7 +50,7 @@ def main():
     totals = {}
     for name in MODULES:
         mod = importlib.import_module(name)
-        totals.update(hlib.run(mod.make, mod.VARIANTS))
+        totals.update(mod.run() if hasattr(mod, "run") else hlib.run(mod.make, mod.VARIANTS))
         if hasattr(mod, "scatter_json"):
             mod.scatter_json()
     if "--no-previews" not in sys.argv:

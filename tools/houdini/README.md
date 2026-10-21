@@ -22,12 +22,18 @@ so the crash is harmless. `preview.py` therefore renders one image per process.
 
 | File | HDA | Parameters | Meshes |
 |---|---|---|---|
-| car_hatchback.glb, car_pickup.glb | skatepark::car | style, seed, colour, size | body, wheel_fl/fr/rl/rr |
+| car_hatchback.glb, car_pickup.glb, car_surfvan.glb | skatepark::car | style, seed, colour, size | body, wheel_fl/fr/rl/rr (+ surfboard on the van) |
 | trash_bin.glb | skatepark::trash_bin | seed, colour, size | bin, lid, wheels |
 | litter_kit.glb | skatepark::litter_kit | seed, size, layout | 10 items, each at the origin |
 | litter_scatter_example.json | skatepark::litter_scatter | seed, count, areax, areaz | instance points |
-| graffiti_wall.glb | skatepark::graffiti_wall | seed, size | wall (Cd weathering, decal UVs) |
+| graffiti_wall.glb | skatepark::graffiti_wall | seed, size | wall (coping cap, seeded corner chips, Cd weathering, decal UVs) |
 
+- Cars: wheel arches are cut with Booleans (dark liners), the greenhouse has glass between A/B/C pillars, the wheels
+  have tyre sidewalls, a rim and five spokes, and there are door seams, handles, bezelled lamps and blank plates.
+- The trash bin's `lid` node has its origin on the hinge axis (0, 0.93, 0.33), so rotating it about X opens the lid.
+  `hlib.set_pivot` applies this to the glb after export, because the glTF ROP writes identity node transforms.
+- The litter cans and cup get their print, rims and lip from vertex colour (COLOR_0) on a white `can` material. In Godot,
+  enable "Vertex Color > Use as Albedo" on the material if the importer doesn't already.
 - The `colour` parameter drives the `body` material on cars and the `plastic` material on the bin when the glb is exported.
 - Graffiti wall UVs: the front face (-Z) spans 0..1, so a decal texture maps across the whole wall. The back face is mirrored.
 - Litter scatter JSON: `{"item", "position" [x, y, z], "yaw_deg", "scale"}` for each point. `item` is a mesh name in litter_kit.glb.

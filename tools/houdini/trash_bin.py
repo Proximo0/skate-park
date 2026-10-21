@@ -1,8 +1,11 @@
 """Procedural wheelie bin with a separate lid. Usage: hython tools/houdini/trash_bin.py
 
 HDA skatepark::trash_bin: seed, colour, size. Exports assets/props/houdini/trash_bin.glb
-(meshes: bin, lid, wheels). About 0.6 x 0.6 x 1.0 m, wheels and handle at the back (+Z).
+(meshes: bin, lid, wheels). The lid node's origin is on the hinge axis at the back top edge, so rotating it
+about X opens the lid. About 0.6 x 0.6 x 1.0 m, wheels and handle at the back (+Z).
 """
+import os
+
 import hlib
 
 
@@ -28,5 +31,14 @@ def make():
     return hlib.make_asset("trash_bin", "trash_bin", "Skate Park Trash Bin", hlib.hda_parms(colour=COLOUR), build)
 
 
+HINGE = (0.0, 0.93, 0.33)  # lid hinge axis (along X) at the back top edge
+
+
+def run():
+    totals = hlib.run(make, VARIANTS)
+    hlib.set_pivot(os.path.join(hlib.PROPS, "trash_bin.glb"), "lid", HINGE)
+    return totals
+
+
 if __name__ == "__main__":
-    hlib.run(make, VARIANTS)
+    run()
