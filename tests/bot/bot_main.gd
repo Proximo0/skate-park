@@ -150,6 +150,7 @@ func _on_tick(f: Dictionary) -> void:
 		return
 	if _driver.teleported:
 		_snapshots[str(int(f["tick"]))] = var_to_str(_sk.snapshot())
+	_det.wall_test = _driver.wall_test
 	_det.feed(f, _driver.moving_intent, _driver.teleported, _hit_info())
 	for e: Variant in f["events"]:
 		if str(e).begins_with("land:"):
@@ -196,8 +197,11 @@ func _end_line(reason: String) -> void:
 			d.issues.append({"kind": "wp_timeout", "line": d.line_name, "pos": pos, "tick": tick, "detail": "waypoint %s not reached in time" % s})
 			d.counts["wp_timeout"] = int(d.counts.get("wp_timeout", 0)) + 1
 	# gaps the line is meant to land that never fired
+	var unreachable: Dictionary = _line.get("design_unreachable", {})
 	for g: Variant in _line.get("expect", []):
-		if not d.gaps.has(str(g)) and reason == "":
+		if unreachable.has(str(g)) and not d.gaps.has(str(g)):
+			d.infos.append("gap_design %s: %s" % [str(g), str(unreachable[str(g)])])
+		elif not d.gaps.has(str(g)) and reason == "":
 			d.issues.append({"kind": "gap_miss", "line": d.line_name, "pos": pos, "tick": tick, "detail": "gap '%s' was attempted but not completed (see gaps.json: its zones and required state)" % str(g)})
 			d.counts["gap_miss"] = int(d.counts.get("gap_miss", 0)) + 1
 	var ok: bool = reason == "" and (drv.skipped.is_empty() or soft) and not d.counts.has("respawn") and not d.counts.has("below_kill_plane") and not d.counts.has("nan")
@@ -239,7 +243,8 @@ func _end_line(reason: String) -> void:
 		"landings": d.landings.duplicate(), "max_speed": snappedf(d.max_speed_seen, 0.01), "max_height": snappedf(d.max_height, 0.01),
 		"grind_s": snappedf(float(drv.grind_ticks) / 60.0, 0.01), "manual_s": snappedf(float(drv.manual_ticks) / 60.0, 0.01),
 		"air_s": snappedf(float(d.airtime_ticks) / 60.0, 0.01),
-		"route_faults": d.route_faults.duplicate(), "wall_hits": d.wall_hits, "grind_snaps": d.snaps.size(),
+		"route_faults": d.route_faults.duplicate(), "wall_hits": d.wall_hits, "head_on": d.head_on_log.duplicate(),
+		"infos": d.infos.duplicate(), "wall_tests": drv.wall_tests, "wall_test_slams": d.wall_test_results.duplicate(), "grind_snaps": d.snaps.size(),
 		"issue_counts": d.counts.duplicate(), "peaks": drv.peaks.duplicate(), "notes": notes, "reason": _fail_reason,
 	}
 	_results.append(res)
@@ -252,6 +257,14 @@ func _end_line(reason: String) -> void:
 		_all_issues.append(iss)
 	for rf: String in d.route_faults:
 		print("BOTINFO routefault %s %s" % [d.line_name, rf])
+	for ho: String in d.head_on_log:
+		print("BOTINFO headon %s %s" % [d.line_name, ho])
+	for inf: String in d.infos:
+		print("BOTINFO %s %s" % [d.line_name, inf])
+	for wt: String in d.wall_test_results:
+		print("BOTINFO walltest %s %s" % [d.line_name, wt])
+	if drv.wall_tests > d.wall_test_results.size():
+		print("BOTINFO walltest %s %d test(s) run, %d slammed (the physics slam limit was not reached or the hit was not square)" % [d.line_name, drv.wall_tests, d.wall_test_results.size()])
 	for k: String in d.suppressed:
 		print("BOTISSUE %s %s pos=- tick=- (+%d more suppressed)" % [k, d.line_name, int(d.suppressed[k])])
 	if _record and (not ok or not d.issues.is_empty()):

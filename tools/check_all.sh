@@ -9,6 +9,7 @@ GODOT="${GODOT:-godot}"
 JOBS="${JOBS:-$(nproc)}"
 QUICK=0; [[ " $* " == *" --quick "* ]] && QUICK=1
 OUT=/tmp/check; rm -rf "$OUT"; mkdir -p "$OUT" /tmp/bot /tmp/lab
+rm -f /tmp/bot/report.json /tmp/bot/report_shard*.json   # never leave a stale report behind
 FILTER='^(Godot Engine v|$|WARNING: .*audio|   at: )'
 start=$(date +%s)
 (flock 9; "$GODOT" --headless --path . --import) 9>/tmp/skate_import.lock >"$OUT/import.log" 2>&1 || { cat "$OUT/import.log"; exit 1; }
@@ -49,7 +50,7 @@ done
 l=$(grep -E '^LAB summary' "$OUT/lab.log" | tail -1); row lab "${l:-CRASH}"; [[ -n "$l" ]] || rc=1
 grep -E '^LAB .* WARN$' "$OUT/lab.log" | sed 's/^/    /'
 python3 -I - "$OUT" <<'PY' || rc=1
-import glob, re, sys
+import glob, json, re, sys
 out = sys.argv[1]
 lines, issues, scores, crashed = [], [], [], False
 for f in sorted(glob.glob(out + "/bot*.log")):
@@ -62,6 +63,23 @@ for f in sorted(glob.glob(out + "/bot*.log")):
     scores.append(int(m.group(1)))
     lines += [l for l in txt.splitlines() if re.match(r"^BOT \S+ (DONE|FAIL)", l)]
     issues += [l for l in txt.splitlines() if l.startswith("BOTISSUE")]
+# merge the shard reports into /tmp/bot/report.json (same score formula as bot_main.gd)
+PEN = {"bail": 5, "snag": 4, "hard_stop": 4, "stuck": 8, "respawn": 15, "below_kill_plane": 15, "jitter_normal": 2, "jitter_y": 2,
+       "floor_flicker": 2, "teleport": 3, "overspeed": 6, "nan": 20, "grind_miss": 3, "action_miss": 2, "wp_timeout": 3, "gap_miss": 3}
+shards = [json.load(open(f)) for f in sorted(glob.glob("/tmp/bot/report_shard*.json"))]
+if shards and not crashed:
+    lines_j = [l for sh in shards for l in sh["lines"]]
+    counts = {}
+    for l in lines_j:
+        for k, c in l["issue_counts"].items():
+            counts[k] = counts.get(k, 0) + c
+    failed_n = sum(1 for l in lines_j if not l["ok"])
+    pen = 5.0 * failed_n + sum(PEN.get(k, 2) * min(c, 6) for l in lines_j for k, c in l["issue_counts"].items())
+    merged = {"version": 1, "score": max(0, round(100 - pen)), "issues": sum(counts.values()), "issue_counts": counts, "lines": lines_j,
+              "issue_list": [i for sh in shards for i in sh["issue_list"]], "tuning": shards[0].get("tuning", ""),
+              "tuning_diff": shards[0].get("tuning_diff", {}), "wall_seconds": max(sh.get("wall_seconds", 0) for sh in shards), "shards": len(shards)}
+    json.dump(merged, open("/tmp/bot/report.json", "w"), indent=2)
+    print(f"{'bot merged':<16} /tmp/bot/report.json score={merged['score']} issues={merged['issues']} lines={len(lines_j)} failed={failed_n}")
 fails = [l for l in lines if " FAIL " in l]
 print(f"{'bot':<16} lines={len(lines)} failed={len(fails)} issues={len(issues)} worst_shard_score={min(scores) if scores else 'n/a'}")
 for l in fails + issues:
@@ -71,5 +89,6 @@ PY
 lint=$(tail -1 "$OUT/lint.log"); row lint "$lint"; [[ "$lint" == *"problems=0"* ]] || rc=1
 if (( ! QUICK )); then
   s=$(grep -E '^SNAG summary' "$OUT/snags.log" | tail -1); row snags "${s:-CRASH}"; [[ -n "$s" ]] || rc=1
+  grep -E '^SNAG excluded' "$OUT/snags.log" | tail -1 | sed 's/^/    /'
 fi
 exit $rc

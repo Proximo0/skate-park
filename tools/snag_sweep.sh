@@ -7,6 +7,7 @@
 # Default grid: --keep=45 (45% of the approach geometries), neutral stick at 4/8/12 m/s plus a held-forward pass at 8/12 m/s,
 # split over 3 parallel Godot processes (SHARDS env or --shards=N) to stay under 5 minutes. --keep=100 is the full grid (~10 min).
 # Prints `SNAG <piece> <pos> count=.. worst_loss=..% kind=.. ...` lines and `SNAG summary runs=N snags=M hotspots=K`.
+# Real snags are counted apart from excluded categories (bail slides, ramp apex stops, square head-on wall hits): see the `SNAG excluded` line.
 # Writes /tmp/lab/snags.json. Exit 0 unless a shard died before finishing.
 set -uo pipefail
 cd "$(dirname "$0")/.."

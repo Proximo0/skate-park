@@ -13,6 +13,8 @@ const JUMP_LIMIT: float = 1.0
 const MAX_PER_KIND: int = 6
 const HEAD_ON_DEG: float = 55.0  ## a hit steeper than this to the wall is a crash, not a snag
 const JITTER_Y_MIN: float = 0.012  ## peak-to-peak metres worth reporting (1.2 cm)
+const JITTER_Y_STEP_MAX: float = 0.05  ## a bigger tick-to-tick height change is a step or a teleport, not jitter
+const JITTER_Y_MAX: float = 0.15  ## a bigger peak-to-peak over the window is terrain, not jitter
 ## Events that legitimately change energy, or move the skater, so a window holding one is not judged.
 const EXCUSE_EVENTS: Array[String] = ["bail", "respawn", "grind", "grind_end", "lip", "wallride", "ollie", "dismount", "mount"]
 
@@ -36,6 +38,10 @@ var bail_causes: Array[String] = []
 var snaps: Array[float] = []  ## grind / lip entry jumps (by design: the visual catches up), metres
 var route_faults: Array[String] = []  ## stops that look like the bot's own routing, not the physics
 var wall_hits: int = 0
+var head_on_log: Array[String] = []  ## where the bot ran square into a wall (a routing fault, listed as BOTINFO)
+var wall_test: bool = false  ## set by the driver while a deliberate head-on wall test runs: its slam is INFO, not an issue
+var wall_test_results: Array[String] = []
+var infos: Array[String] = []  ## findings that are design facts, not bot or physics faults (BOTINFO)
 
 var _hist: Array[Dictionary] = []
 var _cool: Dictionary = {}
@@ -49,6 +55,7 @@ var _last_land: String = ""
 var _last_land_tick: int = -100
 var _tick_dt: float = 1.0 / 60.0
 var _prev_raw: Dictionary = {}
+var _last_headon_log: int = -1000
 var _headon_tick: int = -1000
 var _headon_hit: String = ""
 var _d_hist: Array[Vector3] = []
@@ -68,6 +75,8 @@ func reset_history() -> void:
 	_hist.clear()
 	_pos_hist.clear()
 	_flip_hist.clear()
+	_y_hist.clear()
+	_d_hist.clear()
 	_n_jit.clear()
 	_intent_run = 0
 	_air_run = 0
@@ -96,8 +105,10 @@ func feed(f: Dictionary, moving_intent: bool, bot_teleported: bool, hit: Diction
 		return
 	max_speed_seen = maxf(max_speed_seen, speed)
 	max_height = maxf(max_height, pos.y)
-	if speed > max_speed + 0.05 and _ready("overspeed", tick, 120):
-		_issue("overspeed", pos, tick, "speed=%.2f max=%.1f state=%s events=%s" % [speed, max_speed, state, evs])
+	# In the air only the horizontal speed is capped (falls are limited separately at AIR_TERMINAL_FALL); on the ground the total.
+	var judged: float = Vector2(vel.x, vel.z).length() if state == "AIR" else speed
+	if judged > max_speed + 0.05 and _ready("overspeed", tick, 120):
+		_issue("overspeed", pos, tick, "%s speed=%.2f max=%.1f state=%s events=%s" % ["horizontal" if state == "AIR" else "total", judged, max_speed, state, evs])
 	for e: String in evs:
 		if e.begins_with("land:"):
 			var r: String = e.substr(5)
@@ -122,8 +133,14 @@ func feed(f: Dictionary, moving_intent: bool, bot_teleported: bool, hit: Diction
 				_issue("teleport", pos, tick, "moved %.2f m in one tick from %s state=%s->%s events=%s" % [jump, prev["pos"], prev["state"], state, evs])
 	# --- bail with cause
 	if state == "BAIL" and (prev.is_empty() or str(prev["state"]) != "BAIL"):
-		bails += 1
-		_issue("bail", pos, tick, _bail_cause(f, prev, evs))
+		var why_bail: String = _bail_cause(f, prev, evs)
+		if wall_test and why_bail.begins_with("wall_hit"):
+			# the deliberate wall test: the bail is what the physics should do, so it is a result, not a finding
+			wall_test_results.append("pos=%s speed_before=%.1f tick=%d bailed=true (%s)" % [_v(pos), float(_prev_raw.get("speed", 0.0)), tick, evs])
+			bail_causes.pop_back()
+		else:
+			bails += 1
+			_issue("bail", pos, tick, why_bail)
 	# --- build this tick's lite record
 	var excuse: bool = state in ["BAIL", "GRIND", "LIP", "WALLRIDE"] or bool(f["braking"])
 	for e: String in evs:
@@ -185,6 +202,9 @@ func _snag_and_stop(cur: Dictionary, f: Dictionary) -> void:
 	var detail_tail: String = " hit=%s n=%s incidence=%s" % [hit, _v(hn), ("%.0fdeg (0=grazing, 90=head-on)" % incidence) if incidence >= 0.0 else "n/a"]
 	if incidence >= HEAD_ON_DEG:
 		wall_hits += 1
+		if head_on_log.size() < 12 and tick - _last_headon_log > 90:
+			_last_headon_log = tick
+			head_on_log.append("pos=%s hit=%s incidence=%.0fdeg speed=%.1f tick=%d" % [_v(cur["pos"]), hit, incidence, vmax, tick])
 		_headon_tick = tick
 		_headon_hit = hit
 		return
@@ -230,7 +250,11 @@ func _jitter(cur: Dictionary, f: Dictionary) -> void:
 		return
 	var prev: Dictionary = _hist[n - 2]
 	var tick: int = int(cur["tick"])
-	var flat_both: bool = str(cur["state"]) == "ROLLING" and str(prev["state"]) == "ROLLING" and bool(cur["on_floor"]) and bool(prev["on_floor"]) \
+	# Only plain rolling on flat ground counts: no event this tick (landing, respawn, ollie, bail, ...), consecutive ticks,
+	# and no height step larger than a bump (a roof, a respawn or a bot teleport is not jitter).
+	var calm: bool = (cur["events"] as Array).is_empty() and int(cur["tick"]) - int(prev["tick"]) == 1 \
+		and absf((cur["pos"] as Vector3).y - (prev["pos"] as Vector3).y) < JITTER_Y_STEP_MAX
+	var flat_both: bool = calm and str(cur["state"]) == "ROLLING" and str(prev["state"]) == "ROLLING" and bool(cur["on_floor"]) and bool(prev["on_floor"]) \
 		and (cur["n"] as Vector3).y > 0.995 and (prev["n"] as Vector3).y > 0.995 and float(cur["speed"]) > 1.5
 	# floor normal flapping: tick-to-tick changes that reverse direction (a surface curving away is monotonic, not jitter)
 	var dn: Vector3 = Vector3.ZERO
@@ -275,7 +299,7 @@ func _jitter(cur: Dictionary, f: Dictionary) -> void:
 		else:
 			ylo = minf(ylo, yy)
 			yhi = maxf(yhi, yy)
-	if contiguous and flips >= 5 and yhi - ylo >= JITTER_Y_MIN and _ready("jitter_y", tick, 120):
+	if contiguous and flips >= 5 and yhi - ylo >= JITTER_Y_MIN and yhi - ylo <= JITTER_Y_MAX and _ready("jitter_y", tick, 120):
 		_issue("jitter_y", cur["pos"], tick, "height flips direction %d times in 24 ticks on flat ground, peak-to-peak %.1f mm" % [flips, (yhi - ylo) * 1000.0])
 
 

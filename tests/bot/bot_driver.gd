@@ -37,6 +37,8 @@ var grind_ticks: int = 0
 var manual_ticks: int = 0
 var pipe: Dictionary = {}  ## active pump-the-pipe mode (from a waypoint's `pipe`): {axis: "x"|"z", lane, ref, min_y, want}
 var peaks: Array[float] = []
+var wall_test: bool = false  ## true while the active waypoint is a deliberate head-on wall test (its slam is expected)
+var wall_tests: int = 0  ## wall tests started
 var misses: Array[String] = []  ## actions that did not take (ollie never left the ground, grind never caught)
 
 var _act: Dictionary = {}
@@ -93,6 +95,10 @@ func step(delta: float) -> void:
 		"BAIL":
 			moving_intent = false
 			_act = {}
+			if wall_test:
+				# the test did its job: go on to the next segment (this is not a timeout)
+				wall_test = false
+				_end_segment()
 		"GRIND":
 			grind_ticks += 1
 			_stick.x = _balance_stick(true)
@@ -150,6 +156,18 @@ func _skip_segment(why: String) -> void:
 		finished = true
 
 
+## Moves on to the next segment without logging a skip.
+func _end_segment() -> void:
+	idx += 1
+	while idx < wps.size() and not (wps[idx] as Dictionary).has("tp") and not (wps[idx] as Dictionary).has("drop"):
+		idx += 1
+	_wp_t = 0.0
+	_act = {}
+	_have_prev = false
+	if idx >= wps.size():
+		finished = true
+
+
 ## Teleport / drop-in waypoints take effect without a tick of their own.
 func _consume_special(pos: Vector3) -> void:
 	while idx < wps.size():
@@ -187,6 +205,7 @@ func teleport(pos: Vector3, dir: Vector3, speed: float) -> void:
 	sk.speed = speed
 	teleported = true
 	_act = {}
+	wall_test = false
 	_have_prev = false
 	_pipe_dir = 1.0
 	_pos_ring.clear()
@@ -255,6 +274,9 @@ func _ground_input(d: Dictionary, delta: float) -> void:
 		return
 	var wp: Dictionary = wps[idx]
 	_wp_t += delta
+	if bool(wp.get("wall_test", false)) and not wall_test:
+		wall_test = true
+		wall_tests += 1
 	if wp.has("pipe") and pipe.is_empty():
 		pipe = wp["pipe"]
 		peaks = []
@@ -283,7 +305,22 @@ func _ground_input(d: Dictionary, delta: float) -> void:
 	if not pipe.is_empty():
 		passed = false
 		dist = 1e9
-	if dist < reach or passed:
+	if bool(wp.get("hold", false)):
+		# ride straight for hold_s seconds (up a wall and back), then carry on with the next waypoint
+		if _wp_t > float(wp.get("hold_s", 1.5)):
+			_reach(wp, d)
+		else:
+			_stick.x = 0.0
+			return
+		if finished or idx >= wps.size():
+			return
+		wp = wps[idx]
+		if wp.has("tp") or wp.has("drop"):
+			return
+		target = wp["p"]
+		to = target - pos
+		to.y = 0.0
+	elif dist < reach or passed:
 		_reach(wp, d)
 		if finished or idx >= wps.size():
 			return
@@ -319,6 +356,8 @@ func _ground_input(d: Dictionary, delta: float) -> void:
 		_stick.y = -1.0
 	if not pipe.is_empty():
 		_stick.y = -1.0
+		if pipe.has("no_push_above") and pos.y > float(pipe["no_push_above"]):
+			_stick.y = 0.0  # no pumping at the lip: it throws the rider over the coping
 
 
 func _reach(wp: Dictionary, d: Dictionary) -> void:
@@ -390,9 +429,9 @@ func _air_input(d: Dictionary) -> void:
 				_held.append("grab")
 			elif _act.has("grab_started"):
 				_act["grab_done"] = true
-	if kind == "ollie" and bool(_act.get("man", false)):
+	if (kind == "ollie" or kind == "air") and bool(_act.get("man", false)):
 		# pull N then S in the last few ticks of the fall, so the sequence is fresh when the wheels touch down
-		if vy < -1.5 and not _act.has("man_t"):
+		if vy < -1.5 and not _act.has("man_t") and _ground_dist(d) < maxf(0.4, -vy * 0.15):
 			_act["man_t"] = 0
 		if _act.has("man_t"):
 			var mt: int = int(_act["man_t"])
@@ -404,6 +443,16 @@ func _air_input(d: Dictionary) -> void:
 		var to: Vector3 = (wp["p"] as Vector3) - (d["pos"] as Vector3)
 		to.y = 0.0
 		_stick.x = clampf(_steer_raw(d, to), -0.3, 0.3)
+
+
+## Height above whatever is under the skater (a ray straight down, world layer), 99 when nothing is there.
+func _ground_dist(d: Dictionary) -> float:
+	var p: Vector3 = d["pos"]
+	var q: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(p + UPV * 0.3, p - UPV * 60.0, 1)
+	var hit: Dictionary = sk.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return 99.0
+	return p.y - (hit["position"] as Vector3).y
 
 
 func _steer_raw(d: Dictionary, to: Vector3) -> float:
@@ -420,7 +469,7 @@ func on_landed() -> void:
 		_revert_in = 3
 		_want_revert = false
 	var kind: String = str(_act.get("kind", ""))
-	if kind == "ollie" and bool(_act.get("man", false)):
+	if (kind == "ollie" or kind == "air") and bool(_act.get("man", false)):
 		_act = {"kind": "manual", "dur": float(_act.get("dur", 1.5)), "exit": str(_act.get("exit", "ollie")), "mt": 0, "t": 99}
 	elif kind in ["ollie", "air"]:
 		_act = {}
@@ -430,7 +479,10 @@ func _manual_sequence() -> void:
 	var t: int = int(_act["t"])
 	_act["t"] = t + 1
 	_manual_wanted = true
-	if t < 5:
+	# release to neutral first: the physics only counts a short N flick (a held push straight into S is riding)
+	if t < 2:
+		_stick.y = 0.0
+	elif t < 5:
 		_stick.y = -1.0
 	else:
 		_stick.y = 1.0
@@ -442,11 +494,23 @@ func _manual_sequence() -> void:
 func _manual_hold() -> void:
 	if str(_act.get("kind", "")) == "manual":
 		_act["mt"] = int(_act.get("mt", 0)) + 1
-		if float(int(_act["mt"])) / 60.0 >= float(_act.get("dur", 2.0)):
-			if str(_act.get("exit", "ollie")) == "ollie":
+		var done: bool = float(int(_act["mt"])) / 60.0 >= float(_act.get("dur", 2.0))
+		if _act.has("exit_p"):
+			# leave the manual at a spot (dur is then the longest it may last)
+			var e: Vector3 = _act["exit_p"]
+			var p: Vector3 = sk.global_position
+			if Vector2(p.x - e.x, p.z - e.z).length() < 0.2 + sk.speed * 0.02:
+				done = true
+		if done:
+			var ex: String = str(_act.get("exit", "ollie"))
+			if ex == "ollie" or ex == "ollie_man":
 				_pressed.append("ollie")
 				_held.append("ollie")
-			_act = {}
+			if ex == "ollie_man":
+				# hop and land in the next manual (the gap needs MANUAL on entering both zones)
+				_act = {"kind": "ollie", "man": true, "dur": float(_act.get("dur2", 1.0)), "exit": "ollie", "t": 99, "h": 1}
+			else:
+				_act = {}
 	elif int(_act.get("unwanted", 0)) == 0:
 		# a manual the bot did not ask for (push then pull back): note it and ride it out
 		_act = {"kind": "manual_unwanted", "unwanted": 1, "mt": 0}
@@ -499,6 +563,11 @@ func _pipe_target(d: Dictionary) -> Vector3:
 	var pos: Vector3 = d["pos"]
 	var vel: Vector3 = d["vel"]
 	var lane: float = float(pipe["lane"])
+	if pipe.has("center"):
+		# a round bowl: back to the middle when the rider has left the dish
+		var ctr: Vector2 = pipe["center"]
+		if Vector2(pos.x, pos.z).distance_to(ctr) > float(pipe.get("radius", 7.0)):
+			return Vector3(ctr.x, 0.0, ctr.y)
 	var along_x: bool = str(pipe.get("axis", "z")) == "x"
 	var comp: float = vel.x if along_x else vel.z
 	if absf(comp) > 0.8:

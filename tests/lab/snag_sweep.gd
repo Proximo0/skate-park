@@ -14,6 +14,7 @@ const WINDOW: int = 15  ## 0.25 s
 const LOSS_FRAC: float = 0.30
 const CELL: float = 0.5
 const SKATER_R: float = 0.3
+const BAIL_GRACE_TICKS: int = 60  ## a slide within 1 s after a bail event belongs to the bail
 const HEAD_ON: float = 0.85  ## cos of incidence above which a hit on a >0.2 m wall is a legitimate stop, not a snag
 const FWD: Vector2 = Vector2(0.0, -1.0)
 
@@ -348,11 +349,27 @@ func _analyse(rec: Array, run: Dictionary) -> Variant:
 				if (rec[k][1] as Vector3).length() < 1.0 and rec[k][2] == "ROLLING":
 					hard = true
 		if (ref > 0.5 and loss > LOSS_FRAC * ref) or hard:
-			out.append(_describe(rec, run, i, j, loss / maxf(ref, 0.001), hard))
+			var found: Dictionary = _describe(rec, run, i, j, loss / maxf(ref, 0.001), hard)
+			found["excl"] = _excluded_as(rec, i, j, loss, ref, hard)
+			out.append(found)
 			i = j + 15  ## one snag per event
 			continue
 		i += 1
 	return out
+
+
+## Why a flagged window is not a real snag, or "" when it is. Two cases are the physics doing its job:
+## "bail_slide": the rider is in BAIL, or bailed within the last second (the ragdoll slides to a stop);
+## "ramp_apex": a hard stop with the mechanical energy (kinetic + potential) intact on a slope: speed turned into height.
+func _excluded_as(rec: Array, i: int, j: int, loss: float, ref: float, hard: bool) -> String:
+	for k: int in range(maxi(0, i - BAIL_GRACE_TICKS), j + 1):
+		if rec[k][2] == "BAIL" or (rec[k][6] as Array).has("bail"):
+			return "bail_slide"
+	if hard and loss <= LOSS_FRAC * ref:
+		for k: int in range(i, j + 1):
+			if (rec[k][8] as Vector3).y < 0.97 or (rec[k][1] as Vector3).y > 0.5:
+				return "ramp_apex"
+	return ""
 
 
 func _describe(rec: Array, run: Dictionary, i: int, j: int, frac: float, hard: bool) -> Dictionary:
@@ -441,8 +458,11 @@ func _report(n_runs: int, all_snags: Array) -> void:
 	var groups: Dictionary = {}
 	var snags: Array = []
 	var headon: int = 0
+	var excluded: Dictionary = {}
 	for s: Dictionary in all_snags:
-		if bool(s.get("head_on", false)) and not args.has("include_headon"):
+		if str(s.get("excl", "")) != "":
+			excluded[str(s["excl"])] = int(excluded.get(str(s["excl"]), 0)) + 1
+		elif bool(s.get("head_on", false)) and not args.has("include_headon"):
 			headon += 1
 		else:
 			snags.append(s)
@@ -481,6 +501,7 @@ func _report(n_runs: int, all_snags: Array) -> void:
 				g["count"], roundi(float(w["loss_frac"]) * 100.0), kind, _v3s(w["normal"]), float(w["contact_h"]), float(w["incidence"]), _run_str(w["run"])])
 		rank += 1
 	print("SNAG note %d square-on wall hits (incidence>%.2f onto a >0.2 m obstacle) excluded as legitimate stops; --include_headon keeps them" % [headon, HEAD_ON])
+	print("SNAG excluded bail_slide=%d ramp_apex=%d head_on=%d (not counted below)" % [int(excluded.get("bail_slide", 0)), int(excluded.get("ramp_apex", 0)), headon])
 	print("SNAG summary runs=%d snags=%d hotspots=%d" % [n_runs, snags.size(), hot.size()])
 	DirAccess.make_dir_recursive_absolute(OUT_DIR)
 	var hj: Array = []
@@ -490,7 +511,7 @@ func _report(n_runs: int, all_snags: Array) -> void:
 	for s: Dictionary in snags:
 		sj.append(_jsonable(s))
 	var f: FileAccess = FileAccess.open(OUT_DIR + "/snags.json", FileAccess.WRITE)
-	f.store_string(JSON.stringify({"version": 1, "runs": n_runs, "snags": snags.size(), "headon_excluded": headon, "hotspots": hj, "all": sj}, "  "))
+	f.store_string(JSON.stringify({"version": 1, "runs": n_runs, "snags": snags.size(), "real_snags": snags.size(), "excluded": {"bail_slide": int(excluded.get("bail_slide", 0)), "ramp_apex": int(excluded.get("ramp_apex", 0)), "head_on": headon}, "hotspots": hj, "all": sj}, "  "))
 	f.close()
 
 

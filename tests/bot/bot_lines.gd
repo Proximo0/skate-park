@@ -8,7 +8,7 @@ extends RefCounted
 const Y0: float = 0.1
 const NAMES: Array[String] = [
 	"cruise", "ollies", "kickers", "funbox_gap", "halfpipe", "quarter_air", "rails_street", "rails_long", "manuals",
-	"dome", "drop_loop", "mega", "street_run", "gaps_misc", "transfers", "corners",
+	"dome", "drop_loop", "mega", "mega_qp", "street_run", "gaps_misc", "transfers", "corners",
 ]
 
 var park: Park
@@ -61,6 +61,7 @@ func build(line_name: String) -> Dictionary:
 		"manuals":
 			line["wps"] = _manuals()
 			line["expect"] = ["Manual Bridge"]
+			line["design_unreachable"] = {"Manual Bridge": "zone A (z 13.0-13.5) is the first 0.5 m of an un-ramped 0.3 m pad and is entered in AIR by every ollie onto the pad (the rider cannot roll up a 0.3 m step, edge step limit 0.12 m), but the gap needs MANUAL at both entries; landing in a manual happens past the zone"}
 			line["limit"] = 40.0
 		"dome":
 			line["wps"] = _dome()
@@ -72,7 +73,11 @@ func build(line_name: String) -> Dictionary:
 			line["limit"] = 45.0
 		"mega":
 			line["wps"] = _mega()
-			line["expect"] = ["Mega Gap", "Mega QP Air"]
+			line["expect"] = ["Mega Gap"]
+			line["limit"] = 50.0
+		"mega_qp":
+			line["wps"] = _mega_qp()
+			line["expect"] = ["Mega QP Air"]
 			line["limit"] = 50.0
 		"street_run":
 			line["wps"] = _street_run()
@@ -80,7 +85,7 @@ func build(line_name: String) -> Dictionary:
 			line["limit"] = 90.0
 		"gaps_misc":
 			line["wps"] = _gaps_misc()
-			line["soft"] = true  # roof access run is a known bot routing fault (clips the parapet, stops dead)
+			line["soft"] = false
 			line["expect"] = ["Roof Gap", "Pyramid Hop", "Bowl Hop"]
 			line["limit"] = 70.0
 		"transfers":
@@ -89,7 +94,7 @@ func build(line_name: String) -> Dictionary:
 		"corners":
 			line["wps"] = _corners()
 			line["soft"] = true
-			line["limit"] = 90.0
+			line["limit"] = 200.0
 		_:
 			line["wps"] = []
 	return line
@@ -260,16 +265,18 @@ func _kickers() -> Array:
 func _funbox_gap() -> Array:
 	# funbox ridden north -> south (bank up at its north end), popped at the foot of the first bank
 	var r: Rect2 = rect_of("FunBox")
-	var cx: float = r.get_center().x + 1.5
+	var cx: float = r.get_center().x
 	var out: Array = [tp(Vector3(cx, Y0, r.position.y - 22.0), Vector3(0, 0, 1), 4.0)]
 	out.append(wp(cx, r.position.y - 10.0, 12.0, {"r": 1.5}))
 	out.append(wp(cx, r.position.y - 1.6, 12.0, {"r": 1.0, "act": "ollie", "h": 12, "flip": true}))
-	out.append(wp(cx + 3.5, r.end.y + 5.0, 8.0, {"r": 2.5}))
+	out.append(wp(cx, r.end.y + 1.0, 8.0, {"r": 1.5}))
+	out.append(wp(cx + 6.0, r.end.y + 3.0, 5.0, {"r": 2.5}))
 	# and straight over it with no pop (rolling up, across and down)
 	out.append(tp(Vector3(cx, Y0, r.position.y - 16.0), Vector3(0, 0, 1), 4.0))
 	out.append(wp(cx, r.position.y - 3.0, 10.0, {"r": 1.5}))
 	out.append(wp(cx, r.end.y + 1.0, 10.0, {"r": 1.5}))
-	out.append(wp(cx + 3.5, r.end.y + 5.0, 6.0, {"r": 2.5}))
+	out.append(wp(cx, r.end.y + 1.0, 6.0, {"r": 1.5}))
+	out.append(wp(cx + 6.0, r.end.y + 3.0, 5.0, {"r": 2.5}))
 	return out
 
 
@@ -306,8 +313,11 @@ func _manuals() -> Array:
 	var r: Rect2 = rect_of("ManualPad")
 	var cx: float = r.get_center().x
 	out.append(tp(Vector3(cx, Y0, r.position.y - 18.0), Vector3(0, 0, 1), 4.0))
-	out.append(wp(cx, r.position.y - 8.0, 9.0, {"r": 1.5}))
-	out.append(wp(cx, r.position.y - 2.2, 9.0, {"r": 0.8, "act": "ollie", "h": 3, "man": true, "dur": 1.0, "exit": "ollie"}))
+	# Manual Bridge needs MANUAL when entering BOTH zones (0.5 m at each end of the pad): manual on the ground, hop onto
+	# the pad (the zone is entered by the rider's body before the hop), land in a manual and ride it to the far end.
+	out.append(wp(cx, r.position.y - 9.0, 9.0, {"r": 1.5}))
+	out.append(wp(cx, r.position.y - 7.0, 9.0, {"r": 0.8, "act": "manual", "dur": 1.5, "exit": "ollie_man", "dur2": 1.2,
+		"exit_p": Vector3(cx, 0.0, r.position.y - 0.5)}))
 	out.append(wp(cx, r.end.y + 8.0, 7.0, {"r": 2.5}))
 	return out
 
@@ -325,9 +335,17 @@ func _dome() -> Array:
 		a += 0.6
 		radius = minf(radius + 0.15, 5.6)
 		out.append(wp(c.x + cos(a) * radius, c.z + sin(a) * radius, 10.0, {"r": 1.8, "pump": true, "tmo": 8.0}))
-	# then pump straight across the bowl, wall to wall, until the passes reach the rim
-	out.append(wp(c.x, c.z, 10.0, {"r": 0.1, "tmo": 30.0, "pump": true, "pipe": {"axis": "x", "lane": c.z, "ref": 0.0, "min_y": -3.0, "want": 5}}))
+	# then pump straight across the bowl, wall to wall, until the passes reach the rim (no pumping at the lip, and back to
+	# the middle if a pass carries the rider out of the dish)
+	out.append(wp(c.x, c.z, 10.0, {"r": 0.1, "tmo": 30.0, "pump": true, "pipe": {"axis": "x", "lane": c.z, "ref": 0.0, "min_y": -3.0, "want": 5,
+		"no_push_above": -2.0, "center": Vector2(c.x, c.z), "radius": rim - 0.5}}))
 	out.append(wp(c.x + 6.0, c.z, 6.0, {"r": 2.0, "tmo": 6.0}))
+	# Dome Air: the gap zone floats over the middle of the dish (y 0..4, 9.6 m square), so the rider has to leave the wall
+	# going inward: roll across at 18 m/s and pop a short ollie at radius 6.5. (Rolling off the lip alone throws the rider
+	# outward and up, never over the centre.)
+	out.append(tp(Vector3(c.x - 1.0, Y0, c.z), Vector3(1, 0, 0), 18.0))
+	out.append(wp(c.x + 6.5, c.z, 22.0, {"r": 0.2, "act": "ollie", "h": 6}))
+	out.append(wp(c.x - 6.0, c.z, 12.0, {"r": 2.5, "tmo": 8.0}))
 	return out
 
 
@@ -352,6 +370,7 @@ func _drop_loop() -> Array:
 	]
 
 
+## Mega Gap: drop in, no pop, off the kicker at 19 m/s and down onto the landing.
 func _mega() -> Array:
 	var mega: Node3D = piece("MegaRamp")
 	var lay: Dictionary = MegaRamp._layout(14.0, 18.0, 8.0)
@@ -361,10 +380,32 @@ func _mega() -> Array:
 		{"drop": "mega"},
 		wp(cx, z0 + float(lay["roll_end"]) - 3.0, 22.0, {"r": 2.5, "pump": true}),
 		wp(cx, z0 + float(lay["kick_z0"]) + 4.0, 22.0, {"r": 2.5}),
-		wp(cx, z0 + float(lay["lip_z"]) - 0.6, 22.0, {"r": 1.0, "act": "air", "grab": true, "revert": true, "tmo": 40.0}),
+		wp(cx, z0 + float(lay["lip_z"]) - 0.6, 22.0, {"r": 1.0, "act": "air", "grab": true, "tmo": 40.0}),
 		wp(cx, z0 + float(lay["land_top_z"]) + 6.0, 22.0, {"r": 3.0}),
 		wp(cx, z0 + float(lay["qp_a"]) - 2.0, 18.0, {"r": 2.5}),
-		wp(cx, z0 + float(lay["qp_lip_z"]) - 0.6, 18.0, {"r": 1.0, "pump": true, "act": "air", "grab": true, "revert": true}),
+		wp(cx, z0 + float(lay["qp_lip_z"]) - 0.6, 18.0, {"r": 1.0, "pump": true, "act": "air", "grab": true}),
+		wp(cx, z0 + float(lay["qp_a"]) - 8.0, 8.0, {"r": 3.0}),
+	]
+
+
+## Mega QP Air in a run of its own. Mega Gap closes a combo when it lands (0.35 s on the wheels), and that wipes the
+## pending start of Mega QP Air (the runout zone is entered 0.2 s after the landing), and the flat landing costs 5 m/s
+## that the quarter pipe then lacks. So this run rolls off the kicker at 20 m/s without registering the gap and pumps
+## the quarter pipe; its apex is 7.5-8.6 m against 7.4 m needed (see docs/play_bot.md, gap reachability).
+func _mega_qp() -> Array:
+	var mega: Node3D = piece("MegaRamp")
+	var lay: Dictionary = MegaRamp._layout(14.0, 18.0, 8.0)
+	var cx: float = mega.global_position.x + 4.0
+	var z0: float = mega.global_position.z
+	return [
+		{"drop": "mega"},
+		wp(cx, z0 + float(lay["roll_end"]) - 3.0, 20.0, {"r": 2.5, "pump": true}),
+		wp(cx, z0 + float(lay["kick_z0"]) + 4.0, 20.0, {"r": 2.5}),
+		wp(cx, z0 + float(lay["lip_z"]) - 0.6, 20.0, {"r": 1.0, "act": "air", "tmo": 40.0}),
+		wp(cx, z0 + float(lay["land_top_z"]) + 6.0, 20.0, {"r": 3.0}),
+		wp(cx, z0 + float(lay["qp_a"]) - 2.0, 20.0, {"r": 2.5}),
+		wp(cx, z0 + float(lay["qp_lip_z"]) - 0.6, 20.0, {"r": 1.0, "pump": true, "pump_max": 22.0}),
+		wp(cx, z0 + float(lay["qp_lip_z"]) + 1.5, 20.0, {"hold": true, "hold_s": 1.2}),
 		wp(cx, z0 + float(lay["qp_a"]) - 8.0, 8.0, {"r": 3.0}),
 	]
 
@@ -373,14 +414,23 @@ func _street_run() -> Array:
 	var out: Array = []
 	var zc: float = Park.STREET_Z
 	var down: Rect2 = rect_of("Downhill")
-	out.append(tp(Vector3(down.position.x + 1.0, Y0, zc), Vector3(1, 0, 0), 3.0))
-	out.append(wp(down.position.x + 12.0, zc, 10.0, {"r": 2.0}))
-	out.append(wp(down.position.x + 22.0, zc, 11.0, {"r": 2.0, "pump": true}))
-	out.append(wp(down.end.x + 2.0, zc, 11.0, {"r": 2.5}))
+	# The rails first (each a segment of its own, with its own run-up).
 	out.append_array(rail_segment(rail_of("LongLedge"), "ollie", 14.0, 8.0))
 	out.append_array(rail_segment(rail_of("LongRail"), "ride", 14.0, 8.0))
 	out.append_array(_hubba())
-	out.append_array(gap_run("hubba_stairs_top", "hubba_stairs_bottom", 20.0, 1.0, 5.0, 11.0, {"flip": true, "h": 30}))
+	# Down The Hill: the access ramp needs ~11 m/s of height, so start at the very west edge (rolling at 4 m/s, pushing
+	# up the ramp) and carry the speed gained on the way down along the open lane beside the rails to the hubba stairs
+	# (the ramp, platform and 10 steps need ~11 m/s to be cleared in the air).
+	var ta: Vector3 = zone("hubba_stairs_top")
+	var lane: float = zc + 1.4  # clear of the long ledge / rail line (z = 62 +- 0.4)
+	out.append(tp(Vector3(down.position.x - 1.6, Y0, zc), Vector3(1, 0, 0), 4.0))
+	out.append(wp(down.position.x + 12.0, zc, 12.0, {"r": 2.0}))
+	out.append(wp(down.position.x + 22.0, zc, 12.0, {"r": 2.0}))
+	out.append(wp(down.end.x - 6.0, lane, 14.0, {"r": 3.0}))
+	out.append(wp(ta.x - 16.0, lane, 14.0, {"r": 3.0}))
+	out.append(wp(ta.x - 8.0, ta.z, 14.0, {"r": 1.5}))
+	out.append(wp(ta.x - 0.6, ta.z, 14.0, {"r": 0.5, "act": "ollie", "h": 8, "flip": true}))
+	out.append(wp(ta.x + 16.0, ta.z, 8.0, {"r": 2.5}))
 	var q: Rect2 = rect_of("StreetQuarter")
 	var lip_x: float = q.end.x - 1.5
 	out.append(tp(Vector3(lip_x - 22.0, Y0, zc), Vector3(1, 0, 0), 3.0))
@@ -417,12 +467,16 @@ func _hubba() -> Array:
 func _gaps_misc() -> Array:
 	var out: Array = []
 	out.append_array(_roof())
-	out.append_array(gap_run("pyramid_n", "pyramid_s", 14.0, 1.5, 7.0, 12.0, {"h": 14}))
+	# Pyramid Hop: 10.5 m of air between the zones over a 9 m base, so it is two hops (over the foot, off the flat top)
+	# at 12+ m/s: that needs a 26 m run-up.
+	out.append_array(gap_run("pyramid_n", "pyramid_s", 26.0, 2.0, 8.0, 12.5, {"h": 24}))
 	out.append_array(gap_run("bowl_rim_n", "bowl_rim_s", 26.0, 0.3, 8.0, 12.5, {"h": 30}))
 	return out
 
 
-## Up the roof access ramp (ollie over the parapet at its top), across the west roof and over the 4 m gap to the east roof.
+## Up the roof access ramp at 12 m/s, a small ollie over the parapet at its top, a quick second pop just after landing
+## on the west roof, and over the 4 m gap to the east roof. Both roof zones must be entered in the air, so the second
+## pop has to leave the ground before the west zone (x = -17.3): there is only 6 m of roof to do it in.
 func _roof() -> Array:
 	var west: Vector3 = zone("roof_west")
 	var east: Vector3 = zone("roof_east")
@@ -430,12 +484,11 @@ func _roof() -> Array:
 	var z: float = ramp.get_center().y
 	var d: Vector3 = flat(east - west).normalized()
 	return [
-		tp(Vector3(ramp.position.x - 6.0, Y0, z), d, 8.0),
-		wp(ramp.position.x + 3.0, z, 12.0, {"r": 1.5}),
-		wp(ramp.end.x - 7.0, z, 12.0, {"r": 1.0, "act": "ollie", "h": 4}),
-		wp(west.x - 3.5, z, 11.0, {"r": 1.0}),
-		wp(west.x - 2.0, z, 11.0, {"r": 1.0, "act": "ollie", "h": 18}),
-		wp(east.x + 3.0, z, 3.0, {"r": 1.5, "brake": true}),
+		tp(Vector3(ramp.position.x - 26.0, Y0, z), d, 4.0),
+		wp(ramp.position.x - 6.0, z, 13.0, {"r": 1.5}),
+		wp(ramp.end.x - 2.0, z, 13.0, {"r": 0.3, "act": "ollie", "h": 3}),
+		wp(west.x - 1.5, z, 13.0, {"r": 0.3, "act": "ollie", "h": 3}),
+		wp(east.x + 4.0, z, 3.0, {"r": 2.0, "brake": true}),
 		wp(east.x + 5.0, z, 2.0, {"r": 1.5, "brake": true, "act": "wait", "s": 0.3}),
 	]
 func _transfers() -> Array:
@@ -467,18 +520,32 @@ func _corners() -> Array:
 			out.append(tp(Vector3(xw, Y0, r.end.y + lead), Vector3(0, 0, -1), 6.0))
 			out.append(wp(xw, r.end.y + 2.0, 9.0, {"r": 1.5}))
 			out.append(wp(xw, r.position.y - tail, 9.0, {"r": 2.0}))
-		# the four corners, clipped at 20 and 40 degrees off the side
-		var corners: Array[Vector3] = [
-			Vector3(r.end.x, 0, r.end.y), Vector3(r.position.x, 0, r.end.y), Vector3(r.end.x, 0, r.position.y), Vector3(r.position.x, 0, r.position.y)]
-		var inward: Array[Vector3] = [Vector3(-1, 0, -1), Vector3(1, 0, -1), Vector3(-1, 0, 1), Vector3(1, 0, 1)]
-		for ci: int in [0, 3]:
-			for ang: float in [20.0, 40.0]:
-				var inw: Vector3 = inward[ci].normalized()
-				# approach direction: from outside, heading along `inw` turned by ang away from the diagonal
-				var dirv: Vector3 = inw.rotated(Vector3.UP, deg_to_rad(ang if ci == 0 else -ang)).normalized()
-				var aim: Vector3 = corners[ci] + inw * 0.25
-				var start: Vector3 = aim - dirv * 11.0
-				out.append(tp(Vector3(start.x, Y0, start.z), dirv, 6.0))
-				out.append(wpv(aim - dirv * 3.0, 9.0, {"r": 1.2}))
-				out.append(wpv(aim + dirv * 6.0, 9.0, {"r": 2.5, "tmo": 6.0}))
+		# two corners, each clipped on both faces at 15 and 30 degrees: a glancing graze (a real player's mistake), never
+		# square on at speed. The path crosses the face 0.4 m along from the corner.
+		for cxs: float in [r.end.x, r.position.x]:
+			for czs: float in [r.end.y, r.position.y]:
+				var sx: float = 1.0 if cxs > r.get_center().x else -1.0
+				var sz: float = 1.0 if czs > r.get_center().y else -1.0
+				for ang: float in [15.0, 30.0]:
+					var ca: float = cos(deg_to_rad(ang))
+					var sa: float = sin(deg_to_rad(ang))
+					# along the face that lies on z = czs (normal sz), coming from beyond the corner in x
+					var h1: Vector3 = Vector3(-sx * ca, 0, -sz * sa)
+					var q1: Vector3 = Vector3(cxs - sx * 0.4, 0, czs)
+					out.append(tp(q1 - h1 * 11.0 + Vector3(0, Y0, 0), h1, 6.0))
+					out.append(wpv(q1 - h1 * 3.0, 9.0, {"r": 1.2}))
+					out.append(wpv(q1 + Vector3(-sx * 6.0, 0, sz * 1.5), 9.0, {"r": 2.5, "tmo": 4.0}))
+					# along the face on x = cxs (normal sx), coming from beyond the corner in z
+					var h2: Vector3 = Vector3(-sx * sa, 0, -sz * ca)
+					var q2: Vector3 = Vector3(cxs, 0, czs - sz * 0.4)
+					out.append(tp(q2 - h2 * 11.0 + Vector3(0, Y0, 0), h2, 6.0))
+					out.append(wpv(q2 - h2 * 3.0, 9.0, {"r": 1.2}))
+					out.append(wpv(q2 + Vector3(sx * 1.5, 0, -sz * 6.0), 9.0, {"r": 2.5, "tmo": 4.0}))
+	# The deliberate wall test (INFO, not a finding): square into the tall end of the centre kicker at 15 m/s, which must
+	# bail (head-on speed above the slam speed, 13 m/s).
+	var k: Rect2 = rect_of("KickerCentre")
+	var kx: float = k.get_center().x
+	out.append(tp(Vector3(kx, Y0, k.position.y - 14.0), Vector3(0, 0, 1), 15.0))
+	out.append(wp(kx, k.position.y - 5.0, 15.0, {"r": 1.5}))
+	out.append(wp(kx, k.position.y + 1.0, 15.0, {"r": 0.5, "wall_test": true, "tmo": 6.0}))
 	return out
