@@ -8,8 +8,8 @@ extends Camera3D
 
 const DISTANCE := 3.5  ## m behind the skater on the ground (was 4.5: the skater read ~100 px tall at 720p)
 const HEIGHT := 1.45  ## m above the skater: a lower, flatter angle shows the ground rushing past
-const VERT_DISTANCE := 6.0  ## air above a ramp lip or on a wall: still farther and higher so the landing stays in frame
-const VERT_HEIGHT := 3.0
+const VERT_DISTANCE := 5.0  ## air above a ramp lip or on a wall: still farther and higher so the landing stays in frame
+const VERT_HEIGHT := 2.5
 const LOOK_HEIGHT := 0.9
 const LOOK_AHEAD_FACTOR := 0.12  ## seconds of velocity projected ahead of the look point
 const LOOK_AHEAD_MAX := 1.5
@@ -29,6 +29,9 @@ const FOV_SPEED_HI := 22.0
 const FOV_CURVE := 1.6  ## > 1: subtle at cruise, stronger toward top speed
 const PUSH_DISTANCE := 0.9  ## extra m the camera trails behind at FOV_SPEED_HI (it eases back, so speed feels like a drag)
 const FOV_RATE := 4.0
+const PUNCH_TIME := 0.12  ## s: the landing dip and FOV punch, one short hit with no lingering shake
+const PUNCH_FOV := 4.0  ## degrees of extra FOV at the start of a landing punch
+const PUNCH_DIP := 0.14  ## m the camera drops at the start of a landing punch
 const RAY_UP := 1.0
 const RAY_DOWN := 40.0
 const WORLD_MASK := 1
@@ -43,6 +46,8 @@ var _cam_pos: Vector3 = Vector3.ZERO
 var _look: Vector3 = Vector3.ZERO
 var _fov: float = FOV_BASE
 var _push: float = 0.0
+var _punch: float = 0.0  ## 1 at the landing, decays to 0 over PUNCH_TIME
+var _punch_target: Skater
 
 
 static func yaw_from_facing(facing: Vector3) -> float:
@@ -112,6 +117,10 @@ static func pulled_in(look: Vector3, desired: Vector3, hit: Vector3, margin: flo
 func _physics_process(delta: float) -> void:
 	if target == null or not is_instance_valid(target):
 		return
+	if _punch_target != target:
+		_punch_target = target
+		target.landed.connect(_on_landed)
+	_punch = maxf(_punch - delta / PUNCH_TIME, 0.0)
 	var grinding: bool = target.state.state == SkateState.State.GRIND
 	var bailing: bool = target.state.state == SkateState.State.BAIL
 	var steep: bool = target.board_up.y < 0.5 and not grinding
@@ -151,10 +160,16 @@ func _physics_process(delta: float) -> void:
 	_look = damp_vec(_look, goal_look, LOOK_RATE, delta)
 	_fov = damp(_fov, fov_for_speed(target.speed), FOV_RATE, delta)
 
-	global_position = _cam_pos
-	fov = _fov
+	var hit: float = _punch * _punch
+	global_position = _cam_pos + Vector3.DOWN * PUNCH_DIP * hit
+	fov = _fov + PUNCH_FOV * hit
 	if not _cam_pos.is_equal_approx(_look):
 		look_at(_look, Vector3.UP)
+
+
+func _on_landed(result: String) -> void:
+	if result != "bail":
+		_punch = 1.0 if result == "clean" else 0.7
 
 
 ## Keeps the camera above the ground under it and out of walls between it and the look point.

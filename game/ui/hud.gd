@@ -8,7 +8,11 @@ const MARGIN: int = 48
 const COUNT_RATE: float = 3.0  ## exponential approach speed of the score count-up, per second
 const FLOAT_RISE: float = 110.0
 const FLOAT_TIME: float = 1.3
-const TRICK_HOLD: float = 0.9
+const TRICK_HOLD: float = 0.9  ## s the big trick text stays after landing (it holds while still airborne)
+const COMBO_TRICK_SIZE: int = 45  ## combo row, 25 percent bigger than SIZE_BODY / SIZE_BIG
+const COMBO_PTS_SIZE: int = 68
+const LAND_TAG_CLEAN: Color = Color(0.35, 0.95, 1.0)
+const LAND_TAG_SKETCHY: Color = Color(1.0, 0.55, 0.2)
 const BANNER_HOLD: float = 2.2
 const SPECIAL_W: int = 44
 const SPECIAL_H: int = 380
@@ -16,7 +20,7 @@ const BAL_W: int = 520
 const BAL_H: int = 40
 const BAL_TALL_W: int = 40
 const BAL_TALL_H: int = 320
-const BAL_HORIZ_Y: float = 0.36  ## screen height fraction for the horizontal balance meter
+const BAL_HORIZ_Y: float = 0.15  ## screen height fraction for the horizontal balance meter
 const BAL_MANUAL_X: float = 300.0  ## pixels right of centre for the manual (vertical) meter
 const TRICK_Y: float = 0.255
 const FLOAT_Y: float = 0.78
@@ -40,7 +44,8 @@ var _special_fill: Panel
 var _fill_style: StyleBoxFlat
 var _special_glow: Panel
 var _special_title: Label
-var _bal_box: VBoxContainer
+var _bal_box: PanelContainer
+var _bal_col: VBoxContainer
 var _bal_title: Label
 var _bal_view: HudBalanceView
 var _trick_pop: AnimeText
@@ -50,6 +55,10 @@ var _banner_label: Label
 var _banner_tween: Tween
 var _banner_queue: PackedStringArray = PackedStringArray()
 var _banner_busy: bool = false
+var _trick_hold_left: float = 0.0
+var _trick_shown: bool = false
+var _land_result: String = "clean"
+var _land_points: int = -1
 
 
 ## Balance meter drawn in code: a track, a sweet-spot band, a centre tick and a needle.
@@ -133,6 +142,8 @@ func _connect_skater(s: Skater) -> void:
 		s.trick_started.connect(_on_trick_started)
 	if not s.combo_landed.is_connected(_on_combo_landed):
 		s.combo_landed.connect(_on_combo_landed)
+	if not s.landed.is_connected(_on_landed):
+		s.landed.connect(_on_landed)
 	if not s.combo_bailed.is_connected(_on_combo_bailed):
 		s.combo_bailed.connect(_on_combo_bailed)
 	if not s.gap_hit.is_connected(_on_gap_hit):
@@ -144,6 +155,8 @@ func _disconnect_skater(s: Skater) -> void:
 		s.trick_started.disconnect(_on_trick_started)
 	if s.combo_landed.is_connected(_on_combo_landed):
 		s.combo_landed.disconnect(_on_combo_landed)
+	if s.landed.is_connected(_on_landed):
+		s.landed.disconnect(_on_landed)
 	if s.combo_bailed.is_connected(_on_combo_bailed):
 		s.combo_bailed.disconnect(_on_combo_bailed)
 	if s.gap_hit.is_connected(_on_gap_hit):
@@ -202,6 +215,24 @@ func _process(delta: float) -> void:
 	_update_combo(combo)
 	_update_special()
 	_update_balance()
+	_update_trick_hold(delta)
+
+
+## The big trick text holds while the skater is still in the air, then fades TRICK_HOLD after touchdown.
+func _update_trick_hold(delta: float) -> void:
+	if not _trick_shown:
+		return
+	var airborne: bool = _skater.state.state == SkateState.State.AIR
+	if airborne:
+		_trick_hold_left = TRICK_HOLD
+		return
+	_trick_hold_left -= delta
+	if _trick_hold_left <= 0.0:
+		_trick_shown = false
+		if _trick_tween != null and _trick_tween.is_valid():
+			_trick_tween.kill()
+		_trick_tween = create_tween()
+		_trick_tween.tween_property(_trick_pop, "modulate:a", 0.0, 0.35)
 
 
 func _update_combo(combo: Combo) -> void:
@@ -335,10 +366,10 @@ func _build_combo() -> void:
 	_anchor_bottom_centre(_combo_box)
 	_combo_box.visible = false
 	_root.add_child(_combo_box)
-	_combo_trick = UiStyle.label("", UiStyle.SIZE_BODY, UiStyle.WHITE)
+	_combo_trick = UiStyle.label("", COMBO_TRICK_SIZE, UiStyle.WHITE)
 	_combo_trick.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_combo_box.add_child(_combo_trick)
-	_combo_pts = AnimeText.new("", UiStyle.SIZE_BIG, UiStyle.SUNSHINE)
+	_combo_pts = AnimeText.new("", COMBO_PTS_SIZE, UiStyle.SUNSHINE)
 	_combo_pts.impact_lines = false
 	_combo_pts.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_combo_box.add_child(_combo_pts)
@@ -401,18 +432,22 @@ func _build_special() -> void:
 
 
 func _build_balance() -> void:
-	_bal_box = VBoxContainer.new()
-	_bal_box.add_theme_constant_override("separation", 6)
+	_bal_box = PanelContainer.new()  ## dark backplate so scenery text never shows through the meter
+	_bal_box.theme_type_variation = SkateThemeBuilder.PNL_NAVY
 	_bal_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bal_box.visible = false
 	_root.add_child(_bal_box)
+	_bal_col = VBoxContainer.new()
+	_bal_col.add_theme_constant_override("separation", 6)
+	_bal_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bal_box.add_child(_bal_col)
 	_bal_title = UiStyle.label("BALANCE", UiStyle.SIZE_SMALL, UiStyle.WHITE)
 	_bal_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_bal_box.add_child(_bal_title)
+	_bal_col.add_child(_bal_title)
 	_bal_view = HudBalanceView.new()
 	_bal_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bal_view.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_bal_box.add_child(_bal_view)
+	_bal_col.add_child(_bal_view)
 	_apply_balance_layout(false)
 
 
@@ -444,8 +479,48 @@ func _on_trick_started(trick: Dictionary) -> void:
 	_pop_trick(str(trick.get("name", "")))
 
 
+## combo_landed and the skater's landed signal fire in the same frame in either order, so both are folded
+## together once the frame's emits are done.
 func _on_combo_landed(points: int, _text: String) -> void:
-	_spawn_float("+%s!" % format_points(points), UiStyle.LIME, false, UiStyle.SIZE_TITLE)
+	_land_points = points
+	_flush_landing.call_deferred()
+
+
+func _on_landed(result: String) -> void:
+	_land_result = result
+
+
+func _flush_landing() -> void:
+	if _land_points < 0:
+		return
+	var pts: int = _land_points
+	_land_points = -1
+	var sketchy: bool = _land_result == "sketchy"
+	_land_result = "clean"
+	var size: int = land_size(pts)
+	_spawn_float("+%s!" % format_points(pts), LAND_TAG_SKETCHY if sketchy else UiStyle.LIME, false, size)
+	_spawn_tag("SKETCHY" if sketchy else "CLEAN!", LAND_TAG_SKETCHY if sketchy else LAND_TAG_CLEAN, sketchy)
+
+
+## Font size of the +N! pop: grows with the combo, from SIZE_BIG up to 1.5 x SIZE_TITLE.
+static func land_size(points: int) -> int:
+	var t: float = clampf(float(points) / 3000.0, 0.0, 1.0)
+	return int(lerpf(float(UiStyle.SIZE_BIG) * 1.1, float(UiStyle.SIZE_TITLE) * 1.4, t))
+
+
+## A small CLEAN! / SKETCHY tag that pops above the points and fades.
+func _spawn_tag(text: String, color: Color, wobble: bool) -> void:
+	var lbl: AnimeText = AnimeText.new(text, UiStyle.SIZE_BODY, color)
+	lbl.tilt_degrees = 6.0 if wobble else -6.0
+	lbl.impact_lines = false
+	_anchor_point(lbl, 0.5, FLOAT_Y - 0.09)
+	_fx.add_child(lbl)
+	lbl.pop(text)
+	var move := lbl.create_tween().set_parallel(true)
+	move.tween_property(lbl, "offset_top", -FLOAT_RISE * 0.6, FLOAT_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	move.tween_property(lbl, "offset_bottom", -FLOAT_RISE * 0.6, FLOAT_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	move.tween_property(lbl, "modulate:a", 0.0, FLOAT_TIME * 0.5).set_delay(FLOAT_TIME * 0.5)
+	move.finished.connect(lbl.queue_free)
 
 
 func _on_combo_bailed(_text: String) -> void:
@@ -461,15 +536,15 @@ func _pop_trick(text: String) -> void:
 	if _trick_tween != null and _trick_tween.is_valid():
 		_trick_tween.kill()
 	_trick_pop.pop(text.to_upper())
-	_trick_tween = create_tween()
-	_trick_tween.tween_interval(TRICK_HOLD)
-	_trick_tween.tween_property(_trick_pop, "modulate:a", 0.0, 0.35)
+	_trick_shown = true
+	_trick_hold_left = TRICK_HOLD
 
 
 ## A word that floats up from the combo area and fades. Wobbly text rocks side to side.
 func _spawn_float(text: String, color: Color, wobble: bool, size: int) -> void:
 	var lbl: AnimeText = AnimeText.new(text, size, color)
 	lbl.tilt_degrees = 5.0 if wobble else -5.0
+	lbl.impact_lines = size <= UiStyle.SIZE_TITLE  ## big points would throw a screen-filling burst
 	_anchor_point(lbl, 0.5, FLOAT_Y)
 	_fx.add_child(lbl)
 	lbl.pop(text)

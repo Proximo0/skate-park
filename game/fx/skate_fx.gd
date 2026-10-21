@@ -5,7 +5,11 @@ extends Node3D
 ## bind(skater) makes this node a child of the skater. Board effects are placed each frame in the skater's
 ## Visual frame (-Z travel, +Y board up); the landing puff is placed once where it starts.
 
-const SPARK_MAX: int = 24
+const SPARK_MAX: int = 30
+const SPARK_LIFE: float = 0.24
+const RING_TIME: float = 0.38
+const RING_RADIUS: float = 1.7  ## m the landing ring grows to
+const BURST_COUNT: int = 12
 const SPARK_STEP_SPEED: float = 3.0  ## sparks come in steps of 6 as speed rises past each multiple of this
 const TRAIL_AMOUNT: int = 26
 const PUFF_RING_COUNT: int = 8
@@ -36,6 +40,12 @@ var _puffs: Array[CPUParticles3D] = []
 var _stars_root: Node3D
 var _stars: Array[MeshInstance3D] = []
 var _sparks_amount: int = 0
+var _ring: MeshInstance3D
+var _ring_mat: StandardMaterial3D
+var _ring_t: float = 99.0
+var _ring_scale: float = 1.0
+var _burst: CPUParticles3D
+var _streaks: SpeedStreaks
 var _orbit_t: float = 0.0
 var _star_pop: float = 0.0
 
@@ -61,15 +71,32 @@ func _build() -> void:
 	var dot: Texture2D = _dot_texture()
 	var particle_mat: StandardMaterial3D = _material(dot, BaseMaterial3D.BILLBOARD_PARTICLES, Color.WHITE, true)
 
-	_sparks = _emitter("GrindSparks", _quad(Vector2(0.07, 0.07)),
-		_material(null, BaseMaterial3D.BILLBOARD_PARTICLES, Color.WHITE, true), SPARK_MAX, 0.45)
+	var streak_mat: StandardMaterial3D = _material(_streak_texture(), BaseMaterial3D.BILLBOARD_DISABLED, Color.WHITE, true)
+	streak_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	var streak_mesh: ArrayMesh = _streak_mesh(0.05, 0.34)
+	_sparks = _emitter("GrindSparks", streak_mesh, streak_mat, SPARK_MAX, SPARK_LIFE)
+	_sparks.particle_flag_align_y = true  ## the streak lies along its velocity
 	_sparks.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	_sparks.emission_box_extents = Vector3(0.08, 0.01, 0.3)
-	_sparks.direction = Vector3(0.0, 0.6, 1.0)  ## visual +Z is behind the skater
-	_sparks.spread = 22.0
-	_sparks.gravity = Vector3(0.0, -9.0, 0.0)
+	_sparks.emission_box_extents = Vector3(0.04, 0.01, 0.26)  ## spread along the board: both truck contact points
+	_sparks.direction = Vector3(0.0, 0.5, 1.0)  ## visual +Z is behind the skater
+	_sparks.spread = 28.0
+	_sparks.gravity = Vector3(0.0, -12.0, 0.0)
 	_sparks.color_ramp = _gradient(
-		PackedColorArray([Color(1.0, 1.0, 0.6, 1.0), Color(1.0, 0.6, 0.1, 1.0), Color(1.0, 0.4, 0.05, 0.0)]),
+		PackedColorArray([Color(1.0, 1.0, 0.85, 1.0), Color(1.0, 0.75, 0.25, 0.9), Color(1.0, 0.45, 0.1, 0.0)]),
+		PackedFloat32Array([0.0, 0.45, 1.0]))
+
+	_burst = _emitter("LandBurst", streak_mesh, streak_mat, BURST_COUNT, 0.3)
+	remove_child(_burst)
+	_burst.one_shot = true
+	_burst.explosiveness = 1.0
+	_burst.particle_flag_align_y = true
+	_burst.direction = Vector3.UP
+	_burst.spread = 75.0
+	_burst.initial_velocity_min = 2.5
+	_burst.initial_velocity_max = 4.5
+	_burst.gravity = Vector3(0.0, -9.0, 0.0)
+	_burst.color_ramp = _gradient(
+		PackedColorArray([Color(1.0, 1.0, 0.9, 1.0), Color(1.0, 0.9, 0.4, 0.8), Color(1.0, 0.8, 0.3, 0.0)]),
 		PackedFloat32Array([0.0, 0.5, 1.0]))
 
 	_trail = _emitter("SpecialTrail", _quad(Vector2(0.14, 0.14)), particle_mat, TRAIL_AMOUNT, 0.55)
@@ -106,6 +133,22 @@ func _build() -> void:
 		_puff_root.add_child(p)
 		_puffs.append(p)
 
+	_puff_root.add_child(_burst)
+	_ring_mat = _material(_ring_texture(), BaseMaterial3D.BILLBOARD_DISABLED, Color.WHITE, false)
+	_ring = MeshInstance3D.new()
+	_ring.name = "LandRing"
+	_ring.mesh = _quad(Vector2(2.0, 2.0))
+	(_ring.mesh as QuadMesh).material = _ring_mat
+	_ring.rotation.x = -PI * 0.5
+	_ring.position = Vector3(0.0, 0.03, 0.0)
+	_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_ring.visible = false
+	_puff_root.add_child(_ring)
+	_streaks = SpeedStreaks.new()
+	_streaks.name = "SpeedStreaks"
+	_streaks.skater = _skater
+	add_child(_streaks)
+
 	_stars_root = Node3D.new()
 	_stars_root.name = "BailStars"
 	_stars_root.top_level = true
@@ -134,6 +177,20 @@ func _process(delta: float) -> void:
 	_update_sparks(frame, st)
 	_update_trail(frame, st)
 	_update_stars(frame, st, delta)
+	_update_ring(delta)
+
+
+func _update_ring(delta: float) -> void:
+	if _ring_t > RING_TIME:
+		_ring.visible = false
+		return
+	_ring_t += delta
+	var k: float = clampf(_ring_t / RING_TIME, 0.0, 1.0)
+	var grow: float = 1.0 - pow(1.0 - k, 3.0)
+	_ring.visible = true
+	_ring.scale = Vector3.ONE * lerpf(0.25, RING_RADIUS * _ring_scale, grow)
+	var a: float = 1.0 - k
+	_ring_mat.albedo_color = Color(_ring_mat.albedo_color.r, _ring_mat.albedo_color.g, _ring_mat.albedo_color.b, a * a)
 
 
 func _update_sparks(frame: Transform3D, st: SkateState.State) -> void:
@@ -143,8 +200,8 @@ func _update_sparks(frame: Transform3D, st: SkateState.State) -> void:
 	if want != _sparks_amount:
 		_sparks_amount = want
 		_sparks.amount = want
-	_sparks.initial_velocity_min = 1.5 + 0.3 * spd
-	_sparks.initial_velocity_max = 2.5 + 0.5 * spd
+	_sparks.initial_velocity_min = 2.0 + 0.3 * spd
+	_sparks.initial_velocity_max = 3.5 + 0.5 * spd
 	_sparks.emitting = st == SkateState.State.GRIND and spd > 0.5
 
 
@@ -174,7 +231,7 @@ func _on_bailed() -> void:
 	_orbit_t = 0.0
 
 
-## Soft white dust ring at the feet. Clean landings give a bright puff, sketchy ones a greyer, denser one.
+## Soft white dust ring at the feet plus an expanding ground ring and a star burst of streaks. Clean landings give a bright puff, sketchy ones a greyer, denser one.
 func _on_landed(result: String) -> void:
 	if not _built or _skater == null or result == "bail":
 		return
@@ -188,11 +245,21 @@ func _on_landed(result: String) -> void:
 		p.color = col
 		p.emitting = false
 		p.emitting = true
+	_ring_t = 0.0
+	_ring_scale = 1.0 if clean else 0.7
+	var ring_col: Color = Color(1.0, 1.0, 1.0) if clean else Color(1.0, 0.8, 0.45)
+	_ring_mat.albedo_color = ring_col
+	_burst.amount = BURST_COUNT if clean else 7
+	_burst.emitting = false
+	_burst.emitting = true
 
 
-func _emitter(node_name: String, mesh: PrimitiveMesh, mat: StandardMaterial3D, amount: int,
+func _emitter(node_name: String, mesh: Mesh, mat: StandardMaterial3D, amount: int,
 		lifetime: float) -> CPUParticles3D:
-	mesh.material = mat
+	if mesh is PrimitiveMesh:
+		(mesh as PrimitiveMesh).material = mat
+	else:
+		mesh.surface_set_material(0, mat)
 	var p := CPUParticles3D.new()
 	p.name = node_name
 	p.mesh = mesh
@@ -225,6 +292,50 @@ func _material(tex: Texture2D, billboard: BaseMaterial3D.BillboardMode, tint: Co
 	m.vertex_color_use_as_albedo = vertex_tint
 	m.albedo_color = tint
 	return m
+
+
+## Streak texture: a bright head at the top (the velocity end) tapering to nothing, soft at the sides.
+func _streak_texture() -> ImageTexture:
+	var w: int = 16
+	var h: int = 64
+	var img: Image = Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in range(h):
+		var along: float = float(y) / float(h - 1)  ## 0 head, 1 tail
+		var taper: float = pow(1.0 - along, 1.6)
+		for x in range(w):
+			var across: float = 1.0 - absf((float(x) + 0.5) / float(w) * 2.0 - 1.0)
+			var a: float = clampf(taper * pow(across, 0.8) * 1.4, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	return ImageTexture.create_from_image(img)
+
+
+## Soft ring on a transparent square: bright thin band at ~80 percent of the radius.
+func _ring_texture() -> ImageTexture:
+	var n: int = 128
+	var img: Image = Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in range(n):
+		for x in range(n):
+			var r: float = Vector2(float(x) + 0.5 - n * 0.5, float(y) + 0.5 - n * 0.5).length() / (n * 0.5)
+			var a: float = clampf(1.0 - absf(r - 0.78) / 0.16, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+	return ImageTexture.create_from_image(img)
+
+
+## Two crossed quads along Y so a velocity-aligned streak reads from any side. UV v=0 is the head (+Y).
+func _streak_mesh(width: float, length: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for plane in range(2):
+		var side: Vector3 = Vector3.RIGHT if plane == 0 else Vector3.BACK
+		var hw: float = width * 0.5
+		var hl: float = length * 0.5
+		var corners: Array[Vector3] = [-side * hw + Vector3.UP * hl, side * hw + Vector3.UP * hl,
+			side * hw - Vector3.UP * hl, -side * hw - Vector3.UP * hl]
+		var uvs: Array[Vector2] = [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
+		for i in [0, 1, 2, 0, 2, 3]:
+			st.set_uv(uvs[i])
+			st.add_vertex(corners[i])
+	return st.commit()
 
 
 ## Soft round dot: white centre fading to transparent at the edge.
