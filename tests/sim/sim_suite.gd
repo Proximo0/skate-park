@@ -4,7 +4,7 @@ extends Node
 ## Part of tools/run_sims.sh. Run alone: godot --headless --path . res://tests/sim/sim_suite.tscn [-- name ...]
 
 const SIM_FILES: Array = [
-	"sim_kicker", "sim_ledge_drop", "sim_halfpipe_pump", "sim_vert_reentry", "sim_bank45", "sim_wall_head_on", "sim_drop_in", "sim_snapshot", "sim_walk",
+	"sim_kicker", "sim_ledge_drop", "sim_halfpipe_pump", "sim_vert_reentry", "sim_bank45", "sim_wall_head_on", "sim_drop_in", "sim_snapshot", "sim_walk", "sim_grind_topple", "sim_pump_no_stall",
 ]
 
 

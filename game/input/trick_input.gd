@@ -6,6 +6,9 @@ extends RefCounted
 const BUFFER_TICKS: int = 6
 const DOUBLE_TAP_TICKS: int = 15
 const SEQUENCE_TICKS: int = 20
+## A manual's first direction must be a flick, held at most this long: holding up to push, then pulling back to
+## brake, is riding, not a manual.
+const MANUAL_TAP_TICKS: int = 12
 const HISTORY_MAX: int = 8
 const NEVER: int = -1000000
 const BUTTONS: PackedStringArray = ["flip", "grab", "grind"]
@@ -75,6 +78,21 @@ func manual_sequence() -> Array:
 	return [recent[recent.size() - 2], recent[recent.size() - 1]]
 
 
+## Like manual_sequence(), but only when the first of the two dirs was a quick flick (held at most MANUAL_TAP_TICKS),
+## so a held push followed by a brake doesn't start a manual.
+func manual_tap_sequence() -> Array:
+	var recent: Array = []
+	for entry: Dictionary in _history:
+		if _tick - int(entry["tick"]) <= SEQUENCE_TICKS:
+			recent.append(entry)
+	if recent.size() < 2:
+		return []
+	var first: Dictionary = recent[recent.size() - 2]
+	if int(first["tick"]) - int(first.get("start", first["tick"])) > MANUAL_TAP_TICKS:
+		return []
+	return [str(first["dir"]), str(recent[recent.size() - 1]["dir"])]
+
+
 func clear() -> void:
 	_tick = 0
 	_last_dir = ""
@@ -85,8 +103,11 @@ func clear() -> void:
 
 func _record(dir: String) -> void:
 	if not _history.is_empty() and str(_history[_history.size() - 1]["dir"]) == dir:
-		_history[_history.size() - 1]["tick"] = _tick
+		var last: Dictionary = _history[_history.size() - 1]
+		if _tick - int(last["tick"]) > 1:
+			last["start"] = _tick  # let go and pressed again: a fresh flick
+		last["tick"] = _tick
 		return
-	_history.append({"dir": dir, "tick": _tick})
+	_history.append({"dir": dir, "tick": _tick, "start": _tick})
 	if _history.size() > HISTORY_MAX:
 		_history.pop_front()

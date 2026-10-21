@@ -47,7 +47,7 @@ static func build(radius: float = 4.0, width: float = 3.0, run_in: float = 6.0, 
 	var path: Dictionary = _path(radius, run_in, run_out, offset, n_steps)
 	var root := Node3D.new()
 	root.name = "HotWheelsLoop"
-	root.add_child(PieceKit.body(_track_mesh(path, width), ORANGE, "Track"))
+	root.add_child(PieceKit.body(_track_mesh(path, width), ORANGE, "Track", true))
 	var dense: Dictionary = _dense(path)
 	root.add_child(_visual("EdgeStripes", _edge_mesh(dense, width), STRIPE))
 	root.add_child(_visual("Dashes", _dash_mesh(dense, width), DASH_COLOUR))

@@ -23,9 +23,32 @@ const VERT_MIN_TRANSITION_TICKS: int = 3
 ## Edge contacts no higher than this above the board (m) are rolled over, not grazed.
 ## A floor contact more than about 50 degrees from the current floor is never a new floor (ramp toes are gentler).
 const FLOOR_JUMP_DOT: float = 0.64
+## Share of the speed along the coping kept on a vert launch. Real (and THUG) vert airs carry it: going up a
+## quarter at an angle sends you along the ramp, not straight up and to a stop.
+const VERT_LATERAL_KEEP: float = 0.85
+## Going up a transition, the pump only works below this steepness (normal y), not on the upper wall, and only while
+## the surface is curving (a bend within PUMP_CURVE_TIME): pumping needs a curve, a flat bank gives nothing.
+const PUMP_CURVE_TIME: float = 0.15
+const PUMP_UP_MIN_NY: float = 0.5
+## Grind topple: falling off the side of a rail hops you down to the ground carving, unless the drop is bigger than
+## TOPPLE_MAX_DROP (m) or you are slower than TOPPLE_MIN_SPEED (m/s): then it is a real bail.
+const TOPPLE_MAX_DROP: float = 1.5
+const TOPPLE_MIN_SPEED: float = 2.0
+const TOPPLE_KEEP: float = 0.88  ## share of the grind speed carried into the hop (about 85% after the landing)
+const TOPPLE_HOP_UP: float = 2.5  ## m/s up
+const TOPPLE_HOP_SIDE: float = 2.0  ## m/s toward the fall side
+const TOPPLE_LAND_TURN: float = 0.2  ## rad turned toward the fall side on touchdown (the sideways hop already gives about 15 deg)
+const TOPPLE_CARVE_TIME: float = 0.5  ## s of carve after the landing
+const TOPPLE_CARVE_STEER: float = 0.3  ## stick-equivalent steer of that carve, fading to 0
+## Floor contacts in the air flatter than this (normal y) always count as a landing; steeper ones only on a real face.
+const LAND_EDGE_MIN_NY: float = 0.7
+## Outside vert air, a surface steeper than this (normal y) is never landed on.
+const LAND_STEEP_NY: float = 0.35
+## Speed (m/s) at which rail_friction is the grind's deceleration.
+const RAIL_FRICTION_REF: float = 8.0
 const EDGE_STEP_HEIGHT: float = 0.12
 ## Wall hits squarer than this (cos of incidence) bounce back instead of deflecting along the wall.
-const WALL_HEAD_ON: float = 0.85
+const WALL_HEAD_ON: float = 0.9
 ## Share of the speed into a wall that comes back as a bounce.
 const WALL_BOUNCE: float = 0.25
 ## Head-on speed into a wall (m/s) above which the skater bails instead of stumbling.
@@ -96,6 +119,11 @@ var _d_pushing: bool = false
 var _d_braking: bool = false
 var _d_pulse: float = 0.0
 var _transition_ticks: int = 0  ## consecutive ground ticks on a face with normal y < 0.9 (a real transition)
+var _topple_side: float = 0.0  ## +1 / -1 while hopping off a toppled grind (right / left of travel), else 0
+var _carve_side: float = 0.0  ## side of the carve after a topple landing
+var _carve_left: float = 0.0  ## seconds of topple carve left
+var _since_bend: float = 1.0  ## seconds since the floor normal last bent by over a degree (curving transition)
+var _touch_wall_n: Vector3 = Vector3.ZERO  ## the upright wall rolled along last tick (steering can't turn into it)
 
 
 func _ready() -> void:
@@ -233,7 +261,7 @@ func _tick_rolling(delta: float, requests: Array) -> void:
 		_score_trick({"id": "revert", "name": "Revert", "points": 100, "kind": "revert", "anim": "revert"})
 		_set_anim("revert")
 		return
-	var seq: Array = tricks.manual_sequence()
+	var seq: Array = tricks.manual_tap_sequence()
 	if seq.size() == 2 and speed > 1.0:
 		var m: Dictionary = db.find_sequence(seq, "")
 		if not m.is_empty() and state.event("manual_start"):
@@ -318,10 +346,27 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		facing = facing.slide(n).normalized() if facing.slide(n).length() > 0.01 else _fallback_facing(n)
 	# steering: rotate travel direction around the surface normal
 	var turn_rate: float = lerpf(tune.turn_rate, tune.turn_rate_fast, clampf(v.length() / tune.max_speed, 0.0, 1.0))
-	var steer: float = -_stick.x * turn_rate * delta * clampf(v.length() / 1.5, 0.25, 1.0)
+	# Carving is limited by grip: the sideways pull v * turn_rate can't pass carve_grip, so at speed the radius
+	# grows like v^2 / carve_grip (a wide carve), while low-speed turns stay tight.
+	turn_rate = minf(turn_rate, tune.carve_grip / maxf(v.length(), 0.1))
+	var stick_x: float = _stick.x
+	if _carve_left > 0.0:
+		# Carving out of a toppled grind: a steer toward the fall side that fades out.
+		stick_x = clampf(stick_x + _carve_side * TOPPLE_CARVE_STEER * (_carve_left / TOPPLE_CARVE_TIME), -1.0, 1.0)
+		_carve_left = maxf(_carve_left - delta, 0.0)
+	var steer: float = -stick_x * turn_rate * delta * clampf(v.length() / 1.5, 0.25, 1.0)
 	if absf(steer) > 0.0:
+		var pre_facing: Vector3 = facing
+		var pre_v: Vector3 = v
 		facing = facing.rotated(n.normalized(), steer).normalized()
 		v = facing * v.length() * (1.0 if v.dot(facing) >= 0.0 else -1.0)
+		if _touch_wall_n != Vector3.ZERO and pre_v.length() > 1.5 and v.dot(_touch_wall_n) < minf(pre_v.dot(_touch_wall_n), 0.0):
+			# Rolling along a wall: the stick can't steer you further into it, only along it (or away). The
+			# steer is refused; the wall contact itself (the slide and _wall_response) handles the rest. Slower
+			# than a jog the skater can kick-turn off the wall instead.
+			facing = pre_facing
+			v = pre_v
+	_touch_wall_n = Vector3.ZERO
 	# gravity along the slope
 	v += Vector3.DOWN.slide(n) * tune.gravity * delta
 	var along: float = v.dot(facing)
@@ -332,11 +377,16 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		# Speed comes from the kicks: only while the push foot is on the ground (same timing as the pose).
 		_d_pulse = _push_pulse()
 		along = minf(along + tune.push_accel * _d_pulse * delta, tune.push_max)
-	elif _stick.y < -0.3 and n.y < 0.95 and n.y > 0.15 and (v.y < 0.0 or n.y < 0.8):
-		# Steeper transition, stronger pump: kickers and banks give a little on the way down, a vert wall pumps
-		# both ways (compress in, extend out) so a few back-and-forths build big air.
+	elif _stick.y < -0.3 and n.y < 0.95 and n.y > 0.15 and (v.y < 0.0 or (n.y > PUMP_UP_MIN_NY and _since_bend < PUMP_CURVE_TIME)):
+		# Pumping: compress into the transition on the way down and through the lower curve, extend on the way out.
+		# Steeper transitions pump harder. The gain scales with speed (real pumping adds a share of the energy you
+		# carry, so a few back-and-forths build: small at first, bigger each pass) and fades toward the speed cap.
+		# Nothing is added while climbing the steep upper wall, so holding forward never parks you on a wall.
 		_d_pumping = true
-		along += lerpf(tune.pump_accel, tune.pump_accel_vert, clampf((0.95 - n.y) / 0.6, 0.0, 1.0)) * delta
+		var spd_now: float = v.length()
+		var rate: float = clampf(spd_now / tune.pump_speed_ref, 0.25, 2.0)
+		var taper: float = clampf(1.0 - pow(spd_now / tune.max_speed, 6.0), 0.0, 1.0)
+		along += lerpf(tune.pump_accel, tune.pump_accel_vert, clampf((0.95 - n.y) / 0.6, 0.0, 1.0)) * rate * taper * delta
 	elif _stick.y > 0.5 and n.y > 0.8 and state.state == SkateState.State.ROLLING:
 		_d_braking = true
 		along = move_toward(along, 0.0, tune.brake * delta)
@@ -373,7 +423,7 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		if fn.dot(was) < SNAG_CHECK_DOT:
 			# A big jump in the floor: is it a real face (a ramp toe, a bank) or the sphere touching an edge or vertex
 			# (the end of a side wall, a ramp's side rim)? Edge contacts give blended normals no face has.
-			var real: Vector3 = _real_floor_normal(was)
+			var real: Vector3 = _real_floor_normal(was, v, fn)
 			if real == Vector3.ZERO:
 				_graze_edge(v, was)
 				return
@@ -386,8 +436,10 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			velocity = v
 			_launch_normal = was
 			return
-		var block: Vector3 = _blocking_normal(v, fn)
-		if block != Vector3.ZERO and _wall_response(v, block, fn, false):
+		var block: Array = _blocking_contact(v, fn) if fn.y > 0.7 else []
+		if not block.is_empty() and absf((block[0] as Vector3).y) < 0.3:
+			_touch_wall_n = (block[0] as Vector3).slide(fn).normalized()
+		if not block.is_empty() and _wall_response(v, block[0], fn, false, block[1]):
 			return
 		var spd: float = v.length()
 		var grazing: bool = not is_on_wall() or absf(get_wall_normal().dot(v / maxf(spd, 0.001))) < 0.3
@@ -395,7 +447,15 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			# Riding a curved (faceted) ramp, transition or loop, or brushing along a curb: keep the speed the
 			# slope physics gave, so facet corners and glancing side contacts don't eat it.
 			_ev("speed_restore")
-			velocity = velocity.slide(fn).normalized() * spd
+			var keep_dir: Vector3 = velocity.slide(fn)
+			if keep_dir.length() < 0.1 * spd:
+				# Pinched to a stop in a crease (a slope's side edge meeting a ledge and a wall): carry on along the
+				# floor and any upright wall touched instead of losing the whole speed in one tick.
+				keep_dir = _crease_dir(v, fn)
+			if keep_dir.length() >= 0.1 * spd:
+				velocity = keep_dir.normalized() * spd
+			# else: wedged into an inside corner with no way along either wall: the speed is lost to it.
+		_since_bend = 0.0 if fn.dot(was) < 0.99985 else _since_bend + delta
 		_floor_normal = fn
 		_transition_ticks = _transition_ticks + 1 if fn.y < 0.9 else 0
 		if was.y < tune.vert_normal_y and velocity.dot(Vector3.UP) > 0.0:
@@ -412,20 +472,28 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 ## that bends more than SNAG_CHECK_DOT away from `was` is an edge or vertex touch. A sphere touching an edge gets
 ## a normal pointing from the edge to its centre, a blend no face of the mesh has: a ray along that normal hits a
 ## face whose own normal differs. Contacts close to `was` are kept unchecked (facets of a curve).
-func _real_floor_normal(was: Vector3) -> Vector3:
-	var sum: Vector3 = Vector3.ZERO
+func _real_floor_normal(was: Vector3, v: Vector3, snap_n: Vector3) -> Vector3:
+	var cands: Array = []
 	var cos_max: float = cos(floor_max_angle) - 0.01
 	for i: int in get_slide_collision_count():
 		var c: KinematicCollision3D = get_slide_collision(i)
 		for j: int in c.get_collision_count():
-			var n: Vector3 = c.get_normal(j)
-			if n.dot(up_direction) < cos_max:
-				continue  # a wall or ceiling contact
-			if n.dot(was) < FLOOR_JUMP_DOT:
-				continue  # too far round in one tick to be the next stretch of floor: a wall met from a slope
-			if n.dot(was) < SNAG_CHECK_DOT and not _is_face_contact(c.get_position(j), n):
-				continue
-			sum += n
+			if c.get_normal(j).dot(up_direction) >= cos_max:
+				cands.append([c.get_normal(j), c.get_position(j)])
+	if cands.is_empty():
+		# Held down by the floor snap alone (no slide contact): judge the snapped normal at the sphere's base.
+		cands.append([snap_n, global_position + up_direction * 0.3 - snap_n * 0.3])
+	var sum: Vector3 = Vector3.ZERO
+	for cand: Array in cands:
+		var n: Vector3 = cand[0]
+		if (n - was).dot(v) > 0.0:
+			sum += n  # convex (over a crest or a lip): _leaves_surface judges it, the floor bends away from us
+			continue
+		if n.dot(was) < FLOOR_JUMP_DOT and n.y < 0.5:
+			continue  # too far round in one tick to be the next stretch of floor: a wall met from a slope
+		if n.dot(was) < SNAG_CHECK_DOT and not _is_face_contact(cand[1], n):
+			continue
+		sum += n
 	return sum.normalized() if sum.length() > 0.001 else Vector3.ZERO
 
 
@@ -447,37 +515,58 @@ func _graze_edge(v: Vector3, was: Vector3) -> void:
 	_ev("edge_graze")
 	var hit_n: Vector3 = Vector3.ZERO
 	var hit_h: float = 0.0
+	var hit_p: Vector3 = global_position
 	for i: int in get_slide_collision_count():
 		var c: KinematicCollision3D = get_slide_collision(i)
 		if c.get_normal().dot(was) < SNAG_CHECK_DOT:
 			hit_n = c.get_normal()
 			hit_h = (c.get_position() - global_position).dot(was)
+			hit_p = c.get_position()
 	_floor_normal = was
 	up_direction = was
 	velocity = v
 	if hit_h > EDGE_STEP_HEIGHT:
-		_wall_response(v, hit_n, was, true)
+		_wall_response(v, hit_n, was, true, hit_p)
 
 
 ## Share of speed kept when glancing off a wall at `square` (0 = parallel, 1 = head-on): a THUG-style deflection
 ## that turns you along the wall, not a stop.
+## Up to about 30 degrees off square-on it keeps most of the speed (arcade); only nearly square-on hits tend to the
+## real share, the part of the velocity along the wall.
 static func _deflect_keep(square: float) -> float:
-	return 1.0 - 0.22 * square * square
+	var arcade: float = 1.0 - 0.15 * square * square
+	var real: float = sqrt(maxf(1.0 - square * square, 0.0))
+	return lerpf(arcade, real, smoothstep(0.85, 0.98, square))
 
 
-## The wall (or overhang) contact most against the travel this tick, flattened onto the floor plane `n`.
-func _blocking_normal(v: Vector3, n: Vector3) -> Vector3:
-	var best: Vector3 = Vector3.ZERO
+## The travel `v` turned onto the floor `fn` and slid along every upright wall it presses into this tick.
+func _crease_dir(v: Vector3, fn: Vector3) -> Vector3:
+	var d: Vector3 = v.slide(fn)
+	for i: int in get_slide_collision_count():
+		var cn: Vector3 = get_slide_collision(i).get_normal()
+		if absf(cn.y) < 0.3 and d.dot(cn) < 0.0:
+			d = d.slide(cn.slide(fn).normalized())
+	return d
+
+
+## The wall (or overhang) contact most against the travel this tick, as [normal, point], or [] when none.
+func _blocking_contact(v: Vector3, n: Vector3) -> Array:
+	var best: Array = []
 	var best_d: float = 0.0
 	var cos_max: float = cos(floor_max_angle) - 0.01
 	for i: int in get_slide_collision_count():
-		var cn: Vector3 = get_slide_collision(i).get_normal()
+		var c: KinematicCollision3D = get_slide_collision(i)
+		var cn: Vector3 = c.get_normal()
 		if cn.dot(up_direction) >= cos_max:
 			continue  # floor
 		var d: float = -v.dot(cn.slide(n))
 		if d > best_d:
 			best_d = d
-			best = cn
+			best = [cn, c.get_position()]
+	if best.is_empty() and is_on_wall() and -v.dot(get_wall_normal().slide(n)) > 0.0:
+		# The wall contact can fall out of the slide list when the floor contacts use up max_slides.
+		var wn: Vector3 = get_wall_normal()
+		best = [wn, global_position + up_direction * 0.3 - wn * 0.3]
 	return best
 
 
@@ -485,7 +574,7 @@ func _blocking_normal(v: Vector3, n: Vector3) -> Vector3:
 ## Glancing: turn along the wall keeping most of the speed. Square-on: bounce back a quarter of the speed into it
 ## and stumble; bail when the head-on speed is too high to ride out. `force` sets the deflected velocity even when
 ## the slide kept more. Returns true after a bail.
-func _wall_response(v: Vector3, wn: Vector3, n: Vector3, force: bool) -> bool:
+func _wall_response(v: Vector3, wn: Vector3, n: Vector3, force: bool, p: Vector3) -> bool:
 	var spd: float = v.length()
 	var w: Vector3 = wn.slide(n)
 	if spd < 0.5 or w.length() < 0.2:
@@ -496,18 +585,34 @@ func _wall_response(v: Vector3, wn: Vector3, n: Vector3, force: bool) -> bool:
 	if square <= 0.05:
 		return false
 	var into: float = spd * square
-	if square < WALL_HEAD_ON:
+	# Clipping a corner (an edge or vertex contact, not a face) glances off around it however square the
+	# sphere's contact normal looks: only a flat face met square-on stops you.
+	var face: bool = square >= WALL_HEAD_ON and _is_face_contact(p, wn)
+	if not face:
 		var keep: float = spd * _deflect_keep(square)
-		if force or velocity.length() < keep:
-			velocity = (dir - w * dir.dot(w)).slide(n).normalized() * keep
+		# The slide can leave the velocity aimed into the wall (it keeps the motion on the floor plane and may not
+		# trim it when the contact sits beside the body), so a velocity still pressing in counts as not deflected.
+		if force or velocity.length() < keep or velocity.dot(w) < -0.05 * spd:
+			var along: Vector3 = (dir - w * dir.dot(w)).slide(n)
+			if along.length() < 0.05:
+				along = n.cross(w)  # dead centre on a corner: pick a side
+			var free: Vector3 = _crease_dir(along, n)
+			if free.length() < 0.25 * along.length():
+				# Into an inside corner: the way along this wall runs into another one, so nothing is kept.
+				velocity = Vector3.ZERO
+			else:
+				velocity = free.normalized() * keep
 		return false
+	if wn.normalized().y > 0.3 or n.y < 0.7:
+		return false  # only an upright wall or an overhang met from flat-ish ground stops you; a slope just slides
+	_wall_normal = w
 	if into > WALL_BAIL_SPEED:
 		velocity = w * into * WALL_BOUNCE
 		_ev("wall_slam")
 		_bail()  # the ragdoll takes the bounce; the body itself drops at the wall
 		velocity = Vector3.ZERO
 		return true
-	velocity = ((v - w * v.dot(w)) * 0.5 + w * into * WALL_BOUNCE).slide(n)
+	velocity = ((v - w * v.dot(w)) * 0.7 + w * into * WALL_BOUNCE).slide(n)
 	_ev("stumble")
 	_set_anim("land")
 	return false
@@ -582,12 +687,13 @@ func _enter_air(_from_rail: bool) -> void:
 	vert_air = _launch_normal.y < tune.vert_normal_y and _launch_normal.y > -0.2 and velocity.y > 0.5 \
 		and _transition_ticks >= VERT_MIN_TRANSITION_TICKS
 	_transition_ticks = 0
+	_touch_wall_n = Vector3.ZERO
 	if vert_air:
 		# THUG-style vert: stay in the ramp's plane so the skater comes back down onto the ramp.
 		var out: Vector3 = Vector3(_launch_normal.x, 0.0, _launch_normal.z).normalized()
 		var lateral: Vector3 = velocity - out * velocity.dot(out)
 		lateral.y = 0.0
-		velocity = Vector3(0.0, maxf(velocity.y, 0.0) + absf(velocity.dot(out)) * 0.6, 0.0) + lateral * 0.15 + out * 0.7
+		velocity = Vector3(0.0, maxf(velocity.y, 0.0) + absf(velocity.dot(out)) * 0.6, 0.0) + lateral * VERT_LATERAL_KEEP + out * 0.7
 	_floor_normal = Vector3.UP
 	up_direction = Vector3.UP
 	spin.start(_yaw())
@@ -640,6 +746,8 @@ func _tick_air(delta: float, requests: Array) -> void:
 		_air_trick_until = 0.0
 		_set_anim("air")
 	velocity.y = maxf(velocity.y, -40.0)
+	# Air drag, cartoon style: nothing flies faster than the speed cap (long falls and big pumps top out).
+	velocity = velocity.limit_length(tune.max_speed)
 	up_direction = Vector3.UP
 	floor_snap_length = 0.0
 	var impact: Vector3 = velocity
@@ -652,7 +760,31 @@ func _tick_air(delta: float, requests: Array) -> void:
 			_score_trick({"id": "wallride", "name": "Wallride", "points": 250, "kind": "wallride", "anim": "wallride", "points_per_sec": 100})
 			return
 	if is_on_floor():
-		_land(get_floor_normal(), impact)
+		var land_n: Vector3 = _landing_normal(get_floor_normal())
+		if land_n == Vector3.ZERO:
+			_ev("edge_graze")  # clipped a wall's top edge or corner: not a landing, keep flying
+			return
+		_land(land_n, impact)
+
+
+## The surface to land on from this tick's floor contacts: real faces only, plus edge or vertex blends that are
+## nearly flat (the lip of a box top). A steep blend from clipping a wall's corner or a parapet's edge is not a
+## landing surface (it would judge the board as tilted and bail): ZERO then, and the skater keeps flying.
+func _landing_normal(fn: Vector3) -> Vector3:
+	if fn.y >= LAND_EDGE_MIN_NY:
+		return fn
+	var sum: Vector3 = Vector3.ZERO
+	var cos_max: float = cos(floor_max_angle) - 0.01
+	for i: int in get_slide_collision_count():
+		var c: KinematicCollision3D = get_slide_collision(i)
+		var n: Vector3 = c.get_normal()
+		if n.y < LAND_STEEP_NY and not vert_air:
+			continue  # a near-vertical face is a wall to bounce along, unless dropping back into a vert ramp
+		if n.dot(up_direction) >= cos_max and (n.y >= LAND_EDGE_MIN_NY or _is_face_contact(c.get_position(), n)):
+			sum += n
+	if sum.length() < 0.001:
+		return fn if get_slide_collision_count() == 0 else Vector3.ZERO
+	return sum.normalized()
 
 
 func _air_trick(r: Dictionary) -> void:
@@ -710,9 +842,17 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	velocity = (v * keep).limit_length(tune.max_speed)
 	if v.length() > 0.5:
 		facing = v.normalized()
+	if _topple_side != 0.0 and result != "bail":
+		# Off a toppled grind: land carving toward the side we fell, already turned into it.
+		var turn: float = -_topple_side * TOPPLE_LAND_TURN
+		velocity = velocity.rotated(n, turn)
+		facing = facing.rotated(n, turn).normalized()
+		_carve_side = _topple_side
+		_carve_left = TOPPLE_CARVE_TIME
+	_topple_side = 0.0
 	vert_air = false
 	_grab_trick = {}
-	var seq: Array = tricks.manual_sequence()
+	var seq: Array = tricks.manual_tap_sequence()
 	var m: Dictionary = db.find_sequence(seq, "") if seq.size() == 2 else {}
 	if not m.is_empty() and state.event("land_manual"):
 		tricks.clear()
@@ -803,7 +943,10 @@ func _tick_grind(delta: float) -> void:
 	var cur: Dictionary = _rail.advance(_rail_seg, _rail_t, 0.0)
 	var tan: Vector3 = cur["tangent"]
 	_rail_speed += -tune.rail_gravity * tan.y * delta  # downhill rails speed up, uphill ones slow and slide back
-	_rail_speed = move_toward(_rail_speed, 0.0, tune.rail_friction * delta)
+	# Grind friction scales with speed around 8 m/s (rail_friction is the deceleration there), so a rail costs about
+	# the same speed per metre at any pace: long rails stay finishable from a moderate run-in instead of grinding
+	# to a halt, and fast grinds still bleed visibly.
+	_rail_speed = move_toward(_rail_speed, 0.0, tune.rail_friction * clampf(absf(_rail_speed) / RAIL_FRICTION_REF, 0.35, 1.5) * delta)
 	_rail_speed = clampf(_rail_speed, -tune.max_speed, tune.max_speed)
 	if absf(_rail_speed) < 0.3 and absf(tan.y) < 0.05:
 		state.event("fall_off")  # ground to a halt on a flat rail
@@ -819,7 +962,7 @@ func _tick_grind(delta: float) -> void:
 	facing = Vector3(move_dir.x, 0.0, move_dir.z).normalized() if Vector2(move_dir.x, move_dir.z).length() > 0.01 else facing
 	board_up = _turn_toward(board_up, Vector3.UP, clampf(delta * 10.0, 0.0, 1.0))
 	if not balance.update(delta, _stick.x):
-		_bail()
+		_grind_topple()
 		return
 	if _just_pressed.has("ollie"):
 		_left_rail = _rail
@@ -832,6 +975,35 @@ func _tick_grind(delta: float) -> void:
 		state.event("fall_off")
 		velocity += Vector3.UP * 3.0
 		_enter_air(true)
+
+
+## The grind balance tipped over. Low and moving: step off the rail on the side you leaned, a small sideways hop to
+## the ground that lands rolling and carves away (the combo lands as usual). High up or nearly stopped: a real bail,
+## because there is no ground in reach to step down onto, or no speed to ride away with.
+func _grind_topple() -> void:
+	var side: float = 1.0 if balance.angle >= 0.0 else -1.0
+	var along: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	var right: Vector3 = (along.normalized() if along.length() > 0.1 else facing).cross(Vector3.UP).normalized()
+	var drop: float = 99.0
+	if is_inside_tree():
+		var from: Vector3 = global_position + right * side * 0.7 + Vector3.UP * 0.3
+		var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * (TOPPLE_MAX_DROP + 2.0), collision_mask, [get_rid()])
+		var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty():
+			drop = global_position.y - (hit["position"] as Vector3).y
+	if drop > TOPPLE_MAX_DROP or absf(_rail_speed) < TOPPLE_MIN_SPEED:
+		_bail()
+		return
+	_left_rail = _rail
+	_left_rail_t = _t
+	_ev("topple_carve")
+	state.event("fall_off")
+	velocity = along * TOPPLE_KEEP + right * side * TOPPLE_HOP_SIDE + Vector3.UP * TOPPLE_HOP_UP
+	global_position += Vector3.UP * 0.05
+	_launch_normal = Vector3.UP
+	_enter_air(true)
+	_topple_side = side
+	_set_anim("air")
 
 
 func _try_lip() -> bool:
@@ -967,6 +1139,8 @@ func _set_walk_physics(walking: bool) -> void:
 
 func _bail() -> void:
 	balance_kind = ""
+	_topple_side = 0.0
+	_carve_left = 0.0
 	_rail = null
 	_grab_trick = {}
 	_air_trick_until = 0.0
@@ -1102,6 +1276,11 @@ func snapshot() -> Dictionary:
 		"left_rail_t": _left_rail_t,
 		"left_edge": _left_edge,
 		"transition_ticks": _transition_ticks,
+		"touch_wall_n": _touch_wall_n,
+		"since_bend": _since_bend,
+		"topple_side": _topple_side,
+		"carve_side": _carve_side,
+		"carve_left": _carve_left,
 		"recent_grind_press": _recent_grind_press,
 		"pending_air": _pending_air.duplicate(true),
 		"snap_offset": _snap_offset,
@@ -1182,6 +1361,11 @@ func restore(d: Dictionary) -> void:
 	_left_rail_t = d["left_rail_t"]
 	_left_edge = d["left_edge"]
 	_transition_ticks = int(d.get("transition_ticks", VERT_MIN_TRANSITION_TICKS))
+	_touch_wall_n = d.get("touch_wall_n", Vector3.ZERO)
+	_since_bend = float(d.get("since_bend", 1.0))
+	_topple_side = float(d.get("topple_side", 0.0))
+	_carve_side = float(d.get("carve_side", 0.0))
+	_carve_left = float(d.get("carve_left", 0.0))
 	_recent_grind_press = d["recent_grind_press"]
 	_pending_air = (d["pending_air"] as Array).duplicate(true)
 	_snap_offset = d["snap_offset"]

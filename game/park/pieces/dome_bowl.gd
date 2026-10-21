@@ -39,7 +39,7 @@ static func build(radius: float = 8.0, depth_ratio: float = 0.85, rings: int = 1
 
 	var colours: Array[Color] = []
 	var shell_mesh: ArrayMesh = _dome_mesh(rs, yc, theta_max, half, nr, n, colours)
-	var shell: StaticBody3D = PieceKit.body(shell_mesh, PieceKit.CONCRETE, "Shell")
+	var shell: StaticBody3D = PieceKit.body(shell_mesh, PieceKit.CONCRETE, "Shell", true)
 	var shell_mi: MeshInstance3D = shell.get_node("Mesh") as MeshInstance3D
 	shell_mi.material_override = null
 	for k: int in colours.size():

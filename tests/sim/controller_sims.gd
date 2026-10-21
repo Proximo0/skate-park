@@ -358,6 +358,9 @@ func _sc_manual() -> void:
 	for i: int in 90:  ## push up to speed
 		if not await _tick(UP):
 			return
+	for i: int in 2:  ## let go of the push: a manual is a flick, not a held push then a brake
+		if not await _tick(NONE):
+			return
 	for i: int in 4:  ## stick up (N)
 		if not await _tick(UP):
 			return

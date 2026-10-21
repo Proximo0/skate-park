@@ -11,7 +11,7 @@ const FIELDS: Array = [
 	["gravity", 18.0, 5.0, 40.0, 0.5, "World", "Gravity, m/s². Real is 9.8; higher feels snappier, less floaty."],
 	["max_speed", 22.0, 8.0, 40.0, 0.5, "World", "Hard speed cap, m/s."],
 	["kill_y", -20.0, -60.0, -5.0, 1.0, "World", "Respawn below this height."],
-	["push_accel", 9.0, 1.0, 30.0, 0.25, "Push", "Speed gained per second of kick contact."],
+	["push_accel", 5.5, 1.0, 30.0, 0.25, "Push", "Speed gained per second of kick contact."],
 	["push_max", 12.0, 4.0, 25.0, 0.25, "Push", "Pushing alone tops out here, m/s."],
 	["push_plant", 0.18, 0.0, 0.6, 0.01, "Push", "Delay before the first kick lands, s."],
 	["push_cycle", 0.6, 0.2, 1.5, 0.01, "Push", "Length of one push cycle, s."],
@@ -21,8 +21,10 @@ const FIELDS: Array = [
 	["side_grip", 25.0, 1.0, 100.0, 1.0, "Rolling", "How hard the wheels stop sideways sliding, m/s²."],
 	["turn_rate", 2.6, 0.5, 8.0, 0.05, "Rolling", "Turn rate at low speed, rad/s."],
 	["turn_rate_fast", 1.7, 0.3, 6.0, 0.05, "Rolling", "Turn rate at max speed, rad/s."],
+	["carve_grip", 18.0, 4.0, 60.0, 0.5, "Rolling", "Most sideways acceleration a carve can pull, m/s² (about 1 g here): sets how wide fast turns get."],
 	["pump_accel", 2.5, 0.0, 15.0, 0.25, "Transitions", "Pump on gentle transitions, m/s²."],
-	["pump_accel_vert", 22.0, 0.0, 50.0, 0.5, "Transitions", "Pump on steep (vert) transitions, m/s²."],
+	["pump_accel_vert", 30.0, 0.0, 50.0, 0.5, "Transitions", "Pump on steep (vert) transitions, m/s²."],
+	["pump_speed_ref", 12.0, 3.0, 30.0, 0.5, "Transitions", "Speed (m/s) at which the pump gives its full rate; slower pumps less, faster more (a pass builds on the last)."],
 	["vert_normal_y", 0.35, 0.05, 0.8, 0.01, "Transitions", "Leaving a face steeper than this, going up, is a vert launch."],
 	["edge_grip", 2.5, 0.5, 8.0, 0.1, "Transitions", "Grip on convex bends, as a multiple of gravity's hold."],
 	["overhang_radius", 3.5, 1.0, 10.0, 0.1, "Transitions", "Assumed curve radius when judging if speed holds you upside down."],
@@ -36,7 +38,7 @@ const FIELDS: Array = [
 	["grind_reach", 1.1, 0.3, 3.0, 0.05, "Grind", "How far a rail can be to snap on, m."],
 	["grind_min_speed", 3.0, 0.0, 10.0, 0.1, "Grind", "Slowest speed that can start a grind, m/s."],
 	["rail_gravity", 10.0, 0.0, 30.0, 0.5, "Grind", "Gravity along a sloped rail, m/s²."],
-	["rail_friction", 0.5, 0.0, 5.0, 0.05, "Grind", "Grind friction, m/s²."],
+	["rail_friction", 1.2, 0.0, 5.0, 0.05, "Grind", "Grind friction at 8 m/s, m/s² (scales with speed: about 0.15 m/s lost per metre at any pace)."],
 	["wallride_time", 1.2, 0.2, 4.0, 0.05, "Grind", "Longest wallride, s."],
 	["lip_max_time", 2.5, 0.5, 6.0, 0.1, "Grind", "Longest lip trick, s."],
 	["walk_speed", 1.6, 0.5, 3.0, 0.05, "Walk", "Walking speed at a half-tilted stick, m/s."],
@@ -61,8 +63,10 @@ var roll_friction: float
 var side_grip: float
 var turn_rate: float
 var turn_rate_fast: float
+var carve_grip: float
 var pump_accel: float
 var pump_accel_vert: float
+var pump_speed_ref: float
 var vert_normal_y: float
 var edge_grip: float
 var overhang_radius: float

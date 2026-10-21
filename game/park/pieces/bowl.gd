@@ -24,7 +24,7 @@ static func build(size_x: float = 14.0, size_z: float = 10.0, depth: float = 2.6
 	var rim_r: float = clampf(corner_radius, 0.0, minf(size_x, size_z) * 0.5)
 	var t: float = clampf(transition, 0.01, depth)
 
-	var shell: StaticBody3D = PieceKit.body(_shell_mesh(size_x, size_z, depth, rim_r, t, seg), PieceKit.CONCRETE, "Shell")
+	var shell: StaticBody3D = PieceKit.body(_shell_mesh(size_x, size_z, depth, rim_r, t, seg), PieceKit.CONCRETE, "Shell", true)
 	var shell_mi: MeshInstance3D = shell.get_node("Mesh") as MeshInstance3D
 	shell_mi.material_override = null
 	shell_mi.set_surface_override_material(0, Toon.material(PieceKit.CONCRETE))
@@ -32,7 +32,7 @@ static func build(size_x: float = 14.0, size_z: float = 10.0, depth: float = 2.6
 		shell_mi.set_surface_override_material(1, Toon.material(TILE_BLUE))
 	root.add_child(shell)
 
-	root.add_child(PieceKit.body(_deck_mesh(size_x, size_z, depth, rim_r, seg), PieceKit.CONCRETE, "Deck"))
+	root.add_child(PieceKit.body(_deck_mesh(size_x, size_z, depth, rim_r, seg), PieceKit.CONCRETE, "Deck", true))
 
 	var rim: PackedVector2Array = _ring(size_x, size_z, 0.0, rim_r, seg)
 	var loop := PackedVector3Array()

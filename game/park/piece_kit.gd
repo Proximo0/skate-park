@@ -19,7 +19,10 @@ const PAINT_YELLOW := Color("ffd23f")
 const FLOOR_PAD_LIFT: float = 0.006
 
 
-static func body(mesh: Mesh, color: Color, node_name: String = "Body") -> StaticBody3D:
+## Closed solids collide on their outward (front) faces only: with backface collision a sphere at a seam of a
+## faceted slope could touch the back of the next triangle and be wedged to a stop between opposite normals.
+## Pass `two_sided` for an open surface that must be solid from both sides (the loop's single-sheet track).
+static func body(mesh: Mesh, color: Color, node_name: String = "Body", two_sided: bool = false) -> StaticBody3D:
 	var sb := StaticBody3D.new()
 	sb.name = node_name
 	var mi := MeshInstance3D.new()
@@ -30,7 +33,7 @@ static func body(mesh: Mesh, color: Color, node_name: String = "Body") -> Static
 	var cs := CollisionShape3D.new()
 	cs.name = "Collision"
 	var shape: ConcavePolygonShape3D = mesh.create_trimesh_shape()
-	shape.backface_collision = true
+	shape.backface_collision = two_sided
 	cs.shape = shape
 	sb.add_child(cs)
 	return sb
