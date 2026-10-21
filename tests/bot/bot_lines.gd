@@ -8,7 +8,7 @@ extends RefCounted
 const Y0: float = 0.1
 const NAMES: Array[String] = [
 	"cruise", "ollies", "kickers", "funbox_gap", "halfpipe", "quarter_air", "rails_street", "rails_long", "manuals",
-	"dome", "drop_loop", "mega", "mega_qp", "street_run", "gaps_misc", "transfers", "corners",
+	"dome", "drop_loop", "mega", "mega_qp", "street_run", "gaps_misc", "transfers", "corners_scrape", "corners_clip_a", "corners_clip_b",
 ]
 
 var park: Park
@@ -90,10 +90,18 @@ func build(line_name: String) -> Dictionary:
 		"transfers":
 			line["wps"] = _transfers()
 			line["limit"] = 50.0
-		"corners":
-			line["wps"] = _corners()
+		"corners_scrape":
+			line["wps"] = _corners(true, ["FunBox", "Pyramid", "QuarterNorthWest", "KickerCentre"])
 			line["soft"] = true
-			line["limit"] = 200.0
+			line["limit"] = 100.0
+		"corners_clip_a":
+			line["wps"] = _corners(false, ["FunBox", "Pyramid"])
+			line["soft"] = true
+			line["limit"] = 80.0
+		"corners_clip_b":
+			line["wps"] = _corners(false, ["QuarterNorthWest", "KickerCentre"])
+			line["soft"] = true
+			line["limit"] = 80.0
 		_:
 			line["wps"] = []
 	return line
@@ -501,13 +509,14 @@ func _transfers() -> Array:
 		out.append(wp(cx, r.end.y + 6.0, 10.0, {"r": 2.0, "pump": true, "tmo": 10.0}))
 	return out
 ## Scrapes along the sides of ramps and clips their corners at angles (the player reported snagging on both).
-func _corners() -> Array:
+## Split in two lines so neither runs for minutes: `scrape` = the side scrapes plus the deliberate wall test, else the corner clips.
+func _corners(scrape: bool, pieces: Array) -> Array:
 	var out: Array = []
-	for pn: String in ["FunBox", "Pyramid", "QuarterNorthWest", "KickerCentre"]:
+	for pn: String in pieces:
 		var r: Rect2 = rect_of(pn)
 		var lead: float = 9.0
 		var tail: float = 6.0
-		for clear: float in [0.2, 0.42]:
+		for clear: float in ([0.2, 0.42] if scrape else []):
 			# east side southbound, west side northbound
 			var xe: float = r.end.x + clear + 0.3
 			var xw: float = r.position.x - clear - 0.3
@@ -519,7 +528,7 @@ func _corners() -> Array:
 			out.append(wp(xw, r.position.y - tail, 9.0, {"r": 2.0}))
 		# two corners, each clipped on both faces at 15 and 30 degrees: a glancing graze (a real player's mistake), never
 		# square on at speed. The path crosses the face 0.4 m along from the corner.
-		for cxs: float in [r.end.x, r.position.x]:
+		for cxs: float in ([] if scrape else [r.end.x, r.position.x]):
 			for czs: float in [r.end.y, r.position.y]:
 				var sx: float = 1.0 if cxs > r.get_center().x else -1.0
 				var sz: float = 1.0 if czs > r.get_center().y else -1.0
@@ -540,6 +549,8 @@ func _corners() -> Array:
 					out.append(wpv(q2 + Vector3(sx * 1.5, 0, -sz * 6.0), 9.0, {"r": 2.5, "tmo": 4.0}))
 	# The deliberate wall test (INFO, not a finding): square into the tall end of the centre kicker at 15 m/s, which must
 	# bail (head-on speed above the slam speed, 13 m/s).
+	if not scrape:
+		return out
 	var k: Rect2 = rect_of("KickerCentre")
 	var kx: float = k.get_center().x
 	out.append(tp(Vector3(kx, Y0, k.position.y - 14.0), Vector3(0, 0, 1), 15.0))

@@ -9,25 +9,25 @@ func _cam_vec_near(actual: Vector3, expected: Vector3, msg: String = "") -> void
 
 func test_offset_flat_is_behind_and_above() -> void:
 	# Facing -Z: the camera sits on the +Z side, 4.5 m back and 2 m up.
-	_cam_vec_near(SkateCamera.desired_offset(Vector3(0, 0, -1), false), Vector3(0, 2.0, 4.5))
+	_cam_vec_near(SkateCamera.desired_offset(Vector3(0, 0, -1), false), Vector3(0, SkateCamera.HEIGHT, SkateCamera.DISTANCE))
 
 
 func test_offset_vert_is_higher_and_farther() -> void:
-	_cam_vec_near(SkateCamera.desired_offset(Vector3(0, 0, -1), true), Vector3(0, 3.6, 7.5))
+	_cam_vec_near(SkateCamera.desired_offset(Vector3(0, 0, -1), true), Vector3(0, SkateCamera.VERT_HEIGHT, SkateCamera.VERT_DISTANCE))
 
 
 func test_offset_follows_facing_direction() -> void:
 	# Facing +X: behind is -X.
-	_cam_vec_near(SkateCamera.desired_offset(Vector3(1, 0, 0), false), Vector3(-4.5, 2.0, 0))
+	_cam_vec_near(SkateCamera.desired_offset(Vector3(1, 0, 0), false), Vector3(-SkateCamera.DISTANCE, SkateCamera.HEIGHT, 0))
 
 
 func test_offset_ignores_facing_pitch() -> void:
 	# A nose-down facing still puts the camera behind on the flat, at the same height.
-	_cam_vec_near(SkateCamera.desired_offset(Vector3(0, -0.7, -0.7), false), Vector3(0, 2.0, 4.5))
+	_cam_vec_near(SkateCamera.desired_offset(Vector3(0, -0.7, -0.7), false), Vector3(0, SkateCamera.HEIGHT, SkateCamera.DISTANCE))
 
 
 func test_offset_zero_facing_falls_back_to_back() -> void:
-	_cam_vec_near(SkateCamera.desired_offset(Vector3.ZERO, false), Vector3(0, 2.0, 4.5))
+	_cam_vec_near(SkateCamera.desired_offset(Vector3.ZERO, false), Vector3(0, SkateCamera.HEIGHT, SkateCamera.DISTANCE))
 
 
 func test_yaw_round_trip() -> void:
@@ -66,15 +66,20 @@ func test_damp_angle_takes_short_way_round() -> void:
 	assert_near(cos(out), cos(-3.1), 0.001)
 
 
-func test_fov_base_below_twelve() -> void:
-	assert_near(SkateCamera.fov_for_speed(0.0), 70.0)
-	assert_near(SkateCamera.fov_for_speed(12.0), 70.0)
+func test_fov_base_at_rest() -> void:
+	assert_near(SkateCamera.fov_for_speed(0.0), SkateCamera.FOV_BASE)
+	assert_near(SkateCamera.fov_for_speed(SkateCamera.FOV_SPEED_LO), SkateCamera.FOV_BASE)
 
 
-func test_fov_mid_and_full() -> void:
-	assert_near(SkateCamera.fov_for_speed(16.0), 74.0, 0.001)
-	assert_near(SkateCamera.fov_for_speed(20.0), 78.0)
-	assert_near(SkateCamera.fov_for_speed(30.0), 78.0)
+func test_fov_subtle_at_cruise_strong_at_top() -> void:
+	var cruise: float = SkateCamera.fov_for_speed(10.0) - SkateCamera.FOV_BASE
+	var top: float = SkateCamera.fov_for_speed(SkateCamera.FOV_SPEED_HI) - SkateCamera.FOV_BASE
+	assert_near(SkateCamera.fov_for_speed(30.0), SkateCamera.FOV_FAST)
+	assert_true(cruise > 0.0 and cruise < top * 0.3, "cruise push %.2f should be under 30%% of top push %.2f" % [cruise, top])
+
+
+func test_speed_push_monotonic() -> void:
+	assert_true(SkateCamera.speed_push(8.0) < SkateCamera.speed_push(14.0) and SkateCamera.speed_push(14.0) < SkateCamera.speed_push(22.0))
 
 
 func test_ground_lift_raises_low_camera() -> void:

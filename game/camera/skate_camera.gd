@@ -6,10 +6,10 @@ extends Camera3D
 ## and pulls in when a wall is between the look point and the camera. No speed shake (motion sickness).
 ## Pure math is in static functions for unit tests; the node only feeds the target's state and runs the raycasts.
 
-const DISTANCE := 4.5
-const HEIGHT := 2.0
-const VERT_DISTANCE := 7.5
-const VERT_HEIGHT := 3.6
+const DISTANCE := 3.5  ## m behind the skater on the ground (was 4.5: the skater read ~100 px tall at 720p)
+const HEIGHT := 1.45  ## m above the skater: a lower, flatter angle shows the ground rushing past
+const VERT_DISTANCE := 6.0  ## air above a ramp lip or on a wall: still farther and higher so the landing stays in frame
+const VERT_HEIGHT := 3.0
 const LOOK_HEIGHT := 0.9
 const LOOK_AHEAD_FACTOR := 0.12  ## seconds of velocity projected ahead of the look point
 const LOOK_AHEAD_MAX := 1.5
@@ -22,10 +22,12 @@ const WALK_YAW_FACTOR := 0.2  ## yaw follow rate on foot, as a share of YAW_RATE
 const WALK_ZOOM := 0.62  ## on foot the camera sits closer and lower: the offset is scaled by this
 const VERT_BLEND_RATE := 3.0
 const ORBIT_RATE := 0.35  ## rad/s while bailing
-const FOV_BASE := 70.0
-const FOV_FAST := 78.0
-const FOV_SPEED_LO := 12.0
-const FOV_SPEED_HI := 20.0
+const FOV_BASE := 68.0
+const FOV_FAST := 84.0  ## at FOV_SPEED_HI and above
+const FOV_SPEED_LO := 5.0  ## m/s where the speed push starts
+const FOV_SPEED_HI := 22.0
+const FOV_CURVE := 1.6  ## > 1: subtle at cruise, stronger toward top speed
+const PUSH_DISTANCE := 0.9  ## extra m the camera trails behind at FOV_SPEED_HI (it eases back, so speed feels like a drag)
 const FOV_RATE := 4.0
 const RAY_UP := 1.0
 const RAY_DOWN := 40.0
@@ -40,6 +42,7 @@ var _walk_blend: float = 0.0
 var _cam_pos: Vector3 = Vector3.ZERO
 var _look: Vector3 = Vector3.ZERO
 var _fov: float = FOV_BASE
+var _push: float = 0.0
 
 
 static func yaw_from_facing(facing: Vector3) -> float:
@@ -70,8 +73,13 @@ static func look_target(skater_pos: Vector3, velocity: Vector3) -> Vector3:
 
 
 static func fov_for_speed(speed: float) -> float:
+	return FOV_BASE + (FOV_FAST - FOV_BASE) * speed_push(speed)
+
+
+## 0 at or below FOV_SPEED_LO, 1 at FOV_SPEED_HI, eased so cruise is subtle and top speed is strong.
+static func speed_push(speed: float) -> float:
 	var t: float = clampf((speed - FOV_SPEED_LO) / (FOV_SPEED_HI - FOV_SPEED_LO), 0.0, 1.0)
-	return FOV_BASE + (FOV_FAST - FOV_BASE) * t
+	return pow(t, FOV_CURVE)
 
 
 ## Framerate-independent exponential damping: `rate` is 1/s, the result moves (1 - e^(-rate*delta)) of the way.
@@ -134,6 +142,8 @@ func _physics_process(delta: float) -> void:
 	var offset: Vector3 = desired_offset(fwd, false).lerp(desired_offset(fwd, true), _vert_blend)
 	_walk_blend = damp(_walk_blend, 1.0 if target.state.state == SkateState.State.WALK else 0.0, VERT_BLEND_RATE, delta)
 	offset *= lerpf(1.0, WALK_ZOOM, _walk_blend)
+	_push = damp(_push, speed_push(target.speed) if target.state.state != SkateState.State.WALK else 0.0, FOV_RATE, delta)
+	offset += Vector3(offset.x, 0.0, offset.z).normalized() * PUSH_DISTANCE * _push
 	var goal_pos: Vector3 = _constrain(skater_pos + offset, eye)
 
 	_cam_pos = damp_vec(_cam_pos, goal_pos, POS_RATE, delta)
