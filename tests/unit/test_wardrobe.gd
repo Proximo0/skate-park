@@ -48,7 +48,9 @@ func test_registry_and_contract() -> void:
 	for id: String in ["hair_ponytail", "hair_messy", "top_bikini", "top_surf_tee", "top_rash_guard", "bottom_bikini",
 			"bottom_board_shorts", "socks_crew", "shoes_low_vulc", "acc_wristbands"]:
 		assert_true(Wardrobe.built_ids().has(id), id + " is built")
-	assert_true(Wardrobe.is_stub("top", "top_hoodie"), "hoodie is a stub")
+	for id: String in ["top_crop_tank", "top_hoodie", "top_flannel"]:
+		assert_true(Wardrobe.built_ids().has(id), id + " is built")
+		assert_false(Wardrobe.is_stub("top", id), id + " is not a stub")
 
 
 func test_defaults_resolve() -> void:
@@ -109,7 +111,8 @@ func test_every_region_has_a_mesh() -> void:
 
 ## Garments to check per body: [slot, id].
 func _garments(body_type: String) -> Array:
-	var out: Array = [["top", "top_surf_tee"], ["top", "top_rash_guard"], ["bottom", "bottom_board_shorts"], ["socks", "socks_crew"]]
+	var out: Array = [["top", "top_surf_tee"], ["top", "top_rash_guard"], ["top", "top_crop_tank"], ["top", "top_hoodie"],
+			["top", "top_flannel"], ["bottom", "bottom_board_shorts"], ["socks", "socks_crew"]]
 	if body_type == "female":
 		out.append_array([["top", "top_bikini"], ["bottom", "bottom_bikini"]])
 	return out
@@ -258,12 +261,6 @@ func test_hair_styles_build_on_both_heads() -> void:
 			for n: Node in model.find_children("HairSway_*", "Node3D", true, false):
 				assert_true((n as Node3D).basis.is_equal_approx(Basis.IDENTITY), "%s starts at identity" % n.name)
 			body.free()
-
-
-func test_stub_falls_back_to_reference_garment() -> void:
-	var body: Node3D = PlaceholderSkater.build_body({}, {"body": "male", "top": "top_hoodie"})
-	assert_true(body.find_child("SurfTeeChestMesh", true, false) != null, "stub top draws the reference tee")
-	body.free()
 
 
 func test_builder_maps_loadout() -> void:

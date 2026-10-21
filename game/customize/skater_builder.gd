@@ -6,7 +6,8 @@ extends RefCounted
 
 ## mesh_builder keys that really draw. Body side: the built (not stubbed) Wardrobe ids (Wardrobe.built_ids()).
 const SUPPORTED_BUILDERS: PackedStringArray = [
-	"hair_ponytail", "hair_messy", "top_bikini", "top_surf_tee", "top_rash_guard", "bottom_bikini", "bottom_board_shorts",
+	"hair_ponytail", "hair_messy", "top_bikini", "top_surf_tee", "top_rash_guard", "top_crop_tank", "top_hoodie", "top_flannel",
+	"bottom_bikini", "bottom_board_shorts",
 	"socks_crew", "shoes_low_vulc", "acc_wristbands",
 	"deck_popsicle", "truck_standard", "wheel_street_52", "bearing_none", "griptape_color",
 	"deck_cruiser", "deck_oldschool", "truck_low", "truck_hollow", "wheel_park_54", "wheel_cruiser_56",

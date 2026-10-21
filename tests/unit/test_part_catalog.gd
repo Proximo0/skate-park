@@ -83,7 +83,8 @@ func test_color_lookup_clamps() -> void:
 func test_builder_pending_features() -> void:
 	var all: PackedStringArray = SkaterBuilder.pending_features()
 	assert_false(all.has("body:male"), "the male body is built")
-	assert_true(all.has("top:top_hoodie"), "stubbed garments stay pending")
+	for id: String in ["top_crop_tank", "top_hoodie", "top_flannel"]:
+		assert_false(all.has("top:" + id), id + " is drawn")
 	assert_false(all.has("truck:truck_low"), "low trucks are drawn")
 	assert_false(all.has("truck:truck_standard"))
 	assert_true(SkaterBuilder.pending_features(SkaterLoadout.default_female()).is_empty(), "default female is fully supported")
