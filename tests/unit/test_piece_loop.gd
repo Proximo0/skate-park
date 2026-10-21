@@ -40,8 +40,9 @@ func test_highest_track_vertex_is_two_radii() -> void:
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 	var top: float = -INF
 	for i: int in verts.size():
-		# riding face normals point down over the top; the slab's back (normal up) is skipped
-		if normals[i].y < 0.5:
+		# riding face normals point down over the top; the slab's back (normal up) and the side and end faces of the
+		# closed section (horizontal normals, running out to the slab's back) are skipped
+		if normals[i].y < -0.5:
 			top = maxf(top, verts[i].y)
 	assert_near(top, 2.0 * R, 0.05, "highest track vertex at 2R (plus the 0.02 lift)")
 	root.free()
@@ -54,8 +55,9 @@ func test_lowest_point_is_the_flat_height() -> void:
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 	var low: float = INF
 	for i: int in verts.size():
-		# the slab's underside (normal pointing down, under the ground) is not the riding face
-		if normals[i].y > -0.5:
+		# the slab's underside (normal pointing down, under the ground) and the side and end faces of the closed
+		# section (horizontal normals, running down to the underside) are not the riding face
+		if normals[i].y > 0.5:
 			low = minf(low, verts[i].y)
 	assert_near(low, 0.02, 0.0001, "flat parts and loop bottom at y 0.02")
 	root.free()

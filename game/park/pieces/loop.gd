@@ -12,7 +12,8 @@ extends RefCounted
 ##     top of the loop is at x in [offset / 2, offset / 2 + width].
 ##   - Highest riding-face point: (x = offset / 2 .. +width, y = 2 * radius + LIFT, z = -run_in).
 ##   - Run-out runs from z = -run_in to z = -run_in - run_out at x in [offset, offset + width].
-##   - Riding face, 0.35 m curbs on both edges and the orange slab back form the StaticBody3D "Track" trimesh.
+##   - Riding face, 0.35 m curbs on both edges and the orange slab back form the StaticBody3D "Track" trimesh, a closed
+##     section: the curbs' outer faces run down to the slab's back, and both ends are capped (no zero-thickness edge).
 ##   - Gap zone "loop_full" covers the loop's box above y = 1 m, x from -0.5 to offset + width + 0.5, and z from
 ##     -run_in - radius - 0.5 to -run_in + radius + 0.5.
 
@@ -132,20 +133,33 @@ static func _track_mesh(path: Dictionary, width: float) -> ArrayMesh:
 		var hb: Vector3 = nb * CURB_H
 		# riding face
 		_quad(st, [a, b, b + w, a + w], [na, nb, nb, na], want)
-		# underside, facing outward (the slab's back)
+		# underside, facing outward (the slab's back), running under both curbs so the section is closed
 		var sa: Vector3 = -na * SLAB
 		var sb: Vector3 = -nb * SLAB
-		_quad(st, [a + sa, a + sa + w, b + sb + w, b + sb], [-na, -na, -nb, -nb], -want)
-		# left curb: inner face (track side is +X), outer face, top
+		_quad(st, [a + sa - t, a + sa + w + t, b + sb + w + t, b + sb - t], [-na, -na, -nb, -nb], -want)
+		# left curb: inner face (track side is +X), outer face (down to the slab's back: a solid side, no open edge
+		# for the sphere to catch or slip through), top
 		_quad(st, [a, b, b + hb, a + ha], [Vector3.RIGHT, Vector3.RIGHT, Vector3.RIGHT, Vector3.RIGHT], Vector3.RIGHT)
-		_quad(st, [a - t, a - t + ha, b - t + hb, b - t], [Vector3.LEFT, Vector3.LEFT, Vector3.LEFT, Vector3.LEFT], Vector3.LEFT)
+		_quad(st, [a - t + sa, a - t + ha, b - t + hb, b - t + sb], [Vector3.LEFT, Vector3.LEFT, Vector3.LEFT, Vector3.LEFT], Vector3.LEFT)
 		_quad(st, [a + ha, b + hb, b - t + hb, a - t + ha], [na, nb, nb, na], want)
-		# right curb: inner face (track side is -X), outer face, top
+		# right curb: inner face (track side is -X), outer face (down to the slab's back), top
 		var ra: Vector3 = a + w
 		var rb: Vector3 = b + w
 		_quad(st, [ra, rb, rb + hb, ra + ha], [Vector3.LEFT, Vector3.LEFT, Vector3.LEFT, Vector3.LEFT], Vector3.LEFT)
-		_quad(st, [ra + t, rb + t, rb + t + hb, ra + t + ha], [Vector3.RIGHT, Vector3.RIGHT, Vector3.RIGHT, Vector3.RIGHT], Vector3.RIGHT)
+		_quad(st, [ra + t + sa, rb + t + sb, rb + t + hb, ra + t + ha], [Vector3.RIGHT, Vector3.RIGHT, Vector3.RIGHT, Vector3.RIGHT], Vector3.RIGHT)
 		_quad(st, [ra + ha, rb + hb, rb + t + hb, ra + t + ha], [na, nb, nb, na], want)
+	# end caps: close the U-shaped section (slab plus both curbs) at the run-in start and the run-out end
+	for k: int in [0, pos.size() - 1]:
+		var p: Vector3 = pos[k]
+		var pn: Vector3 = nrm[k]
+		var tang: Vector3 = ((pos[1] as Vector3) - (pos[0] as Vector3)) if k == 0 else ((pos[k] as Vector3) - (pos[k - 1] as Vector3))
+		var face: Vector3 = (-tang if k == 0 else tang).normalized()
+		var lo: Vector3 = -pn * SLAB
+		var hi: Vector3 = pn * CURB_H
+		var fs: Array = [face, face, face, face]
+		_quad(st, [p - t + lo, p + w + t + lo, p + w + t, p - t], fs, face)
+		_quad(st, [p - t, p, p + hi, p - t + hi], fs, face)
+		_quad(st, [p + w, p + w + t, p + w + t + hi, p + w + hi], fs, face)
 	return st.commit()
 
 

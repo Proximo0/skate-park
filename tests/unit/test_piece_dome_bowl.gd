@@ -164,8 +164,9 @@ func test_gap_zone_above_centre() -> void:
 	assert_true(zone.is_in_group("gap_zone"), "zone in gap_zone group")
 	var cs: CollisionShape3D = zone.get_child(0) as CollisionShape3D
 	var box: BoxShape3D = cs.shape as BoxShape3D
-	assert_near(box.size.y, 4.0, 0.0001, "zone 4 m tall")
-	assert_near(cs.position.y - box.size.y * 0.5, 0.0, 0.0001, "zone starts at the rim")
+	assert_near(box.size.y, DomeBowl.GAP_HEIGHT, 0.0001, "zone GAP_HEIGHT tall")
+	assert_near(cs.position.y - box.size.y * 0.5, DomeBowl.GAP_FLOOR, 0.0001, "zone starts GAP_FLOOR above the rim")
+	assert_true(box.size.x >= 16.0 and box.size.x <= 2.0 * HALF, "zone spans the rim (an air off the wall goes up there) and stays inside the deck")
 	assert_near(cs.position.x, HALF, 0.0001, "zone centred on x")
 	assert_near(cs.position.z, HALF, 0.0001, "zone centred on z")
 

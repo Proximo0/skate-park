@@ -26,10 +26,11 @@ const FLOOR_JUMP_DOT: float = 0.64
 ## Share of the speed along the coping kept on a vert launch. Real (and THUG) vert airs carry it: going up a
 ## quarter at an angle sends you along the ramp, not straight up and to a stop.
 const VERT_LATERAL_KEEP: float = 0.85
-## Going up a transition, the pump only works below this steepness (normal y), not on the upper wall, and only while
-## the surface is curving (a bend within PUMP_CURVE_TIME): pumping needs a curve, a flat bank gives nothing.
+## Going up a transition, the pump only works below this steepness (normal y, about 66 degrees: the extension through
+## the middle of the curve), not on the upper wall, and only while the surface is curving (a bend within
+## PUMP_CURVE_TIME): pumping needs a curve, a flat bank gives nothing.
 const PUMP_CURVE_TIME: float = 0.15
-const PUMP_UP_MIN_NY: float = 0.5
+const PUMP_UP_MIN_NY: float = 0.4
 ## Grind topple: falling off the side of a rail hops you down to the ground carving, unless the drop is bigger than
 ## TOPPLE_MAX_DROP (m) or you are slower than TOPPLE_MIN_SPEED (m/s): then it is a real bail.
 const TOPPLE_MAX_DROP: float = 1.5
@@ -49,10 +50,20 @@ const RAIL_FRICTION_REF: float = 8.0
 const EDGE_STEP_HEIGHT: float = 0.12
 ## Wall hits squarer than this (cos of incidence) bounce back instead of deflecting along the wall.
 const WALL_HEAD_ON: float = 0.9
-## Share of the speed into a wall that comes back as a bounce.
-const WALL_BOUNCE: float = 0.25
-## Head-on speed into a wall (m/s) above which the skater bails instead of stumbling.
-const WALL_BAIL_SPEED: float = 9.0
+## Share of the speed into a wall that comes back as a bounce: WALL_BOUNCE_SLOW at a bump, growing to
+## WALL_BOUNCE_FAST at the slam speed (THUG-style: a harder hit throws you further back off the wall).
+const WALL_BOUNCE_SLOW: float = 0.2
+const WALL_BOUNCE_FAST: float = 0.35
+## Head-on speed into a wall (m/s) above which the skater bails instead of stumbling, and how square the hit must be
+## (cos of incidence, 0.95 is within 18 degrees of head-on). Anything softer or more glancing bounces off.
+const WALL_BAIL_SPEED: float = 13.0
+const WALL_BAIL_SQUARE: float = 0.95
+## Fastest fall in the air, m/s (a terminal speed: a drop from about 25 m at gravity 18).
+const AIR_TERMINAL_FALL: float = 30.0
+## A revert pressed this many ticks before touchdown still counts (0.15 s), as well as within REVERT_WINDOW after it.
+const REVERT_BUFFER_TICKS: int = 9
+## Time (s) the visual takes to catch up after a rail or lip snap (the body snaps at once; see _update_visual).
+const SNAP_EASE_TIME: float = 0.1
 
 ## Live physics tuning. Every ride number is read from here each tick.
 var tune: PhysicsTuning = PhysicsTuning.shared()
@@ -124,6 +135,7 @@ var _carve_side: float = 0.0  ## side of the carve after a topple landing
 var _carve_left: float = 0.0  ## seconds of topple carve left
 var _since_bend: float = 1.0  ## seconds since the floor normal last bent by over a degree (curving transition)
 var _touch_wall_n: Vector3 = Vector3.ZERO  ## the upright wall rolled along last tick (steering can't turn into it)
+var _recent_revert_press: int = 100  ## ticks since revert was pressed (buffered across the touchdown)
 
 
 func _ready() -> void:
@@ -221,6 +233,7 @@ func _step(delta: float) -> void:
 		return
 	var requests: Array = tricks.feed(_stick, _just_pressed, _held)
 	_recent_grind_press = 0 if _just_pressed.has("grind") else _recent_grind_press + 1
+	_recent_revert_press = 0 if _just_pressed.has("revert") else mini(_recent_revert_press + 1, 100)
 	anim_time += delta
 	state.tick(delta)
 	if state.state != SkateState.State.WALK:
@@ -256,7 +269,9 @@ func _tick_rolling(delta: float, requests: Array) -> void:
 	if not is_on_floor() or _left_edge:
 		_go_airborne(false)
 		return
-	if _just_pressed.has("revert") and state.event("revert"):
+	# Revert: pressed just after touchdown, or a moment before it (buffered, as THUG players hit it on the way down).
+	if _recent_revert_press <= REVERT_BUFFER_TICKS and state.event("revert"):
+		_recent_revert_press = 100
 		switch_stance = not switch_stance
 		_score_trick({"id": "revert", "name": "Revert", "points": 100, "kind": "revert", "anim": "revert"})
 		_set_anim("revert")
@@ -379,12 +394,13 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		along = minf(along + tune.push_accel * _d_pulse * delta, tune.push_max)
 	elif _stick.y < -0.3 and n.y < 0.95 and n.y > 0.15 and (v.y < 0.0 or (n.y > PUMP_UP_MIN_NY and _since_bend < PUMP_CURVE_TIME)):
 		# Pumping: compress into the transition on the way down and through the lower curve, extend on the way out.
-		# Steeper transitions pump harder. The gain scales with speed (real pumping adds a share of the energy you
-		# carry, so a few back-and-forths build: small at first, bigger each pass) and fades toward the speed cap.
+		# Steeper transitions pump harder. The gain grows with speed (as the square root: real pumping adds a share of
+		# the energy you carry, so passes build, but the first pass is already a real air and the later ones level
+		# off: about 2, 4.5, 6.5, 8, 9 m over a 4 m halfpipe's coping) and fades toward the speed cap.
 		# Nothing is added while climbing the steep upper wall, so holding forward never parks you on a wall.
 		_d_pumping = true
 		var spd_now: float = v.length()
-		var rate: float = clampf(spd_now / tune.pump_speed_ref, 0.25, 2.0)
+		var rate: float = clampf(sqrt(spd_now / tune.pump_speed_ref), 0.25, 2.0)
 		var taper: float = clampf(1.0 - pow(spd_now / tune.max_speed, 6.0), 0.0, 1.0)
 		along += lerpf(tune.pump_accel, tune.pump_accel_vert, clampf((0.95 - n.y) / 0.6, 0.0, 1.0)) * rate * taper * delta
 	elif _stick.y > 0.5 and n.y > 0.8 and state.state == SkateState.State.ROLLING:
@@ -531,10 +547,10 @@ func _graze_edge(v: Vector3, was: Vector3) -> void:
 
 ## Share of speed kept when glancing off a wall at `square` (0 = parallel, 1 = head-on): a THUG-style deflection
 ## that turns you along the wall, not a stop.
-## Up to about 30 degrees off square-on it keeps most of the speed (arcade); only nearly square-on hits tend to the
-## real share, the part of the velocity along the wall.
+## Arcade-forgiving: a brush under about 25 degrees costs nothing, 40 degrees about 3-4%, 60 degrees about 6%. Only
+## nearly square-on hits tend to the real share, the part of the velocity along the wall.
 static func _deflect_keep(square: float) -> float:
-	var arcade: float = 1.0 - 0.15 * square * square
+	var arcade: float = 1.0 - 0.07 * smoothstep(0.42, 0.9, square)
 	var real: float = sqrt(maxf(1.0 - square * square, 0.0))
 	return lerpf(arcade, real, smoothstep(0.85, 0.98, square))
 
@@ -606,13 +622,14 @@ func _wall_response(v: Vector3, wn: Vector3, n: Vector3, force: bool, p: Vector3
 	if wn.normalized().y > 0.3 or n.y < 0.7:
 		return false  # only an upright wall or an overhang met from flat-ish ground stops you; a slope just slides
 	_wall_normal = w
-	if into > WALL_BAIL_SPEED:
-		velocity = w * into * WALL_BOUNCE
+	var bounce: float = lerpf(WALL_BOUNCE_SLOW, WALL_BOUNCE_FAST, clampf(into / WALL_BAIL_SPEED, 0.0, 1.0))
+	if into > WALL_BAIL_SPEED and square >= WALL_BAIL_SQUARE:
+		velocity = w * into * bounce
 		_ev("wall_slam")
 		_bail()  # the ragdoll takes the bounce; the body itself drops at the wall
 		velocity = Vector3.ZERO
 		return true
-	velocity = ((v - w * v.dot(w)) * 0.7 + w * into * WALL_BOUNCE).slide(n)
+	velocity = ((v - w * v.dot(w)) * 0.7 + w * into * bounce).slide(n)
 	_ev("stumble")
 	_set_anim("land")
 	return false
@@ -745,9 +762,13 @@ func _tick_air(delta: float, requests: Array) -> void:
 	if _air_trick_until > 0.0 and _t >= _air_trick_until:
 		_air_trick_until = 0.0
 		_set_anim("air")
-	velocity.y = maxf(velocity.y, -40.0)
-	# Air drag, cartoon style: nothing flies faster than the speed cap (long falls and big pumps top out).
-	velocity = velocity.limit_length(tune.max_speed)
+	# No air drag: only the horizontal speed is capped (at the ground's speed cap); the fall speed comes from gravity,
+	# up to a terminal speed, so big drops and huge vert airs keep accelerating like they should.
+	velocity.y = maxf(velocity.y, -AIR_TERMINAL_FALL)
+	var hv_air: Vector2 = Vector2(velocity.x, velocity.z)
+	if hv_air.length() > tune.max_speed:
+		hv_air = hv_air.normalized() * tune.max_speed
+		velocity = Vector3(hv_air.x, velocity.y, hv_air.y)
 	up_direction = Vector3.UP
 	floor_snap_length = 0.0
 	var impact: Vector3 = velocity
@@ -1282,6 +1303,7 @@ func snapshot() -> Dictionary:
 		"carve_side": _carve_side,
 		"carve_left": _carve_left,
 		"recent_grind_press": _recent_grind_press,
+		"recent_revert_press": _recent_revert_press,
 		"pending_air": _pending_air.duplicate(true),
 		"snap_offset": _snap_offset,
 		"spawn": _spawn,
@@ -1367,6 +1389,7 @@ func restore(d: Dictionary) -> void:
 	_carve_side = float(d.get("carve_side", 0.0))
 	_carve_left = float(d.get("carve_left", 0.0))
 	_recent_grind_press = d["recent_grind_press"]
+	_recent_revert_press = int(d.get("recent_revert_press", 100))
 	_pending_air = (d["pending_air"] as Array).duplicate(true)
 	_snap_offset = d["snap_offset"]
 	_spawn = d["spawn"]
@@ -1539,7 +1562,9 @@ func _update_visual(delta: float) -> void:
 	var target := Basis.looking_at(fwd, up)
 	var cur: Basis = _visual.global_transform.basis.orthonormalized()
 	var b: Basis = cur.slerp(target, clampf(delta * 18.0, 0.0, 1.0))
-	_snap_offset = _snap_offset.move_toward(Vector3.ZERO, delta * 8.0)
+	# A rail or lip snap moves the body at once; the visual slides over after it, finishing a 1.3 m snap in about
+	# 0.11 s (12 m/s, 0.2 m a frame) and a short one at 8 m/s, so a magnet catch reads as a quick hop, not a teleport.
+	_snap_offset = _snap_offset.move_toward(Vector3.ZERO, delta * clampf(_snap_offset.length() / SNAP_EASE_TIME, 8.0, 12.0))
 	_visual.global_transform = Transform3D(b, global_position + _snap_offset)
 
 

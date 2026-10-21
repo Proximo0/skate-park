@@ -23,7 +23,7 @@ const FIELDS: Array = [
 	["turn_rate_fast", 1.7, 0.3, 6.0, 0.05, "Rolling", "Turn rate at max speed, rad/s."],
 	["carve_grip", 18.0, 4.0, 60.0, 0.5, "Rolling", "Most sideways acceleration a carve can pull, m/s² (about 1 g here): sets how wide fast turns get."],
 	["pump_accel", 2.5, 0.0, 15.0, 0.25, "Transitions", "Pump on gentle transitions, m/s²."],
-	["pump_accel_vert", 30.0, 0.0, 50.0, 0.5, "Transitions", "Pump on steep (vert) transitions, m/s²."],
+	["pump_accel_vert", 32.0, 0.0, 50.0, 0.5, "Transitions", "Pump on steep (vert) transitions, m/s²."],
 	["pump_speed_ref", 12.0, 3.0, 30.0, 0.5, "Transitions", "Speed (m/s) at which the pump gives its full rate; slower pumps less, faster more (a pass builds on the last)."],
 	["vert_normal_y", 0.35, 0.05, 0.8, 0.01, "Transitions", "Leaving a face steeper than this, going up, is a vert launch."],
 	["edge_grip", 2.5, 0.5, 8.0, 0.1, "Transitions", "Grip on convex bends, as a multiple of gravity's hold."],

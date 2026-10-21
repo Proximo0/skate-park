@@ -7,7 +7,7 @@ extends RefCounted
 ## Pieces: "Shell" (the sphere cap, trimesh collision, normals into the bowl; surfaces: concrete, a tile band under
 ## the rim, and a painted target at the bottom), "Deck" (the square ground frame around the hole with a solid skirt
 ## down to the bottom, so nothing shows through), "Coping" (a closed "coping" GrindRail on the rim), "CopingPipe"
-## (visual metal pipe along the coping) and the gap zone "<zone_prefix>_air" above the centre.
+## (visual metal pipe along the coping) and the gap zone "<zone_prefix>_air" over the hole, from 1.5 m above the rim.
 
 const MARGIN: float = 1.5
 const TILE_BLUE: Color = Color("7fd3f5")
@@ -19,8 +19,11 @@ const BAND_BOTTOM_Y: float = -0.9
 ## Target rings on the floor: bins of TARGET_BIN metres out to TARGET_R, alternating yellow and red.
 const TARGET_BIN: float = 0.8
 const TARGET_R: float = 2.4
-const GAP_HEIGHT: float = 4.0
-const GAP_WIDTH_FACTOR: float = 1.2
+## The "_air" gap zone: from GAP_FLOOR above the rim (the board about 0.9 m over the coping) up GAP_HEIGHT, over the
+## whole hole (GAP_WIDTH_FACTOR times the rim's diameter, inside the square deck).
+const GAP_FLOOR: float = 1.5
+const GAP_HEIGHT: float = 20.0
+const GAP_WIDTH_FACTOR: float = 1.03
 
 
 static func build(radius: float = 8.0, depth_ratio: float = 0.85, rings: int = 16, segments: int = 48, zone_prefix: String = "dome") -> Node3D:
@@ -59,8 +62,10 @@ static func build(radius: float = 8.0, depth_ratio: float = 0.85, rings: int = 1
 	pipe.material_override = Toon.material(PieceKit.METAL)
 	root.add_child(pipe)
 
-	var w: float = a * GAP_WIDTH_FACTOR
-	root.add_child(PieceKit.gap_zone(zone_prefix + "_air", Vector3(half - w * 0.5, 0.0, half - w * 0.5), Vector3(w, GAP_HEIGHT, w)))
+	# The air zone covers the whole hole from GAP_FLOOR above the rim up: an air off the wall goes up near the rim (the
+	# vert launch keeps the skater over the shell), so a zone over the middle alone could never be reached.
+	var w: float = 2.0 * a * GAP_WIDTH_FACTOR
+	root.add_child(PieceKit.gap_zone(zone_prefix + "_air", Vector3(half - w * 0.5, GAP_FLOOR, half - w * 0.5), Vector3(w, GAP_HEIGHT, w)))
 	return root
 
 
