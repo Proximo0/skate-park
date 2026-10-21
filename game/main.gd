@@ -45,6 +45,7 @@ func _ready() -> void:
 	pause.drop_in_requested.connect(_drop_in)
 	pause.quit_requested.connect(func() -> void: get_tree().change_scene_to_file("res://game/ui/title_screen.tscn"))
 	add_child(FrameStamp.new())
+	add_child(RenderToggles.new())
 	_setup_goals()
 
 
