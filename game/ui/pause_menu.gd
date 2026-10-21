@@ -1,16 +1,20 @@
 class_name PauseMenu
 extends CanvasLayer
-## Pause overlay: dimmed backdrop, four big buttons, full gamepad and keyboard use.
+## Pause overlay: dimmed backdrop, big buttons (Resume, Restart Run, two Drop In spots, Controls, Quit), full gamepad and keyboard use.
 ## The pause action opens it and pauses the tree. Resume, ui_cancel or the pause action closes it.
-## Restart and Quit close the menu first (unpausing the tree), then emit their signal.
+## Restart, Drop In and Quit close the menu first (unpausing the tree), then emit their signal.
+## drop_in_requested carries the spot id: "mega" or "loop" (see DropIn).
 
 signal restart_requested
+signal drop_in_requested(spot: String)
 signal quit_requested
 signal resumed
 
 const PAUSE_BACKDROP := Color(0.02, 0.03, 0.09, 0.62)
 const PAUSE_PANEL := Color("#2B2F7A")
 const PAUSE_BUTTON_MIN := Vector2(420, 90)
+const PAUSE_DROP_IN_MIN := Vector2(420, 72)
+const PAUSE_DROP_IN_FONT := 36
 const PAUSE_FOCUS_SCALE := 1.08
 const PAUSE_PANEL_RADIUS := 40
 const PAUSE_PANEL_PAD := 36
@@ -73,6 +77,14 @@ func _build() -> void:
 	restart.pressed.connect(_on_restart_pressed)
 	col.add_child(restart)
 
+	var drop_mega := _pause_button("Drop In: Mega Ramp", Color("#FF9F43"), PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	drop_mega.pressed.connect(_on_drop_in_pressed.bind("mega"))
+	col.add_child(drop_mega)
+
+	var drop_loop := _pause_button("Drop In: Loop", Color("#FF9F43"), PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	drop_loop.pressed.connect(_on_drop_in_pressed.bind("loop"))
+	col.add_child(drop_loop)
+
 	_controls_button = _pause_button("Controls", UiStyle.SKY_BLUE)
 	_controls_button.pressed.connect(_on_controls_pressed)
 	col.add_child(_controls_button)
@@ -81,8 +93,8 @@ func _build() -> void:
 	quit.pressed.connect(_on_quit_pressed)
 	col.add_child(quit)
 
-	# Up and down wrap around the four buttons.
-	var buttons: Array[Button] = [_resume_button, restart, _controls_button, quit]
+	# Up and down wrap around the buttons.
+	var buttons: Array[Button] = [_resume_button, restart, drop_mega, drop_loop, _controls_button, quit]
 	var n: int = buttons.size()
 	for i: int in n:
 		var b: Button = buttons[i]
@@ -157,6 +169,11 @@ func _on_restart_pressed() -> void:
 	restart_requested.emit()
 
 
+func _on_drop_in_pressed(spot: String) -> void:
+	_hide_menu()
+	drop_in_requested.emit(spot)
+
+
 func _on_quit_pressed() -> void:
 	_hide_menu()
 	quit_requested.emit()
@@ -175,12 +192,12 @@ func _on_controls_closed() -> void:
 	_controls_button.grab_focus()
 
 
-func _pause_button(text: String, color: Color) -> Button:
+func _pause_button(text: String, color: Color, min_size: Vector2 = PAUSE_BUTTON_MIN, font_size: int = UiStyle.SIZE_BIG) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = PAUSE_BUTTON_MIN
+	b.custom_minimum_size = min_size
 	b.focus_mode = Control.FOCUS_ALL
-	b.add_theme_font_size_override("font_size", UiStyle.SIZE_BIG)
+	b.add_theme_font_size_override("font_size", font_size)
 	for k: String in ["font_color", "font_hover_color", "font_focus_color", "font_pressed_color"]:
 		b.add_theme_color_override(k, UiStyle.INK)
 	b.add_theme_stylebox_override("normal", _pause_box(color, 26, UiStyle.INK, 4, 18))

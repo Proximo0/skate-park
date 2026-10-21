@@ -107,6 +107,96 @@
 			"end_zone": "flatbar_b",
 			"require": "",
 			"max_time": 4.0
+		},
+		{
+			"id": "mega_gap",
+			"name": "Mega Gap",
+			"points": 1500,
+			"start_zone": "mega_gap",
+			"end_zone": "mega_land",
+			"require": "AIR",
+			"max_time": 4.0
+		},
+		{
+			"id": "mega_qp_air",
+			"name": "Mega QP Air",
+			"points": 800,
+			"start_zone": "mega_runout",
+			"end_zone": "mega_qp_air",
+			"require": "",
+			"max_time": 8.0
+		},
+		{
+			"id": "dome_air",
+			"name": "Dome Air",
+			"points": 700,
+			"start_zone": "dome_rim",
+			"end_zone": "dome_air",
+			"require": "",
+			"max_time": 4.0
+		},
+		{
+			"id": "loop_de_loop",
+			"name": "Loop De Loop",
+			"points": 1200,
+			"start_zone": "loop_full",
+			"end_zone": "loop_out",
+			"require": "",
+			"max_time": 8.0
+		},
+		{
+			"id": "down_the_hill",
+			"name": "Down The Hill",
+			"points": 250,
+			"start_zone": "downhill_top",
+			"end_zone": "downhill_bottom",
+			"require": "",
+			"max_time": 8.0
+		},
+		{
+			"id": "long_ledge",
+			"name": "Long Ledge",
+			"points": 450,
+			"start_zone": "long_ledge_a",
+			"end_zone": "long_ledge_b",
+			"require": "GRIND",
+			"max_time": 8.0
+		},
+		{
+			"id": "long_rail",
+			"name": "Long Rail",
+			"points": 500,
+			"start_zone": "long_rail_a",
+			"end_zone": "long_rail_b",
+			"require": "GRIND",
+			"max_time": 8.0
+		},
+		{
+			"id": "hubba_hubba",
+			"name": "Hubba Hubba",
+			"points": 600,
+			"start_zone": "hubba_a",
+			"end_zone": "hubba_b",
+			"require": "GRIND",
+			"max_time": 6.0
+		},
+		{
+			"id": "hubba_stairs",
+			"name": "Hubba Stairs",
+			"points": 500,
+			"start_zone": "hubba_stairs_top",
+			"end_zone": "hubba_stairs_bottom",
+			"require": "AIR",
+			"max_time": 3.0
+		},
+		{
+			"id": "rail_marathon",
+			"name": "Rail Marathon",
+			"points": 700,
+			"start_zone": "rail25_a",
+			"end_zone": "rail25_b",
+			"require": "GRIND",
+			"max_time": 10.0
 		}
 	]
 }

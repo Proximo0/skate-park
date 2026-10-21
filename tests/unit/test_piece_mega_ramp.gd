@@ -133,3 +133,20 @@ func test_length_matches_footprint() -> void:
 		end = maxf(end, _bounds(b).end.z)
 	assert_near(MegaRamp.length(8.0, 18.0, 14.0, 8.0), end, 0.01, "length() equals the far z")
 	root.free()
+
+
+func test_tower_dressing_is_visual_only() -> void:
+	var root: Node3D = MegaRamp.build(8.0, 18.0, 14.0, 8.0)
+	var trim: Node = _find(root, "TowerTrim")
+	assert_true(trim != null, "tower trim exists")
+	if trim != null:
+		assert_true(trim.get_child_count() > 20, "scaffolding and banners present")
+		for n: Node in _all(trim):
+			assert_false(n is StaticBody3D or n is GrindRail or n is Area3D or n is CollisionShape3D, "trim has no collision, rails or zones")
+		# a banner label reads from behind the tower
+		var texts: int = 0
+		for n: Node in _all(trim):
+			if n is Label3D:
+				texts += 1
+		assert_true(texts >= 1, "banner text")
+	root.free()

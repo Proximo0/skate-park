@@ -74,7 +74,19 @@ func test_outline_is_screen_width_with_depth_push() -> void:
 	assert_true(outline != null, "outline material present")
 	if outline == null:
 		return
-	var width: float = outline.get_shader_parameter("outline_width")
+	var width: float = _param(outline, "outline_width")
 	assert_true(width > 0.0 and width <= 0.02, "outline width is a small fraction of the viewport height")
-	var push: float = outline.get_shader_parameter("depth_push")
+	var push: float = _param(outline, "depth_push")
 	assert_true(push > 0.0 and push <= 0.05, "shell is pushed back a little in depth")
+
+
+## A shader parameter's value: the material's override if set, else the default written in the shader source
+## (the headless test renderer can't report shader defaults).
+func _param(m: ShaderMaterial, name: String) -> float:
+	var v: Variant = m.get_shader_parameter(name)
+	if v != null:
+		return float(v)
+	var re := RegEx.new()
+	re.compile("uniform\\s+float\\s+" + name + "\\b[^=;]*=\\s*([-0-9.eE]+)")
+	var hit: RegExMatch = re.search(m.shader.code)
+	return float(hit.get_string(1)) if hit != null else -1.0

@@ -84,6 +84,34 @@
 			"description": "Grind a rail for 3 seconds in one go.",
 			"type": "grind_time",
 			"target": 3
+		},
+		{
+			"id": "loop_de_loop",
+			"title": "Loop De Loop",
+			"description": "Drop in and ride the loop: grab the L coin at the top.",
+			"type": "collect",
+			"items": ["L"]
+		},
+		{
+			"id": "mega_gap",
+			"title": "Mega Gap",
+			"description": "Clear the mega ramp gap and grab the M coin in the air.",
+			"type": "collect",
+			"items": ["M"]
+		},
+		{
+			"id": "dome_air",
+			"title": "Dome Air",
+			"description": "Launch out of the dome bowl and grab the D coin in mid-air.",
+			"type": "collect",
+			"items": ["D"]
+		},
+		{
+			"id": "long_haul_4",
+			"title": "Long Haul: grind 4 seconds",
+			"description": "Grind a long rail for 4 seconds in one go.",
+			"type": "grind_time",
+			"target": 4
 		}
 	]
 }

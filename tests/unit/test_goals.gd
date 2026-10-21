@@ -30,11 +30,21 @@ func _ids(done: Array[Dictionary]) -> PackedStringArray:
 
 # --- loading -----------------------------------------------------------------
 
-func test_default_file_loads_twelve_valid_goals() -> void:
+func test_default_file_has_the_big_park_goals() -> void:
+	var g: Goals = Goals.load_default()
+	for id: String in ["loop_de_loop", "mega_gap", "dome_air", "long_haul_4"]:
+		assert_true(g.progress(id) == 0.0 and not g.is_completed(id), "goal %s exists and is fresh" % id)
+	g.start_run(0.0)
+	assert_eq(g.on_collect("L").size(), 1, "the L coin completes Loop De Loop")
+	g.on_hold("grind", 4.5)
+	assert_true(g.is_completed("long_haul_4"), "a 4.5 second grind completes Long Haul")
+
+
+func test_default_file_loads_sixteen_valid_goals() -> void:
 	var g: Goals = Goals.load_default()
 	assert_true(g.load_errors.is_empty(), "no load errors: %s" % str(g.load_errors))
 	var all: Array[Dictionary] = g.all_goals()
-	assert_eq(all.size(), 12, "twelve goals")
+	assert_eq(all.size(), 16, "sixteen goals")
 	assert_near(g.run_seconds, 120.0, 0.0001, "2-minute run")
 	var seen: Dictionary = {}
 	for goal: Dictionary in all:

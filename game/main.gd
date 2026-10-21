@@ -42,6 +42,7 @@ func _ready() -> void:
 	var pause := PauseMenu.new()
 	add_child(pause)
 	pause.restart_requested.connect(_restart)
+	pause.drop_in_requested.connect(_drop_in)
 	pause.quit_requested.connect(func() -> void: get_tree().change_scene_to_file("res://game/ui/title_screen.tscn"))
 	add_child(FrameStamp.new())
 	_setup_goals()
@@ -119,3 +120,12 @@ func _process(delta: float) -> void:
 func _restart() -> void:
 	skater.respawn()
 	goals.start_run(_t)
+
+
+## Pause menu "Drop In": put the skater on top of the mega ramp ("mega") or the drop ramp before the loop ("loop").
+func _drop_in(spot: String) -> void:
+	if not (park is Park):
+		return
+	var spots: Dictionary = (park as Park).drop_ins
+	if spots.has(spot):
+		DropIn.teleport(skater, spots[spot] as Transform3D)
