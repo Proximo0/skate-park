@@ -21,9 +21,10 @@ These come from building the Skate Park lead skater, an adult anime surf-skater 
 1. Ask for the rating, tone, reference images, and the two or three games the look should sit beside.
 2. Write the spec: height and head count; landmark heights; section widths and depths; the face layout; the hair lock plan; the palette with hex values.
 3. Size the skeleton to the spec. Check that the animation code reads only skeleton constants.
-4. Build the parts in separate files: head, hair (registry of styles), body (elliptical lofts), garments (one file per slot, offset from the skin sections), shoes, held props.
-5. Add sway pivots for secondary motion from the start (hair, ponytail chains, soft body parts, loose clothing), named by prefix.
-6. Render a standard sheet every iteration: front, side, three-quarter, back, face close-up, plus the full pose grid. Look at every image before reporting.
-7. Write tests for proportions (height, head count, ribcage narrower than hips, eye spacing), feet on the ground, no pure-green debug colours, garment clearance, and the triangle budget.
-8. Keep the palette keys in one table and the customiser mapping in sync.
-9. Show the owner a side-by-side against the references, then ask for notes on face, body and outfit separately.
+4. Use a base body plus layers: one smooth, featureless mannequin base body per body type (no anatomical detail). Every garment is a separate layer lofted outside it, and each garment hides the body regions it fully covers (masking), so skin never pokes through.
+5. Build the parts in separate files: head, hair (registry of styles), body (elliptical lofts), garments (one file per slot, offset from the skin sections), shoes, held props.
+6. Add sway pivots for secondary motion from the start (hair, ponytail chains, soft body parts, loose clothing), named by prefix.
+7. Render a standard sheet every iteration: front, side, three-quarter, back, face close-up, plus the full pose grid. Look at every image before reporting.
+8. Write tests for proportions (height, head count, ribcage narrower than hips, eye spacing), feet on the ground, no pure-green debug colours, garment clearance, and the triangle budget.
+9. Keep the palette keys in one table and the customiser mapping in sync.
+10. Show the owner a side-by-side against the references, then ask for notes on face, body and outfit separately.
