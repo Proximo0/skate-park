@@ -1,0 +1,334 @@
+{
+ "level": "school",
+ "units": "metres, +Y up, front -Z, origin at the base centre",
+ "collision_note": "boxes are axis-aligned in the piece's space; \"mesh\" = use the mesh as a trimesh",
+ "pieces": [
+  {
+   "name": "lockers",
+   "file": "lockers.glb",
+   "tris": 468,
+   "bounds": {
+    "min": [
+     -0.91,
+     0.0,
+     -0.27
+    ],
+    "max": [
+     0.91,
+     1.98,
+     0.235
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0.0,
+      0.99,
+      -0.018
+     ],
+     "size": [
+      1.82,
+      1.98,
+      0.505
+     ]
+    }
+   ]
+  },
+  {
+   "name": "cafeteria_table",
+   "file": "cafeteria_table.glb",
+   "tris": 240,
+   "bounds": {
+    "min": [
+     -1.21,
+     0.0,
+     -0.77
+    ],
+    "max": [
+     1.21,
+     0.76,
+     0.77
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.38,
+      0
+     ],
+     "size": [
+      2.4,
+      0.76,
+      0.75
+     ]
+    },
+    {
+     "center": [
+      0,
+      0.235,
+      -0.62
+     ],
+     "size": [
+      2.2,
+      0.47,
+      0.3
+     ]
+    },
+    {
+     "center": [
+      0,
+      0.235,
+      0.62
+     ],
+     "size": [
+      2.2,
+      0.47,
+      0.3
+     ]
+    }
+   ]
+  },
+  {
+   "name": "planter_ledge",
+   "file": "planter_ledge.glb",
+   "tris": 276,
+   "bounds": {
+    "min": [
+     -2.0,
+     0.0,
+     -0.605
+    ],
+    "max": [
+     2.0,
+     0.905,
+     0.605
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.25,
+      0
+     ],
+     "size": [
+      4.0,
+      0.5,
+      1.2
+     ]
+    }
+   ]
+  },
+  {
+   "name": "bike_rack",
+   "file": "bike_rack.glb",
+   "tris": 584,
+   "bounds": {
+    "min": [
+     -1.1,
+     0.0,
+     -0.207
+    ],
+    "max": [
+     1.1,
+     0.887,
+     0.207
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.43,
+      0
+     ],
+     "size": [
+      2.0,
+      0.86,
+      0.42
+     ]
+    }
+   ]
+  },
+  {
+   "name": "bleachers",
+   "file": "bleachers.glb",
+   "tris": 420,
+   "bounds": {
+    "min": [
+     -3.0,
+     0.0,
+     -1.97
+    ],
+    "max": [
+     3.0,
+     2.575,
+     1.874
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      1.275,
+      0.0
+     ],
+     "size": [
+      6.0,
+      2.55,
+      3.75
+     ]
+    }
+   ]
+  },
+  {
+   "name": "school_bus",
+   "file": "school_bus.glb",
+   "tris": 4148,
+   "bounds": {
+    "min": [
+     -1.45,
+     0.006,
+     -5.4
+    ],
+    "max": [
+     1.45,
+     3.04,
+     5.4
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      1.55,
+      0.0
+     ],
+     "size": [
+      2.5,
+      3.1,
+      10.5
+     ]
+    }
+   ]
+  },
+  {
+   "name": "flagpole",
+   "file": "flagpole.glb",
+   "tris": 344,
+   "bounds": {
+    "min": [
+     -0.45,
+     0.0,
+     -0.45
+    ],
+    "max": [
+     1.26,
+     8.42,
+     0.45
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      0.15,
+      0
+     ],
+     "size": [
+      0.9,
+      0.3,
+      0.9
+     ]
+    },
+    {
+     "center": [
+      0,
+      4.3,
+      0
+     ],
+     "size": [
+      0.12,
+      8.0,
+      0.12
+     ]
+    }
+   ]
+  },
+  {
+   "name": "gym_facade_door",
+   "file": "gym_facade_door.glb",
+   "tris": 312,
+   "bounds": {
+    "min": [
+     -4.05,
+     0.0,
+     -1.4
+    ],
+    "max": [
+     4.05,
+     6.075,
+     0.25
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      3.0,
+      0
+     ],
+     "size": [
+      8.0,
+      6.0,
+      0.4
+     ]
+    },
+    {
+     "center": [
+      0,
+      0.225,
+      -0.85
+     ],
+     "size": [
+      4.0,
+      0.45,
+      1.1
+     ]
+    }
+   ]
+  },
+  {
+   "name": "gym_facade_window",
+   "file": "gym_facade_window.glb",
+   "tris": 276,
+   "bounds": {
+    "min": [
+     -4.05,
+     0.0,
+     -0.38
+    ],
+    "max": [
+     4.05,
+     6.075,
+     0.25
+    ]
+   },
+   "collision": [
+    {
+     "center": [
+      0,
+      3.0,
+      0
+     ],
+     "size": [
+      8.0,
+      6.0,
+      0.4
+     ]
+    }
+   ]
+  }
+ ]
+}
