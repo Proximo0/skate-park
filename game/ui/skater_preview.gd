@@ -5,18 +5,23 @@ extends SubViewportContainer
 
 const STICK_SPIN: float = 3.2
 const IDLE_BEFORE_AUTO: float = 1.5
-const PLATFORM_COLOR := Color("#FFC9A3")
-const PLATFORM_STRIPE := Color("#FF5C7A")
+const PLATFORM_BASE := Color("#3A3470")
+const PLATFORM_TILE_A := Color("#6E64A8")
+const PLATFORM_TILE_B := Color("#3F8C9C")
+const PLATFORM_RIM := Color("#35E0D0")
 const BACKDROP_SHADER: Shader = preload("res://game/ui/theme/preview_backdrop.gdshader")
 
 ## Camera / motion presets. "face" is a head-and-shoulders bust with a gentle sway, "body" the whole skater on a slow
 ## turntable, "top" the board seen from above on a slow swing, "grip" a close top-down look at the griptape and
 ## "display" the board stood up with the deck graphic, trucks and wheels facing the camera.
 const VIEWS := {
-	"face": {"fov": 30.0, "cam": Vector3(0.0, 1.5, 1.8), "at": Vector3(0.0, 1.38, 0.0), "base": PI, "sway": 0.3, "spin": 0.0},
-	"body": {"fov": 34.0, "cam": Vector3(0.0, 1.5, 4.3), "at": Vector3(0.0, 0.78, 0.0), "base": PI, "sway": 0.0, "spin": 0.5},
+	"face": {"fov": 30.0, "cam": Vector3(0.0, 1.5, 2.05), "at": Vector3(0.0, 1.36, 0.0), "base": PI + 0.5, "sway": 0.3, "spin": 0.0},
+	"body": {"fov": 34.0, "cam": Vector3(0.0, 1.2, 3.5), "at": Vector3(0.0, 0.72, 0.0), "base": PI, "sway": 0.0, "spin": 0.5},
 	"top": {"fov": 30.0, "cam": Vector3(0.0, 0.62, 1.25), "at": Vector3(0.0, 0.08, 0.0), "base": 0.9, "sway": 0.55, "spin": 0.0},
-	"grip": {"fov": 30.0, "cam": Vector3(0.0, 0.95, 0.5), "at": Vector3(0.0, 0.12, 0.0), "base": 0.35, "sway": 0.25, "spin": 0.0},
+	"grip": {"fov": 32.0, "cam": Vector3(0.0, 0.75, 1.0), "at": Vector3(0.0, 0.1, 0.0), "base": 0.6, "sway": 0.25, "spin": 0.0},
+	"trucks": {"fov": 34.0, "cam": Vector3(0.0, 0.1, 0.8), "at": Vector3(0.0, 0.38, 0.0), "base": 0.45, "sway": 0.25, "spin": 0.0},
+	"wheels": {"fov": 30.0, "cam": Vector3(0.0, 0.12, 0.62), "at": Vector3(-0.05, 0.36, 0.0), "base": 0.45, "sway": 0.25, "spin": 0.0},
+	"feet": {"fov": 30.0, "cam": Vector3(0.0, 0.5, 1.35), "at": Vector3(0.0, 0.2, 0.0), "base": PI, "sway": 0.25, "spin": 0.0},
 	"display": {"fov": 34.0, "cam": Vector3(0.0, 0.5, 2.0), "at": Vector3(0.0, 0.42, 0.0), "base": 0.0, "sway": 0.5, "spin": 0.0},
 }
 
@@ -95,32 +100,44 @@ func _build_platform() -> void:
 	_pivot.add_child(_platform)
 	var disc: MeshInstance3D = MeshInstance3D.new()
 	var cyl: CylinderMesh = CylinderMesh.new()
-	cyl.top_radius = 0.85
-	cyl.bottom_radius = 0.9
+	cyl.top_radius = 0.88
+	cyl.bottom_radius = 0.92
 	cyl.height = 0.08
 	disc.mesh = cyl
 	disc.position.y = -0.04
-	disc.material_override = Toon.material(PLATFORM_COLOR, true)
+	disc.material_override = Toon.material(PLATFORM_BASE, false)
 	_platform.add_child(disc)
 	var ring: MeshInstance3D = MeshInstance3D.new()
-	var rm: CylinderMesh = CylinderMesh.new()
-	rm.top_radius = 0.9
-	rm.bottom_radius = 0.9
-	rm.height = 0.03
+	var rm: TorusMesh = TorusMesh.new()
+	rm.inner_radius = 0.86
+	rm.outer_radius = 0.93
+	rm.rings = 48
+	rm.ring_segments = 6
 	ring.mesh = rm
-	ring.position.y = -0.065
-	ring.material_override = Toon.material(PLATFORM_STRIPE, false)
+	ring.scale = Vector3(1.0, 0.4, 1.0)
+	ring.position.y = -0.01
+	var glow: StandardMaterial3D = StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.albedo_color = PLATFORM_RIM
+	glow.emission_enabled = true
+	glow.emission = PLATFORM_RIM
+	glow.emission_energy_multiplier = 1.4
+	ring.material_override = glow
 	_platform.add_child(ring)
-	for i: int in 6:
-		var stripe: MeshInstance3D = MeshInstance3D.new()
-		var box: BoxMesh = BoxMesh.new()
-		box.size = Vector3(0.12, 0.02, 0.22)
-		stripe.mesh = box
-		var a: float = float(i) * TAU / 6.0
-		stripe.position = Vector3(sin(a) * 0.72, 0.001, cos(a) * 0.72)
-		stripe.rotation.y = a
-		stripe.material_override = Toon.material(PLATFORM_STRIPE, false)
-		_platform.add_child(stripe)
+	# Raised tiles with a gap between them so the floor reads as a stage, not one flat disc.
+	var tile: BoxMesh = BoxMesh.new()
+	tile.size = Vector3(0.2, 0.012, 0.2)
+	var n: int = 4
+	for ix: int in range(-n, n + 1):
+		for iz: int in range(-n, n + 1):
+			var pos: Vector3 = Vector3(float(ix) * 0.225, 0.0, float(iz) * 0.225)
+			if Vector2(pos.x, pos.z).length() > 0.76:
+				continue
+			var t: MeshInstance3D = MeshInstance3D.new()
+			t.mesh = tile
+			t.position = pos + Vector3(0.0, 0.004, 0.0)
+			t.material_override = Toon.material(PLATFORM_TILE_A if (ix + iz) % 2 == 0 else PLATFORM_TILE_B, false)
+			_platform.add_child(t)
 
 
 ## view: "face" (bust, gentle sway) or "body" (whole skater, slow turntable).
@@ -157,7 +174,7 @@ func _frame_camera() -> void:
 func _rebuild() -> void:
 	_dirty = false
 	_platform.scale = Vector3(0.42, 1.0, 0.42) if _board_only else Vector3.ONE
-	_platform.visible = _view != "face"
+	_platform.visible = _view != "face" and not _floating_view()
 	for c: Node in _holder.get_children():
 		_holder.remove_child(c)
 		c.queue_free()
@@ -181,10 +198,17 @@ func _rebuild() -> void:
 		sway.bind(root)
 	else:
 		Toon.apply_to(root)
-		if _view == "display":
+		if _floating_view():
+			root.position.y = 0.3
+		elif _view == "display":
 			root.rotation.x = deg_to_rad(-78.0)
 			root.position.y = 0.46
 	_holder.add_child(root)
+
+
+## Trucks and wheels are looked at from below, so the board floats and the stage is hidden.
+func _floating_view() -> bool:
+	return _board_only and (_view == "trucks" or _view == "wheels")
 
 
 func _process(delta: float) -> void:

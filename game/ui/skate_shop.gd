@@ -16,6 +16,7 @@ var _color_pick: Dictionary = {}  ## item id -> colourway index being looked at
 var _selected: int = 0
 var _tab_buttons: Array[Button] = []
 var _rows: VBoxContainer
+var _row_nodes: Array[StepRow] = []
 var _scroll: ScrollContainer
 var _preview: SkaterPreview
 var _coins_label: Label
@@ -191,20 +192,41 @@ func _rebuild_rows(focus_index: int) -> void:
 	for c: Node in _rows.get_children():
 		_rows.remove_child(c)
 		c.queue_free()
+	_row_nodes.clear()
 	for i: int in _items.size():
 		var row: StepRow = StepRow.new()
 		row.stepped.connect(_on_step.bind(i))
 		row.pressed.connect(_on_row_pressed.bind(i))
 		row.focus_entered.connect(_select.bind(i))
+		if i > 0 and str(_items[i]["slot"]) != str(_items[i - 1]["slot"]):
+			_rows.add_child(_divider(str(_items[i]["slot"])))
 		_rows.add_child(row)
+		_row_nodes.append(row)
 		_refresh_row(i)
 	_refresh_coins()
 	if _items.is_empty():
 		_name_label.text = "Nothing here yet"
 		return
 	_selected = clampi(focus_index, 0, _items.size() - 1)
-	_grab_focus.call_deferred(_rows.get_child(_selected) as Control)
+	_grab_focus.call_deferred(_row_nodes[_selected] as Control)
 	_select(_selected)
+
+
+## A thin labelled rule between two slots that share a category (griptape and bearings).
+func _divider(slot: String) -> Control:
+	var box: HBoxContainer = HBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var label: Label = MenuKit.text(slot.capitalize() + "s", UiStyle.SIZE_SMALL, UiStyle.MUTED)
+	box.add_child(label)
+	var line: ColorRect = ColorRect.new()
+	line.color = UiStyle.MUTED
+	line.custom_minimum_size = Vector2(0, 3)
+	line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(line)
+	return box
 
 
 func _grab_focus(c: Control) -> void:
@@ -227,7 +249,7 @@ func _is_equipped(it: Dictionary) -> bool:
 func _refresh_row(i: int) -> void:
 	var it: Dictionary = _items[i]
 	var id: String = str(it["id"])
-	var row: StepRow = _rows.get_child(i) as StepRow
+	var row: StepRow = _row_nodes[i]
 	var sw: Color = _cat.color_of(id, _color_of_pick(id)) if _cat.color_count(id) > 0 else Color(0, 0, 0, 0)
 	row.setup(str(it["name"]), "", sw)
 	row.set_arrows_visible(_cat.color_count(id) > 1)
@@ -296,9 +318,21 @@ func _update_preview() -> void:
 	var look: SkaterLoadout = _lo.duplicate_loadout()
 	look.set_item(slot, id, _color_of_pick(id))
 	if slot in SkaterLoadout.BOARD_SLOTS:
-		_preview.show_board(look, "grip" if slot == "griptape" else ("display" if slot == "deck" else "top"))
+		_preview.show_board(look, _board_view_for(slot))
+	elif slot == "shoes":
+		_preview.show_skater(look, "feet")
 	else:
 		_preview.show_skater(look)
+
+
+func _board_view_for(slot: String) -> String:
+	match slot:
+		"griptape": return "grip"
+		"deck": return "display"
+		"truck": return "trucks"
+		"wheel": return "wheels"
+		"bearing": return "wheels"
+	return "top"
 
 
 func _on_step(dir: int, i: int) -> void:

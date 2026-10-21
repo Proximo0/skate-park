@@ -10,7 +10,7 @@ signal drop_in_requested(spot: String)
 signal quit_requested
 signal resumed
 
-const PAUSE_BACKDROP := Color(0.02, 0.03, 0.09, 0.62)
+const PAUSE_BACKDROP := Color(0.02, 0.03, 0.09, 0.74)
 const PAUSE_BUTTON_MIN := Vector2(460, 84)
 const PAUSE_DROP_IN_MIN := Vector2(460, 68)
 const PAUSE_DROP_IN_FONT := 32
@@ -58,7 +58,7 @@ func _build() -> void:
 	center.add_child(_panel)
 
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 16)
+	col.add_theme_constant_override("separation", 8)
 	_panel.add_child(col)
 
 	var title := AnimeText.new("PAUSED", UiStyle.SIZE_TITLE, UiStyle.SUNSHINE)

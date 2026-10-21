@@ -14,7 +14,7 @@ const TAGLINE: String = "Shred. Grind. Have fun!"
 const STUDIO_END: float = 2.3  ## s, studio card wipes out
 const TITLE_START: float = 2.0
 const TITLE_SLAM: float = 3.3  ## s, letters hit
-const TOTAL: float = 7.2
+const TOTAL: float = 7.6  ## s; the end holds the title card, then a short fade the title screen answers with a fade-in
 const INK: Color = SkateThemeBuilder.NAVY
 const LETTER_COLORS: PackedColorArray = [
 	SkateThemeBuilder.SUN, SkateThemeBuilder.CORAL, SkateThemeBuilder.CREAM, SkateThemeBuilder.TEAL, SkateThemeBuilder.SUN,
@@ -109,8 +109,8 @@ func _play_sequence() -> void:
 	_tween.tween_callback(_sting.bind("studio"))
 	_tween.tween_property(wipe, "position:x", _size.x * 1.3, 0.6).from(-_size.x * 1.3).set_trans(Tween.TRANS_SINE)
 	_tween.parallel().tween_callback(_start_title).set_delay(0.3)
-	_tween.tween_interval(TOTAL - 2.55 - 0.45)
-	_tween.tween_property(_fade, "color:a", 1.0, 0.45)
+	_tween.tween_interval(TOTAL - 2.55 - 0.2)
+	_tween.tween_property(_fade, "color:a", 1.0, 0.2)
 	_tween.tween_callback(skip)
 
 

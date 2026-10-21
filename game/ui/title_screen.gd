@@ -21,9 +21,10 @@ const BOB_PHASE: float = 0.55
 const ORBIT_RADIUS: float = 4.2
 const ORBIT_HEIGHT: float = 1.5
 const ORBIT_SPEED: float = 0.3  # phase rad/s; the camera sways, see ORBIT_SWAY
-const ORBIT_SWAY: float = 0.6  # max camera angle either side of the front, rad (keeps the quarter pipe in frame)
-const LOOK_AT: Vector3 = Vector3(0.0, 1.05, 0.0)
-const GROUND_COLOR: Color = Color("#7BC96F")
+const ORBIT_SWAY: float = 0.4  # max camera angle either side of the front, rad (keeps the quarter pipe in frame)
+const SKATER_YAW: float = -2.2  ## turned three-quarter toward the camera so her face shows
+const LOOK_AT: Vector3 = Vector3(0.0, 1.25, 0.0)
+const GROUND_COLOR: Color = Color("#B4627F")  ## dusky sunset rose, hazed into the horizon by the fog
 const LETTER_TIGHTEN: float = 0.66  ## letter advance as a share of its box, the boxes carry outline padding
 
 @onready var _viewport: SubViewport = $World/Viewport
@@ -73,6 +74,14 @@ func _ready() -> void:
 	_controls.pressed.connect(_on_controls)
 	_quit.pressed.connect(_on_quit)
 	_play.grab_focus()
+	# Cross-fade in from the splash's closing fade (same navy), so there is no hard cut.
+	var veil := ColorRect.new()
+	veil.color = Color(SkateThemeBuilder.NAVY, 1.0)
+	veil.set_anchors_preset(Control.PRESET_FULL_RECT)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(veil)
+	create_tween().tween_property(veil, "color:a", 0.0, 0.45)
+	get_tree().create_timer(0.5).timeout.connect(veil.queue_free)
 
 
 func _process(delta: float) -> void:
@@ -86,14 +95,22 @@ func _process(delta: float) -> void:
 
 ## The 3D backdrop: toon sky, sun, ground, a quarter pipe behind and the placeholder skater on a board.
 func _build_world(vp: SubViewport) -> void:
-	var world_env := WorldEnvironment.new()
-	world_env.environment = Toon.sky_environment()
-	vp.add_child(world_env)
-
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-50.0, 30.0, 0.0)
+	sun.rotation_degrees = Vector3(-24.0, 150.0, 0.0)  # low warm key from the sunset side
+	sun.light_color = Color(1.0, 0.86, 0.72)
 	sun.shadow_enabled = true
 	vp.add_child(sun)
+	var world_env := WorldEnvironment.new()
+	world_env.environment = Toon.park_sky_environment(sun.global_transform.basis.z)
+	world_env.environment.fog_enabled = true
+	world_env.environment.fog_density = 0.012
+	world_env.environment.fog_light_color = Color("#FFB58A")
+	vp.add_child(world_env)
+	var rim := DirectionalLight3D.new()  # cool rim from behind the skater so her outline pops off the warm ground
+	rim.rotation_degrees = Vector3(-18.0, -35.0, 0.0)
+	rim.light_color = Color(0.55, 0.9, 1.0)
+	rim.light_energy = 0.8
+	vp.add_child(rim)
 
 	var ground := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
@@ -142,6 +159,7 @@ func _build_skater(vp: SubViewport) -> void:
 	var sway := SecondaryMotion.new()
 	skater.add_child(sway)
 	sway.bind(skater)
+	skater.rotation.y = SKATER_YAW
 	vp.add_child(skater)
 	_skater_node = skater
 
