@@ -638,8 +638,8 @@ static func _pose_grab(pose: Dictionary, anim: String, t: float) -> void:
 	_curl(pose, curl * k)
 	if anim.contains("melon") or anim.contains("method") or anim.contains("stalefish") or anim.contains("mute"):
 		# Low grabs: the Houdini rig's arms fall short, so the spine bends down and rolls toward the grabbed edge.
-		pose["Spine"] = (pose["Spine"] as Vector3) + Vector3(-25.0, 0.0, 20.0) * k
-		pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(-10.0, 0.0, 10.0) * k
+		pose["Spine"] = (pose["Spine"] as Vector3) + Vector3(-25.0, 0.0, 15.0) * k
+		pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(-10.0, 0.0, 6.0) * k
 	_feet_on_board(pose, front * k, back * k)
 	if front != Vector3.ZERO or back.y < -0.1:
 		pose["feet_on_board"] = 0.0
