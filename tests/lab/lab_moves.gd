@@ -36,7 +36,7 @@ static func table() -> Array:
 		["m_landing", ["landing_speed_retention"]],
 		["m_halfpipe", ["halfpipe_pump_gain_per_cycle"]],
 		["m_loop", ["loop_min_entry_speed"]],
-		["m_grind", ["grind_speed_loss_per_m"]],
+		["m_grind", ["grind_speed_loss_per_m", "grind_entry_speed_retention"]],
 		["m_bank", ["roll_down_speed_bank3m"]],
 		["m_ollie_latency", ["ollie_pop_latency_ms"]],
 		["m_ollie_buffer", ["ollie_land_buffer_ms"]],
@@ -54,6 +54,12 @@ static func table() -> Array:
 		["m_vert", ["vert_air_14ms", "vert_air_18ms"]],
 		["m_wall_carve", ["wall_carve_speed_retention"]],
 		["m_slope", ["slope_accel_15deg"]],
+		["m_bowl_lap", ["dome_lap_speed_retention"]],
+		["m_powerslide", ["powerslide_decel_ms2"]],
+		["m_nollie", ["nollie_height_ratio"]],
+		["m_manual_drift", ["manual_drift_1s", "manual_recover_half_s"]],
+		["m_revert_fakie", ["revert_speed_keep", "fakie_landing_retention"]],
+		["m_big_air", ["big_air_clean_drop_m", "big_air_landing_keep"]],
 	]
 
 
@@ -98,13 +104,13 @@ func _flat_run(v0: float, stick: Vector2, max_s: float, stop_below: float = -1.0
 # --- flat ground --------------------------------------------------------------------------------------
 
 ## Ollie from 4 m/s rolling. hold_ticks of "ollie" held then released. Returns {height, air}.
-func _ollie(hold_ticks: int) -> Dictionary:
+func _ollie(hold_ticks: int, button: String = "ollie") -> Dictionary:
 	await _flat_start(4.0)
 	for i: int in 20:
 		await tick()
 	var y0: float = sk.global_position.y
 	for i: int in hold_ticks:
-		await tick(NONE, [], ["ollie"])
+		await tick(NONE, [button] if (i == 0 and button != "ollie") else [], [button])
 	var peak: float = y0
 	var air_ticks: int = 0
 	var went_air: bool = false
@@ -376,6 +382,7 @@ func m_grind() -> Dictionary:
 	var cx: float = (rails[0] as GrindRail).global_points()[0].x
 	place(Vector3(cx, 0.0, -0.4), Vector3(0, 0, 1), 8.0)
 	await host.get_tree().physics_frame
+	var v_pre: float = sk.velocity.length()
 	await tick(NONE, ["grind"], [])
 	var z0: float = 0.0
 	var v0: float = 0.0
@@ -396,7 +403,8 @@ func m_grind() -> Dictionary:
 			break
 	var dist: float = absf(z1 - z0)
 	var loss: float = (v0 - v1) / dist if dist >= 2.0 else -1.0
-	var res: Dictionary = {"grind_speed_loss_per_m": loss, "x_grind_length_m": dist, "x_grind_bails": bails}
+	var res: Dictionary = {"grind_speed_loss_per_m": loss, "grind_entry_speed_retention": v0 / maxf(v_pre, 0.01) if started else -1.0,
+		"x_grind_length_m": dist, "x_grind_bails": bails}
 	await clear()
 	return res
 
@@ -953,3 +961,237 @@ func m_slope() -> Dictionary:
 	await clear()
 	var g: float = tv("gravity", 18.0)
 	return {"slope_accel_15deg": v_b - v_a, "x_slope_ideal_gsin_ms2": g * sin(ang)}
+
+
+## One full hands-off lap round the dome bowl (r 8, depth 6.8) at a steady ring: start tangent at radius `ring` m from the
+## centre at `v0`, steer with a proportional controller that holds the ring radius, no pumping (no forward stick). The
+## ring's height is the same at both ends, so speed back over speed in is the lap's pure carve loss (rolling friction,
+## side grip, wall press). Returns {ratio, lap_s, mean_radius}.
+func _dome_lap(v0: float, ring: float) -> Dictionary:
+	var node: Node3D = DOME.build(8.0, 0.85, 16, 48, "dome")
+	await sandbox([node])
+	var c := Vector3(9.5, 0.0, 9.5)
+	var rs: float = (64.0 + 6.8 * 6.8) / (2.0 * 6.8)
+	var yc: float = rs - 6.8
+	var y0: float = yc - sqrt(maxf(rs * rs - ring * ring, 0.0))
+	var start := c + Vector3(ring, 0, 0)
+	start.y = y0 + 0.1
+	var d := Vector3(0, 0, -1)
+	place(start, d, v0)
+	await host.get_tree().physics_frame
+	var v_in: float = -1.0
+	var ang_prev: float = 0.0
+	var turned: float = 0.0
+	var r_sum: float = 0.0
+	var r_n: int = 0
+	var ticks: int = 0
+	var v_out: float = -1.0
+	for i: int in 900:
+		var rel: Vector3 = sk.global_position - c
+		var r: float = Vector2(rel.x, rel.z).length()
+		var ang: float = atan2(rel.z, rel.x)
+		if i > 0:
+			turned += absf(wrapf(ang - ang_prev, -PI, PI))
+		ang_prev = ang
+		var spd: float = sk.velocity.length()
+		var radial := Vector3(rel.x, 0.0, rel.z).normalized()
+		var tang := Vector3(-radial.z, 0.0, radial.x) * -1.0  ## counter-clockwise seen from above is -z at +x
+		var want: Vector3 = (tang - radial * clampf((r - ring) * 0.5, -0.8, 0.8)).normalized()
+		var hv := Vector3(sk.velocity.x, 0.0, sk.velocity.z).normalized()
+		var err: float = hv.signed_angle_to(want, Vector3.UP)  ## + = want is to the left
+		var st: float = clampf(-err * 2.5, -1.0, 1.0)  ## stick x: steer = -stick_x * rate, rotation about +Y is left
+		await tick(Vector2(st, 0.0))
+		ticks += 1
+		if ticks == 60:
+			v_in = sk.velocity.length()
+			turned = 0.0
+		if ticks > 60:
+			r_sum += r
+			r_n += 1
+			if turned >= TAU:
+				v_out = sk.velocity.length()
+				break
+		if sname() != "ROLLING" and sname() != "AIR":
+			break
+	var res: Dictionary = {"ratio": v_out / maxf(v_in, 0.01) if v_out > 0.0 else -1.0, "lap_s": float(ticks - 60) * DT,
+		"mean_radius": r_sum / maxf(float(r_n), 1.0), "v_in": v_in, "v_out": v_out, "bails": bails, "state": sname()}
+	await clear()
+	return res
+
+
+const DOME := preload("res://game/park/pieces/dome_bowl.gd")
+
+
+func m_bowl_lap() -> Dictionary:
+	var r: Dictionary = await _dome_lap(11.0, 6.0)
+	return {"dome_lap_speed_retention": r["ratio"], "x_dome_lap_s": r["lap_s"], "x_dome_lap_radius_m": r["mean_radius"],
+		"x_dome_lap_bails": r["bails"]}
+
+
+## Powerslide: PENDING until the skater has a slide trigger. Probes for a state whose name contains SLIDE after holding the
+## trigger; when present, the mean deceleration over the first 0.5 s of a full-stick slide at 10 m/s.
+func m_powerslide() -> Dictionary:
+	await _flat_start(10.0)
+	for i: int in 6:
+		await tick()
+	var v0: float = sk.velocity.length()
+	var slid: bool = false
+	var v1: float = v0
+	for i: int in 30:
+		await tick(Vector2(1.0, 0.0), ["powerslide"] if i == 0 else [], ["powerslide"])
+		if sname().contains("SLIDE"):
+			slid = true
+	v1 = sk.velocity.length()
+	await clear()
+	if not slid:
+		return {"powerslide_decel_ms2": NAN}
+	return {"powerslide_decel_ms2": (v0 - v1) / 0.5}
+
+
+## Nollie against ollie: tap height ratio. PENDING until the nollie button pops (no air from it).
+func m_nollie() -> Dictionary:
+	var tap: Dictionary = await _ollie(1)
+	var nol: Dictionary = await _ollie(1, "nollie")
+	if float(nol["height"]) < 0.2:
+		return {"nollie_height_ratio": NAN, "x_nollie_height_m": nol["height"]}
+	return {"nollie_height_ratio": float(nol["height"]) / maxf(float(tap["height"]), 0.01), "x_nollie_height_m": nol["height"]}
+
+
+## Starts a manual on the flat at 6 m/s; false when it did not start.
+func _enter_manual() -> bool:
+	await _flat_start(6.0)
+	for i: int in 5:
+		await tick()
+	for s: Vector2 in [Vector2(0, -1), Vector2(0, -1), Vector2(0, 1), Vector2(0, 1)]:
+		await tick(s)
+	return sname() == "MANUAL"
+
+
+## Manual balance feel: how far the meter drifts in one second with no input (the faster it runs away, the busier the
+## player), and how fast full counter-stick brings a half-tipped manual back to near centre.
+func m_manual_drift() -> Dictionary:
+	if not await _enter_manual():
+		await clear()
+		return {"manual_drift_1s": -1.0, "manual_recover_half_s": -1.0}
+	sk.balance.angle = 0.1
+	sk.balance.velocity = 0.0
+	var peak_drift: float = 0.0
+	for i: int in 60:
+		sk.speed = 6.0
+		sk.velocity = sk.velocity.normalized() * 6.0
+		await tick()
+		if sname() != "MANUAL":
+			break
+	peak_drift = absf(float(sk.balance.angle)) / 0.1  ## growth factor of a 0.1 lean in 1 s
+	var drift_state: String = sname()
+	await clear()
+	var rec: float = -1.0
+	if await _enter_manual():
+		sk.balance.angle = 0.5
+		sk.balance.velocity = 0.0
+		var t: float = 0.0
+		while t < 3.0 and sname() == "MANUAL":
+			sk.speed = 6.0
+			sk.velocity = sk.velocity.normalized() * 6.0
+			var a: float = float(sk.balance.angle)
+			await tick(Vector2(0.0, clampf(a * 3.0 + float(sk.balance.velocity) * 0.8, -1.0, 1.0)))
+			t += DT
+			if absf(float(sk.balance.angle)) < 0.1:
+				rec = t
+				break
+	await clear()
+	return {"manual_drift_1s": peak_drift, "manual_recover_half_s": rec, "x_manual_drift_state": drift_state}
+
+
+## Revert and fakie. revert_speed_keep: speed 12 ticks after touchdown with a revert on the landing tick over the same
+## run without it. fakie_landing_retention: a 180 spin landed rolling backward (fakie) over the speed just before it.
+func _spin_land_run(spin_ticks: int, revert: bool) -> Dictionary:
+	await _flat_start(8.0)
+	for i: int in 10:
+		await tick()
+	for i: int in 30:
+		await tick(NONE, ["ollie"] if i == 0 else [], ["ollie"])
+	var before: float = 0.0
+	var landed_at: int = -1
+	var after: float = -1.0
+	var result: String = ""
+	var stance_before: bool = sk.switch_stance
+	for i: int in 160:
+		var v: Vector3 = sk.velocity
+		var spinning: bool = sname() == "AIR" and spin_ticks > 0 and i < spin_ticks
+		var jp: Array = []
+		if revert and landed_at < 0 and sname() == "AIR" and sk.global_position.y < 0.15 and sk.velocity.y < 0.0:
+			jp = ["revert"]
+		await tick(Vector2(-1.0, 0.0) if spinning and spin_ticks > 0 else NONE, jp, ["spin_left"] if spinning else [])
+		if landed_at < 0:
+			for e: String in sk.events:
+				if e.begins_with("land:"):
+					landed_at = i
+					result = e.substr(5)
+					before = Vector2(v.x, v.z).length()
+		if landed_at >= 0 and i == landed_at + 12:
+			after = Vector2(sk.velocity.x, sk.velocity.z).length()
+			break
+	var stance_after: bool = sk.switch_stance
+	await clear()
+	return {"before": before, "after": after, "result": result, "stance_changed": stance_after != stance_before}
+
+
+func m_revert_fakie() -> Dictionary:
+	var base: Dictionary = await _spin_land_run(0, false)
+	var rev: Dictionary = await _spin_land_run(0, true)
+	var fk: Dictionary = await _spin_land_run(25, false)
+	var keep: float = float(rev["after"]) / maxf(float(base["after"]), 0.01) if float(rev["after"]) > 0.0 else -1.0
+	return {"revert_speed_keep": keep, "fakie_landing_retention": float(fk["after"]) / maxf(float(fk["before"]), 0.01),
+		"x_revert_stance_flipped": rev["stance_changed"], "x_fakie_result": fk["result"], "x_fakie_stance_flipped": fk["stance_changed"],
+		"x_revert_result": rev["result"]}
+
+
+## Drops the upright skater from `h` metres at 12 m/s onto flat ground. Returns {result, impact (m/s into the ground),
+## keep (horizontal speed 12 ticks after touchdown over just before), bails}.
+func _drop_from(h: float) -> Dictionary:
+	await _flat_start(12.0)
+	sk.global_position.y = h
+	sk.velocity = Vector3(0, 0, -12.0)
+	var impact: float = 0.0
+	var before: float = 12.0
+	var result: String = ""
+	var landed_at: int = -1
+	var after: float = -1.0
+	for i: int in 300:
+		var v: Vector3 = sk.velocity
+		await tick()
+		if landed_at < 0:
+			impact = maxf(impact, -v.y)
+			for e: String in sk.events:
+				if e.begins_with("land:"):
+					landed_at = i
+					result = e.substr(5)
+					before = Vector2(v.x, v.z).length()
+		elif i == landed_at + 12:
+			after = Vector2(sk.velocity.x, sk.velocity.z).length()
+			break
+	var b: int = bails
+	await clear()
+	return {"result": result, "impact": impact, "keep": after / maxf(before, 0.01) if after > 0.0 else -1.0, "bails": b}
+
+
+## Big-air landing: the highest drop (2 m steps, up to 20 m: a mega-ramp gap lands from about 3 to 8 m) that still lands
+## clean, with the impact speed of the last clean one, and the speed kept by an 8 m drop (a mega ramp's fall).
+func m_big_air() -> Dictionary:
+	var best: float = 0.0
+	var impact: float = 0.0
+	var keep8: float = -1.0
+	var first_bail: float = -1.0
+	for h: int in range(2, 22, 2):
+		var r: Dictionary = await _drop_from(float(h))
+		if h == 8:
+			keep8 = r["keep"]
+		if r["result"] == "clean":
+			if first_bail < 0.0:
+				best = float(h)
+				impact = r["impact"]
+		elif first_bail < 0.0:
+			first_bail = float(h)
+	return {"big_air_clean_drop_m": best, "big_air_landing_keep": keep8, "x_big_air_clean_impact_ms": impact,
+		"x_big_air_first_fail_drop_m": first_bail}

@@ -55,6 +55,12 @@ func _ready() -> void:
 			continue
 		var lo: float = float(t["min_ok"])
 		var hi: float = float(t["max_ok"])
+		if bool(t.get("pending", false)) or str(t.get("why", "")).begins_with("PENDING"):
+			if not is_finite(v):
+				metrics[k] = {"value": null, "unit": t["unit"], "target": t["target"], "min_ok": lo, "max_ok": hi, "status": "PENDING"}
+				print("LAB %s - %s target=%s ok=[%s,%s] PENDING (trigger not wired yet)" % [k, t["unit"], _n(t["target"]), _n(lo), _n(hi)])
+				md.append("| %s | - | %s | %s | %s to %s | PENDING |" % [k, t["unit"], _n(t["target"]), _n(lo), _n(hi)])
+				continue
 		var ok: bool = is_finite(v) and v >= lo and v <= hi
 		var status: String = "PASS" if ok else "WARN"
 		if ok:

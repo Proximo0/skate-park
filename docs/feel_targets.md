@@ -141,7 +141,44 @@ no new snapshot state (`_last_press` is already in the snapshot). In `_tick_roll
 
 - **No powerslide.** Stick back is a straight brake. A Skate-3 powerslide would mean a sideways slide state with a decel of about
   mu·g, roughly 5 to 7 m/s² here. It would be a new `skater.gd` feature, so it is out of scope for tuning.
-- `wall_carve_speed_retention` (0.926) sits near its low edge. If bowls feel draggy, lower `roll_friction` to about 0.45. Coast distance
-  then grows to about 70 m, still inside its band.
+- `wall_carve_speed_retention` (0.926) sits near its low edge; `roll_friction` 0.45 would fix it but needs the bot lines re-routed (see Round 3).
 - `turn_radius_8ms` (3.3 m) is tighter than its 4.5 m target but inside the band. It is THUG-sharp. To widen it, lower `carve_grip`
   toward 15, but that also widens the 12 m/s turn to about 9.6 m.
+
+## Round 3: carve retention and lab coverage
+
+**Tuning (not shipped).** `roll_friction` 0.6 stays the default. Lowering it to 0.45 (mu about 0.025 at gravity 18; real wheels are 0.02)
+fixes the drag in the lab: wall carve retention 0.926 to 0.956 (reference about 0.96 per carve), a full hands-off lap round the practice
+DomeBowl (new `dome_lap_speed_retention`, r 8 m dome, 6.3 m ring, 4.4 s) 0.81 to 0.89, coast from 8 m/s 53 to 71 m (band 35 to 90),
+halfpipe pump gain 1.88 to 1.90 (the pump is untouched). The lap loss scales linearly with `roll_friction` (0.35 gives 0.92, 0.25 gives
+0.97). But the scripted bot lines are tuned to the 0.6 speeds and every change broke some of them, without a pattern: at 0.45 practice
+96 (dome line: wall slam, one snag on the ollies line), beach 92 (bowl line wp_timeout), school 97 (Lunch Roof); at 0.5 practice 96, beach 77
+(pier_rail wp_timeout), school 97; at 0.55 practice 42 (dome bail), beach 100, school 87 (Fountain Hop). Warehouse, downtown and hills stay
+100 at 0.45. So the lap metric deliberately WARNs (0.81 against a 0.85 floor) until the bot lines are re-routed for the faster bowls;
+then set the default to 0.45 and the WARN clears. The beach bowl is a rounded rectangle, so its carve is covered by the wall carve metric
+(same transition profile) rather than a lap.
+
+**New lab moves** (all in `tests/lab/lab_moves.gd`, targets above in `data/physics_targets.json`):
+
+| metric | now | reference rationale |
+|---|---:|---|
+| `dome_lap_speed_retention` | 0.81 (0.89 at friction 0.45) | Real rolling loss 0.2 m/s per second; Skate 3 lets a bowl lap run many seconds before a pump is needed |
+| `grind_entry_speed_retention` | 1.00 | THUG grinds lock on with no loss; Skate 3 loses a few percent |
+| `manual_drift_1s` | 3.5x | THUG manual lean doubles about every half second (unstable pendulum) |
+| `manual_recover_half_s` | 0.60 s | A PD stick catches a half-tipped manual in about half a second: catchable, not a twitch |
+| `revert_speed_keep` | 1.00 | A revert is a stance switch only, in both reference games; it must never brake the combo |
+| `fakie_landing_retention` | 0.94 | A 180 spin landed backward costs the same as a forward landing plus a little roll |
+| `big_air_landing_keep` | 0.94 | 8 m drop (mega ramp scale, 19 m/s impact): scrub is clamped at about 5 percent |
+| `big_air_clean_drop_m` | 20 (cap) | See below |
+| `nollie_height_ratio` | PENDING | Real nollie about 0.9 of an ollie; THUG matches it |
+| `powerslide_decel_ms2` | PENDING | Skate 3 slide sheds about half of 8 m/s in 0.7 s (about 6 m/s^2) |
+
+**Pending moves.** A target whose `why` begins with `PENDING` and whose move returns NaN prints `PENDING` and counts as neither pass nor warn.
+`m_nollie` presses the `nollie` button after a tap-height check and goes live as soon as it pops (height at least 0.2 m). `m_powerslide`
+holds `powerslide` with a full stick at 10 m/s and goes live as soon as any state name contains `SLIDE` (the skater currently has none; the
+poser already has a `powerslide` pose). If the trigger gets another name, change the string in `m_powerslide`.
+
+**Gap found: no impact bail.** `Landing.judge` and `_land` decide a bail from board pose and heading only. An upright board lands clean
+from 20 m (impact 26.6 m/s), keeping about 94 percent of its speed. That suits a THUG-leaning game and means a mega ramp can never slam
+a clean board, but there is no height slam as in Skate 3. If one is wanted, add it in `_land` (for example a bail when `into` passes
+about 24 m/s on flat) and tighten `big_air_clean_drop_m` max_ok to match; the lab move already searches up to 20 m.
