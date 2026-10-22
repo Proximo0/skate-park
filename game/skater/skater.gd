@@ -78,6 +78,8 @@ const ROLL_IN_MAX_SPEED: float = 4.5
 ## (holding the board to the wall there snagged it).
 const ROLL_IN_HEADING_DOT: float = 0.25
 const ROLL_IN_REACH: float = 0.8
+const ROLL_IN_END_SLACK: float = 0.1  ## m past the end of a coping segment still counted as rolling over it
+const ROLL_IN_NORMAL_DOT: float = 0.85  ## the bending floor's horizontal part must point this much along the lip's inward
 ## Landing speed loss: a clean landing keeps LAND_KEEP_MAX of the along-surface speed; past LAND_KEEP_FREE m/s of
 ## impact into the surface (a drop of about 0.5 m) a harder landing scrubs LAND_KEEP_PER_MS more per m/s, down to
 ## LAND_KEEP_MIN. Clean vert re-entries keep everything.
@@ -96,8 +98,24 @@ const ROLL_OFF_TURN: float = 8.0
 const LEDGE_SNAP_MAX: float = 0.1
 const BOARD_TURN_MIN_DEG: float = 4.0  ## see the board_up follow in _ground_move
 const BOARD_TURN_PER_MS: float = 0.5
+const CURV_LEN: float = 0.6  ## m of travel the floor curvature estimate averages over
+const GRIP_LIMIT_NY: float = 0.5  ## faces steeper than this (normal y) limit sideways grip to friction on the press
+const WALL_GRIP_MU: float = 2.8  ## grip per unit press (generous: the full side_grip at a 0.5 g press)
+const PEEL_NY: float = 0.3  ## faces steeper than this can be peeled off with no press holding the board on
+const PEEL_CONCAVE: float = 0.02  ## 1/m: a recent path at least this concave never peels off (a stall on vert)
+const ROLL_IN_HOLD_TICKS: int = 20
+const WALL_ROLL_CURV: float = 0.3  ## 1/m assumed when set onto a ramp wall by a snap (a 3 m transition)
+const PEEL_PRESS: float = 0.02  ## press below this share of gravity on such a face: the board comes away
+const GROUND_FLOOR_MAX_DEG: float = 80.0  ## floor_max_angle while riding (relative to the current floor's normal)
 const BODY_RADIUS: float = 0.3  ## the collision sphere (its centre sits this far above the origin)
 ## Time (s) the visual takes to catch up after a rail or lip snap (the body snaps at once; see _update_visual).
+const POP_SLACK: float = 0.15  ## m a ground tick may move the body past speed * dt (snap round a bend, a curb step)
+const DEPEN_REACH: float = 0.8  ## m: how close a face seen from behind must be to count as being inside a solid
+const DEPEN_CONFIRM: float = 3.0  ## m: the opposite side of a solid the body seems buried in must lie this close
+const DEPEN_MAX_STEP: float = 0.25  ## m a tick the push out of a solid may move the body
+const SNAP_YAW_MAX_DEG: float = 5.5  ## the snap's turn never runs faster than this per tick (60 Hz)
+const SNAP_YAW_PEAK: float = 1.25  ## the turn profile's peak rate over its average (eased ends)
+const SNAP_ARC_STRETCH_MAX: float = 0.75  ## s: longest a snap hop may be stretched for its turn
 const SNAP_EASE_TIME: float = 0.1
 
 ## Live physics tuning. Every ride number is read from here each tick.
@@ -184,6 +202,9 @@ var _recent_revert_press: int = 100  ## ticks since revert was pressed (buffered
 var _snap: Dictionary = {}
 var _snap_hold_up: Vector3 = Vector3.ZERO  ## dropping in after a snap: the wall normal the board holds until it lands
 var _roll_off: bool = false  ## airborne by rolling off an edge (no ollie): the nose follows the fall a little
+var _roll_in_dir: Vector3 = Vector3.ZERO  ## inward (down the ramp) of the coping last rolled in over
+var _roll_in_hold: int = 0  ## ground ticks left in which a roll-in's coping bend does not count as convex
+var _curv: float = 0.0  ## signed floor curvature along the path, 1/m (see _update_curvature)
 var _lone_spin: float = 0.0  ## rad the shoulder buttons spun since both were last up (undone if they make a chord)
 
 
@@ -193,7 +214,7 @@ func _ready() -> void:
 	_seed = Flags.seed_value()
 	collision_layer = 2
 	collision_mask = 1
-	floor_max_angle = deg_to_rad(80.0)
+	floor_max_angle = deg_to_rad(GROUND_FLOOR_MAX_DEG)
 	floor_snap_length = 0.6
 	floor_constant_speed = false
 	floor_stop_on_slope = false
@@ -280,6 +301,8 @@ func _step(delta: float) -> void:
 	if global_position.y < tune.kill_y:
 		respawn()
 		return
+	if _snap.is_empty() and not is_on_floor() and state.state in [SkateState.State.AIR, SkateState.State.ROLLING, SkateState.State.MANUAL]:
+		_depenetrate()
 	var snap_fired: bool = chord.feed(_just_pressed, _held)
 	if chord.suppressing():
 		# the buttons of a fired chord do not also spin
@@ -364,6 +387,12 @@ func _tick_rolling(delta: float, requests: Array) -> void:
 		if r["button"] != "grind":
 			_pending_air.append({"req": r, "t": _t})
 	_pending_air = _pending_air.filter(func(p: Dictionary) -> bool: return _t - float(p["t"]) < 0.2)
+	# Ollie tapped just before touchdown and already released: pop now (a THUG-style jump buffer).
+	if _crouch_time == 0.0 and not _held.has("ollie") and state.time_in_state < 0.05 \
+			and tricks.pressed_within("ollie", TrickInput.OLLIE_LAND_BUFFER_TICKS):
+		tricks.consume("ollie")
+		_ollie(tune.ollie_min)
+		return
 	_handle_ollie(delta)
 
 
@@ -390,6 +419,60 @@ func _ollie(power: float) -> void:
 		_ev("ollie")
 		_set_anim("ollie")
 		_enter_air(false)
+
+
+## Buried in solid geometry (spawned or put back inside a closed mesh, whose faces only collide from outside, so the
+## body would fall through it at terminal speed): find the shortest way out, a nearby face seen from behind along one of
+## the six axes, and push out along it by at most DEPEN_MAX_STEP a tick, stopping the motion into the solid. Ordinary
+## physics takes over once out.
+func _depenetrate() -> void:
+	if not is_inside_tree():
+		return
+	var c: Vector3 = global_position + Vector3.UP * BODY_RADIUS
+	var best_d: float = INF
+	var best_dir: Vector3 = Vector3.ZERO
+	for axis: Vector3 in [Vector3.UP, Vector3.RIGHT, Vector3.BACK]:
+		# Inside a solid along this axis only with its faces on both sides seen from behind (one side alone is just a
+		# face nearby, or a mesh with a stray or flipped face).
+		var a: float = _behind_face(c, axis, DEPEN_REACH)
+		var b: float = _behind_face(c, -axis, DEPEN_REACH)
+		if a < 0.0 and b < 0.0:
+			continue
+		if a < 0.0:
+			a = _behind_face(c, axis, DEPEN_CONFIRM)
+		elif b < 0.0:
+			b = _behind_face(c, -axis, DEPEN_CONFIRM)
+		if a < 0.0 or b < 0.0:
+			continue
+		if a < best_d:
+			best_d = a
+			best_dir = axis
+		if b < best_d:
+			best_d = b
+			best_dir = -axis
+	if best_dir == Vector3.ZERO:
+		return
+	global_position += best_dir * minf(best_d + BODY_RADIUS + 0.01, DEPEN_MAX_STEP)
+	velocity -= best_dir * minf(velocity.dot(best_dir), 0.0)
+	_ev("depenetrate")
+
+
+## Distance from `c` along `dir` to a face that `c` lies behind (the face's outside looks along `dir`, away from `c`, with
+## no other face between), within `reach`; -1 when there is none. Found by casting back toward `c` from `reach` out:
+## faces only collide from their outside, so a ray from inside a mesh sees nothing.
+func _behind_face(c: Vector3, dir: Vector3, reach: float) -> float:
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(c + dir * reach, c, collision_mask, [get_rid()])
+	q.hit_back_faces = false
+	var hit: Dictionary = space.intersect_ray(q)
+	if hit.is_empty() or (hit["normal"] as Vector3).dot(dir) < 0.5:
+		return -1.0
+	var d: float = c.distance_to(hit["position"] as Vector3)
+	var out := PhysicsRayQueryParameters3D.create(c, c + dir * d, collision_mask, [get_rid()])
+	out.hit_back_faces = false
+	if not space.intersect_ray(out).is_empty():
+		return -1.0  # a near face first: `c` is outside a thin wall and that face is its far side
+	return d
 
 
 func _ev(name: String) -> void:
@@ -482,7 +565,10 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		along = move_toward(along, 0.0, tune.brake * delta)
 	along = move_toward(along, 0.0, tune.roll_friction * delta)
 	var side: Vector3 = v - facing * v.dot(facing)
-	side = side.move_toward(Vector3.ZERO, tune.side_grip * delta)  # wheels resist sliding sideways
+	# Wheels resist sliding sideways, but only as hard as they are pressed on: on a steep wall the press is the
+	# centripetal pull of the curve (v^2 * curvature) plus gravity's share into the face, so a slow carve high on a bowl
+	# wall slides down it instead of hanging there, while a fast one holds its line.
+	side = side.move_toward(Vector3.ZERO, _side_grip(n, v.length()) * delta)
 	v = facing * along + side
 	if v.length() > tune.max_speed:
 		v = v.normalized() * tune.max_speed
@@ -508,6 +594,7 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	move_and_slide()
 	floor_snap_length = 0.6
 	_left_edge = false
+	_limit_step(pre_pos, maxf(in_spd, v.length()) * delta)
 	if is_on_floor():
 		var fn: Vector3 = get_floor_normal()
 		var was: Vector3 = _floor_normal
@@ -525,7 +612,8 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		# Only from a surface the body was standing on: a body set down hovering (a respawn, a bot reset) just settles.
 		var off_ledge: bool = sank > LEDGE_SNAP_MAX and v.length() > 0.5 and fn.dot(was) > 0.9 \
 			and test_move(Transform3D(global_transform.basis, pre_pos), -was * LEDGE_SNAP_MAX)
-		if (off_ledge or _leaves_surface(was, fn, v, delta)) and not _rolls_in(was, fn, v):
+		if (off_ledge or _leaves_surface(was, fn, v, delta)) and not (_roll_in_holds(fn) and not off_ledge) \
+				and not _rolls_in(was, fn, v):
 			# Over a lip (kicker top, ledge edge, funbox crest at speed): the surface falls away faster than
 			# gravity can hold the board to it, so carry on along the old surface into the air, from where the old
 			# surface would have put the body (not wrapped down round the edge by the snap: no pop at the lip).
@@ -556,6 +644,16 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			if keep_dir.length() >= 0.1 * spd:
 				velocity = keep_dir.normalized() * spd
 			# else: wedged into an inside corner with no way along either wall: the speed is lost to it.
+		_update_curvature(was, fn, v, global_position.distance_to(pre_pos))
+		if _ground_below(fn):
+			return
+		if _peels_off(fn):
+			# Riding a steep face nothing presses the wheels onto (a raised ramp's flat side, a wall reached over a
+			# convex edge, too slow for the curve to hold it): the board comes away and the rider falls beside it.
+			_left_edge = true
+			_ev("wall_peel")
+			_launch_normal = fn
+			return
 		_since_bend = 0.0 if fn.dot(was) < 0.99985 else _since_bend + delta
 		_floor_normal = fn
 		_transition_ticks = _transition_ticks + 1 if fn.y < 0.9 else 0
@@ -575,6 +673,87 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	else:
 		# leaving a surface: was it the top of a vert ramp?
 		_launch_normal = _floor_normal
+
+
+## Still committed to a roll-in on the floor `fn`: within ROLL_IN_HOLD_TICKS of rolling over a coping, with the floor
+## still tipping toward the ramp (a normal swinging round sideways is the ramp's side edge, not its wall).
+func _roll_in_holds(fn: Vector3) -> bool:
+	if _roll_in_hold <= 0:
+		return false
+	var fn_h: Vector2 = Vector2(fn.x, fn.z)
+	return fn_h.length() < 0.05 or fn_h.normalized().dot(Vector2(_roll_in_dir.x, _roll_in_dir.z).normalized()) >= ROLL_IN_NORMAL_DOT
+
+
+## No position pops: the slide's floor snap and overlap recovery may not carry the body further in one tick than its
+## speed allows plus POP_SLACK (a curb step, the snap round a bend). A bigger jump (the snap dragging the body down a
+## wall face it scraped, or out through a corner) is cut back along the way it went, where the body fits.
+func _limit_step(pre_pos: Vector3, allowed: float) -> void:
+	var moved: Vector3 = global_position - pre_pos
+	var lim: float = allowed + POP_SLACK
+	if moved.length() <= lim:
+		return
+	var to: Vector3 = pre_pos + moved.normalized() * lim
+	if test_move(Transform3D(global_transform.basis, pre_pos), to - pre_pos):
+		return  # the shorter step would end inside something: keep the slide's own result
+	global_position = to
+	_ev("pop_limited")
+
+
+## Normal press per unit mass on the floor `n` at speed `spd` (m/s^2): the centripetal pull the path's recent
+## curvature needs (_curv: concave positive) plus gravity's part into the face. g on the flat.
+func _wall_press(n: Vector3, spd: float) -> float:
+	return spd * spd * _curv + tune.gravity * n.y
+
+
+## Sideways grip on floor `n`: the full side_grip on anything flatter than GRIP_LIMIT_NY; on a steeper face no more
+## than WALL_GRIP_MU times the press (friction), so a slow carve on a near-vertical bowl wall slides down it.
+func _side_grip(n: Vector3, spd: float) -> float:
+	if n.y >= GRIP_LIMIT_NY:
+		return tune.side_grip
+	return clampf(WALL_GRIP_MU * _wall_press(n, spd), 0.0, tune.side_grip)
+
+
+## Exponential average over the last CURV_LEN metres of how fast the floor normal turns per metre of travel,
+## signed: positive when concave (into a transition, round a bowl wall), negative when convex (over a coping or edge).
+func _update_curvature(was: Vector3, fn: Vector3, v: Vector3, moved: float) -> void:
+	var spd: float = v.length()
+	if spd < 0.05:
+		return
+	var bend: float = -(fn - was).dot(v / spd)
+	if _roll_in_holds(fn):
+		_roll_in_hold -= 1
+		bend = maxf(bend, 0.0)
+	else:
+		_roll_in_hold = 0  # rolling in over a coping: its convex curve is the way onto the wall, not off it
+	var a: float = clampf(moved / CURV_LEN, 0.0, 1.0)
+	_curv = _curv * (1.0 - a) + bend / CURV_LEN
+
+
+## On a steep face with a real floor under the wheels this tick (the ground at the foot of a vertical face that was
+## being slid down): stand on that floor instead. True when it took over.
+func _ground_below(fn: Vector3) -> bool:
+	if fn.y >= PEEL_NY:
+		return false
+	for i: int in get_slide_collision_count():
+		var c: KinematicCollision3D = get_slide_collision(i)
+		var cn: Vector3 = c.get_normal()
+		if cn.y >= LAND_EDGE_MIN_NY and _is_face_contact(c.get_position(), cn):
+			_floor_normal = cn
+			up_direction = cn
+			velocity = velocity - cn * minf(velocity.dot(cn), 0.0)
+			_curv = 0.0
+			_ev("ground_below")
+			return true
+	return false
+
+
+## True when the face `fn` is too steep to ride with no press holding the wheels on (see _wall_press): only a face
+## steeper than PEEL_NY, not climbing it (a climb is judged by the vert launch), with the recent path not concave
+## enough to hold the board on (a flat vertical side, or one reached over a convex edge).
+func _peels_off(fn: Vector3) -> bool:
+	if fn.y >= PEEL_NY or fn.y < -0.2 or velocity.y > 0.3 or _curv > PEEL_CONCAVE:
+		return false  # a concave curve behind (a transition's vert top, a bowl wall) keeps the board on it
+	return _wall_press(fn, velocity.length()) < PEEL_PRESS * tune.gravity
 
 
 ## The floor normal from this tick's contacts that lie on a real face, averaged, or ZERO when every floor contact
@@ -764,9 +943,24 @@ func _rolls_in(was: Vector3, fn: Vector3, v: Vector3) -> bool:
 		var inward: Vector3 = seg["inward"]
 		if absf(off.y) > 0.6 or Vector2(off.x, off.z).length() > ROLL_IN_REACH:
 			continue
+		# Alongside the coping, not past its end: off the end of a lip the edge being rolled over is the ramp's side
+		# (a bank's or a quarter's raised side face), which is a drop-off, never a roll-in.
+		var along_seg: Vector3 = (seg["b"] as Vector3) - (seg["a"] as Vector3)
+		along_seg.y = 0.0
+		if along_seg.length() > 0.01 and absf(off.dot(along_seg.normalized())) > ROLL_IN_END_SLACK:
+			continue
+		# The floor tips toward the ramp (down the wall below the coping), not sideways off a side edge.
+		var fn_h: Vector2 = Vector2(fn.x, fn.z)
+		if fn_h.length() > 0.05 and fn_h.normalized().dot(Vector2(inward.x, inward.z).normalized()) < ROLL_IN_NORMAL_DOT:
+			continue
 		var into: float = hv.dot(inward)
 		if into > 0.0 and into < ROLL_IN_MAX_SPEED and into >= hv.length() * ROLL_IN_HEADING_DOT:
 			_ev("roll_in")
+			# Committed to the drop-in: the wheels stay on the wall below the coping (its transition is ahead), the
+			# coping's own convex curve does not count against the grip.
+			_curv = maxf(_curv, WALL_ROLL_CURV)
+			_roll_in_hold = ROLL_IN_HOLD_TICKS
+			_roll_in_dir = inward
 			if camera_hold <= 0.0:
 				camera_anchor = RampSnap.camera_perch(lip, inward)
 				camera_hold = RampSnap.CAMERA_HOLD
@@ -903,7 +1097,13 @@ func _tick_air(delta: float, requests: Array) -> void:
 	up_direction = Vector3.UP
 	floor_snap_length = 0.0
 	var impact: Vector3 = velocity
+	# A face steeper than any landing surface is a wall in the air, never a floor: a floor contact makes the slide
+	# drop the whole vertical speed (falling past a bowl's vertical top or a box's side read as standing on it, the
+	# fall zeroed in one tick). Back into a vert ramp every face up to the ground move's limit can be landed on.
+	if not vert_air:
+		floor_max_angle = acos(LAND_STEEP_NY)
 	move_and_slide()
+	floor_max_angle = deg_to_rad(GROUND_FLOOR_MAX_DEG)
 	floor_snap_length = 0.6
 	if is_on_wall() and not is_on_floor():
 		var wn: Vector3 = get_wall_normal()
@@ -986,6 +1186,8 @@ func _air_trick(r: Dictionary) -> void:
 ## impact: the velocity just before touching down (move_and_slide has already removed the part into the floor).
 func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	_floor_normal = n
+	_curv = 0.0
+	_roll_in_hold = 0
 	_roll_off = false
 	_snap_hold_up = Vector3.ZERO
 	_lone_spin = 0.0
@@ -1281,6 +1483,58 @@ func _try_ramp_snap() -> bool:
 	return true
 
 
+## The snap's turn from the take-off facing to the arrival facing, by yaw: face the way the arc travels through its
+## first half, then turn to the arrival facing. A half turn (rolling straight at a ramp, arriving facing down it) spins
+## the same way round through the way the arc travels, so it reads as a frontside 180, not a flip or a whip at the end.
+## The turn runs on an eased constant-rate profile never faster than SNAP_YAW_MAX_DEG a tick: a long turn stretches a
+## drop-in's turn into its hang on the coping (the tail pivots on it), or the hop itself for the other snaps.
+func _plan_snap_yaw() -> void:
+	var f0: Vector3 = _snap["face0"]
+	var f1: Vector3 = _snap["face1"]
+	var fm: Vector3 = (_snap["p1"] as Vector3) - (_snap["p0"] as Vector3)
+	fm.y = 0.0
+	fm = fm.normalized() if fm.length() > 0.5 else f1
+	var y0: float = atan2(-f0.x, -f0.z)
+	var ym: float = atan2(-fm.x, -fm.z)
+	var y1: float = atan2(-f1.x, -f1.z)
+	var turn: float = angle_difference(y0, y1)
+	if absf(angle_difference(y0, ym)) < absf(angle_difference(ym, y1)) and absf(turn) > PI * 0.5:
+		turn = angle_difference(y0, ym) + angle_difference(ym, y1)
+	var dur: float = _snap["dur"]
+	var need: float = absf(turn) * SNAP_YAW_PEAK / (deg_to_rad(SNAP_YAW_MAX_DEG) * 60.0)
+	var yaw_dur: float = maxf(dur, need)
+	if str(_snap["mode"]) == "drop_in" and not bool(_snap.get("glide", false)):
+		yaw_dur = minf(yaw_dur, dur + RampSnap.HANG_TIME + RampSnap.STOMP_TIME * 0.5)
+	elif yaw_dur > dur:
+		_snap["dur"] = minf(yaw_dur, SNAP_ARC_STRETCH_MAX)  # a slower hop, so the board turns round smoothly
+		yaw_dur = _snap["dur"]
+	_snap["yaw0"] = y0
+	_snap["yaw_turn"] = turn
+	_snap["yaw_dur"] = yaw_dur
+	_snap["yt"] = 0.0
+
+
+func _turn_snap_yaw(delta: float) -> void:
+	if not _snap.has("yaw_dur"):
+		return
+	var yt: float = float(_snap["yt"]) + delta
+	_snap["yt"] = yt
+	var x: float = clampf(yt / maxf(float(_snap["yaw_dur"]), 0.001), 0.0, 1.0)
+	var yaw: float = float(_snap["yaw0"]) + float(_snap["yaw_turn"]) * _ramp_profile(x)
+	facing = Vector3(-sin(yaw), 0.0, -cos(yaw))
+
+
+## 0..1 progress with an eased start and end and a constant rate between: peak rate SNAP_YAW_PEAK times the average.
+static func _ramp_profile(x: float) -> float:
+	var a: float = 1.0 - 1.0 / SNAP_YAW_PEAK
+	var vmax: float = SNAP_YAW_PEAK
+	if x < a:
+		return vmax * x * x / (2.0 * a)
+	if x > 1.0 - a:
+		return 1.0 - vmax * (1.0 - x) * (1.0 - x) / (2.0 * a)
+	return vmax * (x - a * 0.5)
+
+
 static func _smooth01(x: float) -> float:
 	var p: float = clampf(x, 0.0, 1.0)
 	return p * p * (3.0 - 2.0 * p)
@@ -1495,6 +1749,7 @@ func _begin_snap(plan: Dictionary) -> void:
 		_snap["glide"] = true
 	_snap["face0"] = facing
 	_snap["speed0"] = velocity.length()
+	_plan_snap_yaw()
 	spin.start(_yaw())
 	_ev("ramp_snap:" + str(plan["mode"]))
 	_set_anim("idle_ride" if bool(_snap.get("glide", false)) else "ollie")
@@ -1509,6 +1764,7 @@ func _tick_snap(delta: float) -> void:
 	match str(_snap["phase"]):
 		"hang":
 			velocity = Vector3.ZERO
+			_turn_snap_yaw(delta)
 			board_up = _turn_toward(board_up, Vector3.UP, clampf(delta * 12.0, 0.0, 1.0))
 			if t >= RampSnap.HANG_TIME and camera_hold <= 0.0:
 				# The stomp: the camera (which swung round behind during the hop and the hang) starts rising to a perch
@@ -1531,24 +1787,7 @@ func _tick_snap(delta: float) -> void:
 	# camera FOV and speed lines read it), never the 20+ m/s the path itself covers in a few ticks.
 	velocity = ((p - global_position) / maxf(delta, 0.0001)).limit_length(maxf(float(_snap["speed0"]), 4.0))
 	global_position = p
-	var k: float = u * u * (3.0 - 2.0 * u)
-	# Face the way the arc travels through its first half, then turn to the arrival facing, by yaw: a half turn (rolling
-	# straight at a ramp, arriving facing down it) is a smooth spin, not a flip, and the camera trails the flight.
-	var f0: Vector3 = _snap["face0"]
-	var f1: Vector3 = _snap["face1"]
-	var fm: Vector3 = (_snap["p1"] as Vector3) - (_snap["p0"] as Vector3)
-	fm.y = 0.0
-	fm = fm.normalized() if fm.length() > 0.5 else f1
-	var y0: float = atan2(-f0.x, -f0.z)
-	var ym: float = atan2(-fm.x, -fm.z)
-	var y1: float = atan2(-f1.x, -f1.z)
-	var yaw: float = lerp_angle(y0, y1, k)
-	if absf(angle_difference(y0, ym)) < absf(angle_difference(ym, y1)) and absf(angle_difference(y0, y1)) > PI * 0.5:
-		# A big turn (rolling straight at a ramp, arriving facing down it): spin through the way the arc travels, the
-		# same way round the whole hop, spread over all of it so it reads as a frontside 180, not a whip at the end.
-		var d0: float = angle_difference(y0, ym)
-		yaw = y0 + (d0 + angle_difference(ym, y1)) * k
-	facing = Vector3(-sin(yaw), 0.0, -cos(yaw))
+	_turn_snap_yaw(delta)
 	var up_goal: Vector3 = Vector3.UP
 	if str(_snap["mode"]) == "air_in":
 		# straight onto the wall: the board turns square to it through the second half, so the wheels meet it flat
@@ -1563,7 +1802,8 @@ func _tick_snap(delta: float) -> void:
 func _arrive_snap() -> void:
 	var mode: String = _snap["mode"]
 	global_position = _snap["p1"]
-	facing = _snap["face1"]
+	if mode != "drop_in" or float(_snap.get("yt", 0.0)) >= float(_snap.get("yaw_dur", 0.0)):
+		facing = _snap["face1"]  # (a drop-in finishes its turn on the coping, during the hang)
 	match mode:
 		"drop_in":
 			_snap["phase"] = "hang"
@@ -1631,6 +1871,7 @@ func _start_wall_roll(n: Vector3, v0: float) -> void:
 	_launch_normal = n
 	_transition_ticks = VERT_MIN_TRANSITION_TICKS
 	_since_bend = 1.0
+	_curv = WALL_ROLL_CURV  # set on a ramp's wall: a transition's concave curve lies ahead
 	vert_air = false
 	_snap_hold_up = Vector3.ZERO
 	_snap = {}
@@ -1704,7 +1945,7 @@ func _tick_walk(delta: float) -> void:
 
 ## Floor rules for a walker: it can't climb steep ramps (they act as walls it slides down) and stands still on slopes.
 func _set_walk_physics(walking: bool) -> void:
-	floor_max_angle = deg_to_rad(Walker.FLOOR_MAX_ANGLE if walking else 80.0)
+	floor_max_angle = deg_to_rad(Walker.FLOOR_MAX_ANGLE if walking else GROUND_FLOOR_MAX_DEG)
 	floor_stop_on_slope = walking
 
 
@@ -1805,6 +2046,7 @@ func respawn() -> void:
 	facing = -_spawn.basis.z
 	board_up = Vector3.UP
 	_floor_normal = Vector3.UP
+	_curv = 0.0
 	if state.state != SkateState.State.ROLLING:
 		state = SkateState.new()
 		state.combo_landed.connect(_on_combo_landed)
@@ -1861,6 +2103,9 @@ func snapshot() -> Dictionary:
 		"transition_ticks": _transition_ticks,
 		"touch_wall_n": _touch_wall_n,
 		"since_bend": _since_bend,
+		"curv": _curv,
+		"roll_in_hold": _roll_in_hold,
+		"roll_in_dir": _roll_in_dir,
 		"topple_side": _topple_side,
 		"roll_off": _roll_off,
 		"carve_side": _carve_side,
@@ -1954,6 +2199,9 @@ func restore(d: Dictionary) -> void:
 	_transition_ticks = int(d.get("transition_ticks", VERT_MIN_TRANSITION_TICKS))
 	_touch_wall_n = d.get("touch_wall_n", Vector3.ZERO)
 	_since_bend = float(d.get("since_bend", 1.0))
+	_curv = float(d.get("curv", 0.0))
+	_roll_in_hold = int(d.get("roll_in_hold", 0))
+	_roll_in_dir = d.get("roll_in_dir", Vector3.ZERO)
 	_topple_side = float(d.get("topple_side", 0.0))
 	_roll_off = bool(d.get("roll_off", false))
 	_carve_side = float(d.get("carve_side", 0.0))
