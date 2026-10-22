@@ -36,29 +36,61 @@ static func pyramid(base: float = 9.0, top: float = 3.0, height: float = 1.4, zo
 	return root
 
 
+## The angle each spine face ends at (degrees from horizontal, at the coping). A face that ends vertical launches the
+## skater straight up and back down onto the same face, so a transfer is impossible. The skater treats a launch off a
+## face steeper than PhysicsTuning.vert_normal_y (normal.y 0.35, i.e. 69.5 degrees) as a vert air that keeps them in
+## the ramp's plane and pushes them back onto it, so a transferring spine must end below that: 66 degrees.
+const SPINE_END_DEG: float = 66.0
+
+
 ## A spine: two quarter pipes back to back along X, sharing one fin whose top is the coping at `height`.
-## Footprint x in [0, length], z in [0, 2 * radius]. Each pipe's curve reaches `radius` at the fin.
+## Each face is a circular arc of `radius` that stops at SPINE_END_DEG (66 degrees from the ground) and then runs
+## straight, still at that angle, up to the coping: the skater leaves the lip with forward travel and transfers to the
+## other face. Footprint x in [0, length], z in [0, 2 * reach + fin] where reach is
+## spine_reach(radius, height) (about 2.5 m for the defaults); the coping runs along the centre line z = reach + fin / 2.
 static func spine(length: float = 8.0, radius: float = 2.2, height: float = 2.4) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Spine"
 	var fin: float = 0.2
-	var rh: float = radius - fin * 0.5  # horizontal reach of each pipe
-	var left := func(_x: float, z: float) -> float: return _tr_lip(z, rh, radius)
-	var right := func(_x: float, z: float) -> float: return _tr_lip(2.0 * radius - z, rh, radius)
+	var rh: float = spine_reach(radius, height)  # horizontal reach of each face
+	var mid: float = rh + fin * 0.5
+	var left := func(_x: float, z: float) -> float: return spine_face(z, radius, height)
+	var right := func(_x: float, z: float) -> float: return spine_face(2.0 * mid - z, radius, height)
 	var top := func(_x: float, _z: float) -> float: return height
 	var tris: Array[Vector3] = []
-	_patch(tris, 0.0, length, 0.0, rh, 2, 12, left)
+	_patch(tris, 0.0, length, 0.0, rh, 2, 16, left)
 	_patch(tris, 0.0, length, rh, rh + fin, 2, 1, top)
-	_patch(tris, 0.0, length, rh + fin, 2.0 * radius, 2, 12, right)
+	_patch(tris, 0.0, length, rh + fin, 2.0 * mid, 2, 16, right)
 	root.add_child(PieceKit.body(_mesh(tris), PieceKit.RAMP_WOOD, "Ramps"))
-	var cop := PieceKit.round_rail(Vector3(0.0, height, radius), Vector3(length, height, radius), 0.05, PieceKit.COPING, "Coping")
+	var cop := PieceKit.round_rail(Vector3(0.0, height, mid), Vector3(length, height, mid), 0.05, PieceKit.COPING, "Coping")
 	(cop.get_node("Line") as GrindRail).kind = "coping"
 	root.add_child(cop)
 	# one lip per face: the -Z pipe and the +Z pipe share the fin's coping
-	var lip_pts := PackedVector3Array([Vector3(0.0, height, radius), Vector3(length, height, radius)])
+	var lip_pts := PackedVector3Array([Vector3(0.0, height, mid), Vector3(length, height, mid)])
 	root.add_child(RampLip.line(lip_pts, Vector3.FORWARD, "drop_in", "LipNorth"))
 	root.add_child(RampLip.line(lip_pts, Vector3.BACK, "drop_in", "LipSouth"))
 	return root
+
+
+## Horizontal reach of one spine face from its foot to the fin (see spine()).
+static func spine_reach(radius: float, height: float) -> float:
+	var th: float = deg_to_rad(SPINE_END_DEG)
+	var arc_h: float = radius * (1.0 - cos(th))
+	if height <= arc_h:
+		return radius * sin(acos(1.0 - height / radius))
+	return radius * sin(th) + (height - arc_h) / tan(th)
+
+
+## Height of a spine face at horizontal distance t from its foot: the arc, then the straight run at SPINE_END_DEG.
+static func spine_face(t: float, radius: float, height: float) -> float:
+	var th: float = deg_to_rad(SPINE_END_DEG)
+	var arc_h: float = radius * (1.0 - cos(th))
+	var arc_t: float = radius * sin(th)
+	var reach: float = spine_reach(radius, height)
+	var x: float = clampf(t, 0.0, reach)
+	if height <= arc_h or x <= arc_t:
+		return radius - sqrt(maxf(radius * radius - x * x, 0.0))
+	return minf(arc_h + (x - arc_t) * tan(th), height)
 
 
 ## A hip: an L of two quarter pipes around a 90 degree outside corner. Footprint x, z in [0, size].

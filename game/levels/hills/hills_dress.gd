@@ -206,21 +206,34 @@ static func guard_rail(pts: PackedVector3Array, h: float = 0.9) -> Node3D:
 	return root
 
 
+## Text on a sign face: one-sided (a double-sided label on each face of a thin plate shows its mirror image through
+## the plate, which made "SCHOOL" read "SCHOOB"), drawn from a big font (96 px) at a small pixel size so it stays crisp
+## close up, depth-correct (alpha cut) and with anisotropic mipmaps for the glancing angles of a road.
+static func sign_label(text: String, pixel: float, colour: Color, font_px: int = 96) -> Label3D:
+	var l := Label3D.new()
+	l.text = text
+	l.font_size = font_px
+	l.pixel_size = pixel
+	l.modulate = colour
+	l.outline_size = 0
+	l.double_sided = false
+	l.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
+	l.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	l.shaded = false
+	return l
+
+
 ## A sign on a post: `text` on a yellow diamond or a rectangle. Visual only.
 static func sign_post(text: String, colour: Color = SIGN_YELLOW, diamond: bool = true) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Sign"
-	root.add_child(HillsDress._box_mesh(Vector3(0.08, 2.4, 0.08), POST_GREY, Vector3(0.0, 1.2, 0.0), "Post", false))
+	# the post ends under the plate (a post running up the face would hide the lettering)
+	root.add_child(HillsDress._box_mesh(Vector3(0.08, 1.8, 0.08), POST_GREY, Vector3(0.0, 0.9, 0.0), "Post", false))
 	var plate := HillsDress._box_mesh(Vector3(0.75, 0.75, 0.04), colour, Vector3(0.0, 2.25, 0.0), "Plate", false)
 	if diamond:
 		plate.rotation = Vector3(0.0, 0.0, PI * 0.25)
 	root.add_child(plate)
-	var l := Label3D.new()
-	l.text = text
-	l.font_size = 36
-	l.pixel_size = 0.006
-	l.modulate = Color("1d1d1f")
-	l.outline_size = 0
+	var l := HillsDress.sign_label(text, 0.0019, Color("1d1d1f"))
 	l.position = Vector3(0.0, 2.25, -0.03)
 	l.rotation = Vector3(0.0, PI, 0.0)
 	root.add_child(l)
@@ -295,16 +308,11 @@ static func hedge(c: Vector3, size: Vector3, yaw: float = 0.0) -> StaticBody3D:
 static func beacon() -> Array:
 	var root := Node3D.new()
 	root.name = "Beacon"
-	root.add_child(HillsDress._box_mesh(Vector3(0.1, 3.2, 0.1), POST_GREY, Vector3(0.0, 1.6, 0.0), "Post", false))
+	root.add_child(HillsDress._box_mesh(Vector3(0.1, 1.55, 0.1), POST_GREY, Vector3(0.0, 0.775, 0.0), "Post", false))
 	var plate := HillsDress._box_mesh(Vector3(0.9, 1.1, 0.05), SIGN_YELLOW, Vector3(0.0, 2.1, 0.0), "Plate", false)
 	root.add_child(plate)
 	for side: float in [-1.0, 1.0]:
-		var l := Label3D.new()
-		l.text = "SCHOOL\nZONE\n25"
-		l.font_size = 40
-		l.pixel_size = 0.006
-		l.modulate = Color("1d1d1f")
-		l.outline_size = 0
+		var l := HillsDress.sign_label("SCHOOL\nZONE\n25", 0.0022, Color("1d1d1f"))
 		l.position = Vector3(0.0, 2.1, side * 0.035)
 		l.rotation = Vector3(0.0, 0.0 if side > 0.0 else PI, 0.0)
 		root.add_child(l)

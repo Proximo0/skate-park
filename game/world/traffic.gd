@@ -12,6 +12,10 @@ extends Node3D
 ##   var lane: int = traffic.add_lane(LanePath.block_loop(Rect2(-40, -30, 80, 60), 0.0, 8.0), 11.0)
 ##   traffic.add_cars(lane, 5)
 ##   traffic.add_intersection(Vector3(0, 0, 0), 9.0)  # optional: signals where lanes cross
+## Distance LOD, built in: cars are not drawn beyond view_range (140 m from the camera, an engine visibility range on
+## every mesh) and a car past it (or with no camera and no skater near) skips its visual motion (wheel roll, lean,
+## brake lights); the driving, signals and collisions always run. Levels that set their own visibility_range_end on
+## the car meshes after add_cars (downtown) simply replace it.
 ## Budget: ~20 cars (3 draw calls each by day, 4 at night; a few hundred metres of lanes cost nothing).
 
 signal skater_hit(car: TrafficCar)
@@ -31,6 +35,8 @@ const SIGNAL_AMBER: float = 2.2
 @export var seed_value: int = 11
 ## Headlights: -1 = follow the level's mood (Level.is_night()), 0 = off, 1 = on.
 @export var lights_mode: int = -1
+## Metres from the camera past which cars are not drawn or animated (0 = never culled).
+@export var view_range: float = 140.0
 
 var lanes: Array[LanePath] = []
 var lane_speed: Array[float] = []
@@ -81,6 +87,7 @@ func add_cars(lane: int, count: int, kinds: Array[String] = [], colours: Array[C
 		car.speed_factor = _rng.randf_range(0.85, 1.05)
 		car.speed = lane_speed[lane] * 0.5
 		car.place(path)
+		car.set_view_range(view_range)
 		add_child(car)
 		car.model.set_lights(_night)
 		car.hit_skater.connect(func(c: TrafficCar) -> void: skater_hit.emit(c))
@@ -120,6 +127,10 @@ func _physics_process(delta: float) -> void:
 	time += delta
 	var sk: Node3D = get_tree().get_first_node_in_group("skater") as Node3D if is_inside_tree() else null
 	var walkers: Array[Node] = get_tree().get_nodes_in_group("traffic_obstacle") if is_inside_tree() else []
+	var cam: Camera3D = get_viewport().get_camera_3d() if is_inside_tree() else null
+	var eye: Vector3 = cam.global_position if cam != null else (sk.global_position if sk != null else Vector3.ZERO)
+	var has_eye: bool = cam != null or sk != null
+	var vr2: float = (view_range + 10.0) * (view_range + 10.0)
 	for car: TrafficCar in cars:
 		var path: LanePath = lanes[car.lane]
 		var target: float = lane_speed[car.lane] * car.speed_factor
@@ -146,7 +157,8 @@ func _physics_process(delta: float) -> void:
 			var w3: Node3D = w as Node3D
 			if w3 != null:
 				target = minf(target, _obstacle_limit(car, w3.global_position))
-		car.drive(path, target, delta, BRAKE_HARD if hard else BRAKE, ACCEL)
+		var visual: bool = not has_eye or view_range <= 0.0 or car.global_position.distance_squared_to(eye) < vr2
+		car.drive(path, target, delta, BRAKE_HARD if hard else BRAKE, ACCEL, visual)
 		car.check_hit(sk, HIT_SPEED)
 
 

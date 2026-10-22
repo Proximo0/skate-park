@@ -118,13 +118,7 @@ static func _school(lvl: HillsLevel, life: HillsLife) -> void:
 		var p: Vector3 = r.ground_point(t, s, float(e[1]), HillsRoad.LINE_LIFT + 0.01)
 		var fwd: Vector3 = r.tangent(s) * float(e[2])
 		fwd = Vector3(fwd.x, 0.0, fwd.z).normalized()
-		var l := Label3D.new()
-		l.text = "SCHOOL\nXING"
-		l.font_size = 160
-		l.pixel_size = 0.012
-		l.modulate = Color("f3f0e6")
-		l.outline_size = 0
-		l.double_sided = false
+		var l := HillsDress.sign_label("SCHOOL\nXING", 0.012, Color("f3f0e6"), 160)
 		# lying flat, read by a driver coming along `fwd`: its up is the way they drive
 		l.transform = Transform3D(Basis(fwd.cross(Vector3.UP).normalized(), fwd, Vector3.UP), p)
 		root.add_child(l)
@@ -161,12 +155,7 @@ static func _board(line1: String, line2: String) -> Node3D:
 	body.add_child(HillsDress._box_mesh(Vector3(3.8, 1.2, 0.2), Color("f4f1ea"), Vector3(0.0, 1.3, 0.0), "Board"))
 	body.add_child(HillsDress._box_mesh(Vector3(4.0, 0.12, 0.3), Color("2f5f8f"), Vector3(0.0, 1.95, 0.0), "Cap"))
 	for side: float in [-1.0, 1.0]:
-		var l := Label3D.new()
-		l.text = line1 + "\n" + line2
-		l.font_size = 44
-		l.pixel_size = 0.006
-		l.modulate = Color("1f3550")
-		l.outline_size = 0
+		var l := HillsDress.sign_label(line1 + "\n" + line2, 0.0023, Color("1f3550"))
 		l.position = Vector3(0.0, 1.3, side * 0.11)
 		l.rotation.y = 0.0 if side > 0.0 else PI
 		body.add_child(l)
@@ -271,19 +260,15 @@ static func _paddle() -> Node3D:
 	cm.radial_segments = 8
 	head.mesh = cm
 	head.material_override = Toon.material(Color("d03a2f"), false)
-	head.rotation = Vector3(PI * 0.5, 0.0, PI / 8.0)
+	# a disc facing the walker, turned 22.5 degrees in its own plane (flat top); Euler Z would tilt the disc instead
+	head.basis = Basis(Vector3.RIGHT, PI * 0.5) * Basis(Vector3.UP, PI / 8.0)
 	head.position = Vector3(0.0, 0.85, 0.0)
 	head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(head)
 	for side: float in [-1.0, 1.0]:
-		var l := Label3D.new()
-		l.text = "STOP"
-		l.font_size = 40
-		l.pixel_size = 0.004
-		l.modulate = Color.WHITE
-		l.outline_size = 0
+		var l := HillsDress.sign_label("STOP", 0.0013, Color.WHITE)
 		l.position = Vector3(0.0, 0.85, side * 0.015)
-		l.rotation.y = 0.0 if side < 0.0 else PI
+		l.rotation.y = PI if side < 0.0 else 0.0  # one-sided: each faces away from the plate
 		root.add_child(l)
 	return root
 
@@ -508,12 +493,7 @@ static func _lemonade() -> Node3D:
 	for sx: float in [-0.75, 0.75]:
 		body.add_child(HillsDress._box_mesh(Vector3(0.06, 1.7, 0.06), Color("d9c48f"), Vector3(sx, 0.85, 0.3), "Post", false))
 	body.add_child(HillsDress._box_mesh(Vector3(1.7, 0.42, 0.04), Color("f7d54a"), Vector3(0.0, 1.55, 0.3), "Sign", false))
-	var l := Label3D.new()
-	l.text = "LEMONADE 25c"
-	l.font_size = 48
-	l.pixel_size = 0.005
-	l.modulate = Color("c0392b")
-	l.outline_size = 0
+	var l := HillsDress.sign_label("LEMONADE 25c", 0.0025, Color("c0392b"))
 	l.position = Vector3(0.0, 1.55, 0.27)
 	l.rotation.y = PI
 	body.add_child(l)

@@ -6,7 +6,7 @@ extends Node
 const SIM_FILES: Array = [
 	"sim_kicker", "sim_ledge_drop", "sim_halfpipe_pump", "sim_vert_reentry", "sim_bank45", "sim_wall_head_on", "sim_drop_in", "sim_snapshot", "sim_walk", "sim_grind_topple", "sim_pump_no_stall",
 	"sim_wall_glance", "sim_mega_air", "sim_dome_air", "sim_loop_edges", "sim_revert_buffer", "sim_grind_snap",
-	"sim_ramp_snap", "sim_levels",
+	"sim_ramp_snap", "sim_levels", "sim_spine_transfer",
 ]
 
 

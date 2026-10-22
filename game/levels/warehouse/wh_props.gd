@@ -269,7 +269,7 @@ static func water_tower(lvl: Node, bt: WhGeo.Batch, sb: StaticBody3D, p: Vector3
 	var l := Label3D.new()
 	l.text = "NOX CHEMICAL"
 	l.font_size = 160
-	l.pixel_size = 0.014
+	l.pixel_size = 0.006  # fits the ~9 m tank
 	l.modulate = Color(0.16, 0.15, 0.15)
 	l.position = p + Vector3(0, leg_top + 3.4, 4.45)
 	lvl.add_child(l)

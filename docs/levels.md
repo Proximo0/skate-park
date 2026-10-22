@@ -82,7 +82,10 @@ traffic.add_signal_poles(traffic.add_intersection(Vector3(0, 0, -40), 9.0))
 - Lanes are `LanePath`s. Build them with `from_points(corners, closed, corner_radius)`, `from_path3d(path, closed)`
   or `block_loop(rect, y, radius, ccw)`. `offset(d)` gives the parallel lane and `reversed()` the other direction.
 - Cars come from the Houdini car glbs (hatch, pickup, van) in paint variants. The baked body is 3 draw calls by day and
-  4 at night. Cars accelerate and brake smoothly, slow for corners, keep their headway, stop at red and amber signals,
+  4 at night. **Built-in distance LOD:** cars are not drawn beyond `view_range` (140 m from the camera, an engine
+  visibility range on every mesh) and a car past it skips its wheel roll, lean and brake lights; driving, signals and
+  collisions always run. A level that sets its own `visibility_range_end` on the car meshes after `add_cars` (downtown
+  does) replaces the default. Cars accelerate and brake smoothly, slow for corners, keep their headway, stop at red and amber signals,
   and stop for the skater or any `traffic_obstacle` (walkers) in their lane.
 - A car is an `AnimatableBody3D` on layer 1, so the skater collides with it. A moving car that touches the skater
   calls the skater's own `_bail()` and emits `skater_hit`.
@@ -100,15 +103,30 @@ crowd.add_idler(Vector3(5.9, 0.15, -8), PI * 0.5, "phone")
 ```
 
 - Bodies are the player's own body builder (`SkaterBuilder.build_body`, random adult looks). Each is **baked** by
-  `PedBody.bake`, which merges the rigid meshes per joint, from about 157 meshes to about 20 draw calls. The crowd
-  builds a pool of 6 looks on a worker thread, then clones and re-colours the garments by hue for each person. Until a
-  body arrives, a pedestrian walks unseen. In scripted or headless runs, the build happens synchronously.
+  `PedBody.bake`, which merges the rigid meshes of a joint into one vertex-coloured surface (the vertex alpha is the
+  cloth mask, so garments take the per-person hue shift and skin and hair do not), from about 157 meshes to **at most
+  16 draw surfaces** (15 joints, hands riding on the forearms, plus the skinned skin). Measured: 10 people add 150
+  draw calls, 15 each. The crowd builds a pool of 6 looks on a worker thread, then clones and re-colours the garments by
+  hue for each person. Until a body arrives, a pedestrian walks unseen. In scripted or headless runs, the build
+  happens synchronously. The look templates are freed when the crowd leaves the tree (they used to leak about 40 nodes
+  per look per run).
+- **Crowd cost.** A close person is about 15 draw calls, and **about 30 more in the sun's shadow pass** (the shadow
+  splits draw every mesh again), so about 45 with a shadow. That is why the kit gives every crowd a built-in distance
+  LOD, measured from the camera (from the skater when there is no camera, as in bots and sims): people are hidden past
+  `hide_range` (50 m), not posed while hidden or off camera (anyone within 6 m is always posed), posed every frame
+  under 20 m, every 2nd under 32 m, every 4th beyond, and cast sun shadows only within `shadow_range` (18 m;
+  `shadow_lod = false` turns it off). Levels that roll their own (downtown `DtCrowd`, the beach merge, the school's
+  `SchoolShadowLod`, the hills' range limits) keep working: the kit acts only on changes, only on meshes that were
+  casting, and re-shows people the level hid inside range, so set the level's own ranges at or inside the defaults.
+- A person with their own look and uniform: set `person.look_override = PedBody.guard_look()` and `person.uniform =
+  PedBody.UNIFORM_SECURITY` right after `add_idler`/`add_walkers`, before the first frame. The crowd builds a private
+  template for them (`PedBody.uniform` dresses it by joint: navy shirt and trousers, cap, belt, yellow badge and
+  patches). The warehouse watchman uses it.
 - Behaviours: walk a path (back and forth or round a loop), stop now and then to idle or check a phone (a phone prop
   appears in the hand), and chat in groups. Pedestrians react to the skater: they step aside when you ride at them,
   startle when you fly past close, and sometimes wave.
 - `PedPoser` is a `SkaterPoser`. **The poser gotcha:** call `add_child(poser)` and then `poser.set_process(false)`, or
-  `SkaterPoser._process` overwrites the pose. Pedestrian does this, and drives the pose at an LOD rate (every frame
-  under 28 m, less often to 110 m, hidden past 150 m).
+  `SkaterPoser._process` overwrites the pose. Pedestrian does this, and drives the pose at the LOD rate above.
 - Joint angle signs for new poses are documented at the top of `ped_poser.gd`. For example, an upper arm's +X swings
   it forward, and Head +X tilts the face up.
 - **Threading caveat:** while the crowd is loading, don't create Toon materials from other threads. Build everything
@@ -198,12 +216,20 @@ var deco: Node3D = kit.visual("umbrella_towel_set")                  # meshes on
 |---|---|
 | Draw calls in view | 600 or fewer at street level, 900 or fewer from the highest camera |
 | Primitives in view | 1.5M or fewer |
-| Real lights (Omni or Spot) in view | about 12. Fake the rest with `FlickerLight.light_pool` and `beam_cone`. |
+| Real lights (Omni or Spot) in view | about 12 at most, and fewer is better (see the warning below). Fake the rest with `FlickerLight.light_pool` and `beam_cone`. |
 | Cars | about 20 per level (3 to 4 draw calls each) |
-| Pedestrians | 15 to 25 (about 20 draw calls each close up; LOD hides them past 150 m) |
+| Pedestrians | 15 to 25 (about 15 draw calls each close up, 45 with a sun shadow; the kit hides them past 50 m and shadows only the ones within 18 m) |
 | Trees, birds and clutter | MultiMesh (`SwayTrees`, `Birds`) for anything with more than about 10 copies |
 | Kit pieces | Share materials (LevelKit does). Use `shadow: false` on small clutter. |
 | Shadow casters | Only things taller than about 0.5 m. Ground and backdrop never cast. |
+
+**Warning: real lights in the Compatibility renderer.** Compatibility draws forward, so every Omni or Spot light adds
+an extra draw pass for every mesh it touches: a lamp whose range covers 30 meshes costs 30 more draw calls, and
+overlapping lights multiply (a mesh lit by 3 lights is drawn 4 times). Shadow-casting lights cost a shadow pass on top.
+A street of 12 real lamps can double the frame's draws. So: keep real lights to a handful, with tight ranges (the lamp's
+pool of light, not the block); give a street's lamps a baked light pool (`FlickerLight.light_pool`), a fake glow and a
+fog beam (`beam_cone`) instead of a light; and never leave a real light's range on a crowd or a car park. Count with the
+`draws=` number of the capture script before and after adding a light.
 
 Measured on the reference captures: the demo crossroads with 12 cars, 14 pedestrians, 14 trees and pigeons draws
 about 140 calls and 0.26M prims at street level, and about 400 calls and 1.3M prims from above (the crowd is most of

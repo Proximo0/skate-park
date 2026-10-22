@@ -212,7 +212,8 @@ func _walls() -> void:
 	label.modulate = Color("f2f4f7")
 	label.outline_modulate = SIGN
 	label.outline_size = 40
-	label.position = Vector3(g.position.x - 0.05, 4.8, g.position.y + 8.0)
+	label.position = Vector3(g.position.x - 0.18, 4.8, g.position.y + 8.0)
+	label.double_sided = false  # in front of the slab (its face is at x - 0.15); one-sided so it never z-fights
 	label.rotation.y = -PI * 0.5
 	_root.add_child(label)
 	_bt.box(Vector3(g.position.x - 0.1, 4.8, g.position.y + 8.0), Vector3(0.1, 2.4, 6.0), SIGN)

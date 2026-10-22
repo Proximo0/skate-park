@@ -35,7 +35,6 @@ var crowd: Pedestrians = null
 var _rats: MultiMeshInstance3D = null
 var _rat_state: Array[Dictionary] = []
 var _rng := RandomNumberGenerator.new()
-var _guard_dressed: bool = false
 var _crowd_baked: bool = false
 var _sky_mat: ShaderMaterial = null  ## the skyline's window material (fog-free, own haze)
 
@@ -57,9 +56,6 @@ static func build(lvl: WarehouseLevel) -> WhWorld:
 
 
 func _process(delta: float) -> void:
-	if not _guard_dressed and guard != null and guard.has_body():
-		_guard_dressed = true
-		PedBody.recolour(guard.body, 0.62, 0.35, 0.45)  # a faded navy uniform
 	if not _crowd_baked and crowd != null and crowd.is_loaded():
 		# the moon is low and the yards are lamp-lit: people skip the shadow pass (about 20 draw calls each)
 		_crowd_baked = true
@@ -205,14 +201,15 @@ func _highway() -> void:
 	var green := WhGeo.mat("paint", Color("1f6b45"), 0.2, 0.3)
 	bt.pipe(Vector3(40.0, HWY_Y, z1 - 0.2), Vector3(40.0, HWY_Y + 7.5, z1 - 0.2), 0.25, steel, 6)
 	bt.pipe(Vector3(40.0, HWY_Y + 7.5, z1 - 0.2), Vector3(40.0, HWY_Y + 7.5, HWY_Z), 0.2, steel, 6)
-	bt.box(Vector3(40.0, HWY_Y + 6.6, HWY_Z + 4.4), Vector3(0.2, 2.2, 6.4), green)
+	bt.box(Vector3(40.0, HWY_Y + 6.2, HWY_Z + 4.4), Vector3(0.2, 2.2, 6.4), green)  # hangs just under the gantry beam
 	var sign := Label3D.new()
 	sign.text = "EXIT 14\nNOX DOCKS"
 	sign.font_size = 96
-	sign.pixel_size = 0.012
+	sign.pixel_size = 0.0085  # two lines, 5.5 m wide: inside the 6.4 x 2.2 m board
+	sign.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	sign.modulate = Color(0.95, 0.97, 0.95)
 	sign.outline_size = 0
-	sign.position = Vector3(40.12, HWY_Y + 6.6, HWY_Z + 4.4)
+	sign.position = Vector3(40.12, HWY_Y + 6.2, HWY_Z + 4.4)
 	sign.rotation_degrees = Vector3(0.0, 90.0, 0.0)
 	add_child(sign)
 	# tunnel portals: chunky blocks the deck runs into at both ends
@@ -262,6 +259,9 @@ func _people() -> void:
 	var g: Array[Pedestrian] = crowd.add_walkers(patrol, 1, 0.85, 0.9)
 	guard = g[0]
 	guard.name = "Watchman"
+	# a uniform that reads at night from across the court: navy shirt and trousers, cap, belt, yellow badge and patches
+	guard.look_override = PedBody.guard_look()
+	guard.uniform = PedBody.UNIFORM_SECURITY
 	_flashlight(guard)
 	crowd.add_group(Vector3(-29.6, FL, 16.0), 2)
 	crowd.add_idler(Vector3(-2.0, FL, -23.6), PI, "idle")  # on the north rail dock, watching the trains

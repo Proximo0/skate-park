@@ -5,7 +5,8 @@ extends Node3D
 ## close it steps aside off the line; when the skater flies past very close it startles, and sometimes it waves.
 ## Standing groups ("chat") and fixed idlers ("phone", "idle", "wave") use the same node with no path.
 ## Walkers are in the "traffic_obstacle" group, so Traffic stops for them where they cross a lane.
-## Cost: about 20 draw calls; the pose runs at an LOD rate set by Pedestrians (every frame close, less far away).
+## Cost: about 15 draw calls (one per joint plus the skin); the pose runs at an LOD rate set by Pedestrians (every frame
+## close, less far away, never when the person is hidden or off camera).
 
 const DODGE_RADIUS: float = 4.5
 const STARTLE_RADIUS: float = 1.8
@@ -17,6 +18,10 @@ var s: float = 0.0
 var dir: float = 1.0  ## +1 forward along the path, -1 back
 var walk_speed: float = 1.25
 var base_mode: String = "idle"  ## the mode when not walking (path == null) or during a stop
+## Optional: a look of this person's own (instead of one of the crowd's pool) and a PedBody uniform put on it. Set both
+## right after add_walkers/add_group/add_idler, before the crowd builds its looks (the first frame).
+var look_override: SkaterLoadout = null
+var uniform: String = ""
 var poser: PedPoser
 var body: Node3D
 var phase: float = 0.0
@@ -32,6 +37,9 @@ var _yaw: float = 0.0
 var _rest_yaw: float = 0.0
 var _pending: float = 0.0  ## time accumulated while the pose update was skipped (LOD)
 var _phone: MeshInstance3D = null
+var posed: bool = false  ## true once the body has been posed at least once
+var _shadows_on: bool = true
+var _shadow_meshes: Array[GeometryInstance3D] = []  ## the meshes set_shadows(false) switched off
 
 static var _phone_mesh: BoxMesh = null
 static var _phone_mat: StandardMaterial3D = null
@@ -153,6 +161,26 @@ func step(delta: float, skater: Node3D, pose_now: bool) -> void:
 	if pose_now:
 		poser.drive(_pending, clock, phase, walk_speed if poser.mode == "walk" else 0.0)
 		_pending = 0.0
+		posed = true
+
+
+## Sun shadows on or off for the whole body (the crowd's distance LOD). Only meshes that were casting are switched, and
+## only those come back, so a level that turned some off for its own reasons keeps them off.
+func set_shadows(on: bool) -> void:
+	if on == _shadows_on or body == null:
+		return
+	_shadows_on = on
+	if on:
+		for g: GeometryInstance3D in _shadow_meshes:
+			if is_instance_valid(g):
+				g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		_shadow_meshes.clear()
+	else:
+		for n: Node in find_children("*", "GeometryInstance3D", true, false):
+			var g: GeometryInstance3D = n as GeometryInstance3D
+			if g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+				g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				_shadow_meshes.append(g)
 
 
 ## Keeps a body-less walker moving along its path (so the crowd is spread out when the bodies arrive).

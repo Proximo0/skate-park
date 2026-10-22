@@ -1,9 +1,10 @@
 shader_type spatial;
 render_mode specular_disabled;
 
-// Garments of a pedestrian (PedBody bakes them into vertex colours): the toon shading of game/art/toon.gdshader with its
-// cloth option on, plus a per-person hue / saturation / value shift, so people built from the same look wear different
-// colours. Skin, hair and faces use the plain vertex-colour toon material and are never shifted.
+// The one material of a baked pedestrian (PedBody bakes everything into vertex colours, one surface per joint): the
+// toon shading of game/art/toon.gdshader, plus a per-person hue / saturation / value shift, so people built from the
+// same look wear different colours. COLOR.a is the cloth mask: 1 for garments (shifted, with the cloth shading option),
+// 0 for skin, hair and faces (never shifted, plain toon shading).
 
 uniform float hue_shift = 0.0;  // turns (0..1)
 uniform float sat_mul = 1.0;
@@ -15,6 +16,12 @@ uniform float lit_threshold : hint_range(0.0, 1.0) = 0.7;
 uniform float band_softness : hint_range(0.0, 0.2) = 0.05;
 uniform float rim_strength : hint_range(0.0, 1.0) = 0.22;
 uniform float cloth_shade : hint_range(0.0, 1.0) = 1.0;
+
+varying float cloth_mask;
+
+void vertex() {
+	cloth_mask = COLOR.a;
+}
 
 vec3 rgb2hsv(vec3 c) {
 	vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -36,7 +43,7 @@ void fragment() {
 	hsv.x = fract(hsv.x + hue_shift);
 	hsv.y = clamp(hsv.y * sat_mul, 0.0, 1.0);
 	hsv.z = clamp(hsv.z * val_mul, 0.0, 1.0);
-	ALBEDO = hsv2rgb(hsv);
+	ALBEDO = mix(COLOR.rgb, hsv2rgb(hsv), COLOR.a);
 	ROUGHNESS = 1.0;
 	METALLIC = 0.0;
 	SPECULAR = 0.0;
@@ -53,7 +60,7 @@ void light() {
 	vec3 mid_col = base * mid_level;
 	float mx = max(base.r, max(base.g, base.b));
 	float mn = min(base.r, min(base.g, base.b));
-	float boost = cloth_shade * smoothstep(0.45, 0.9, (mx - mn) / max(mx, 0.001));
+	float boost = cloth_shade * cloth_mask * smoothstep(0.45, 0.9, (mx - mn) / max(mx, 0.001));
 	vec3 deep = pow(max(base, vec3(0.0001)), vec3(1.0 + 0.7 * boost)) * shadow_tint * (1.0 - 0.3 * boost);
 	shadow_col = mix(shadow_col, deep, boost);
 	shadow_col *= 1.0 - 0.3 * boost * (1.0 - smoothstep(0.0, 0.2, lit));

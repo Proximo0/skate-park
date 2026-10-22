@@ -52,6 +52,15 @@ static func create(kind: String, paint: Color) -> TrafficCar:
 	return car
 
 
+## Engine visibility range on every mesh of the car (metres from the camera; 0 = always drawn).
+func set_view_range(metres: float) -> void:
+	for n: Node in find_children("*", "GeometryInstance3D", true, false):
+		var g: GeometryInstance3D = n as GeometryInstance3D
+		g.visibility_range_end = metres
+		g.visibility_range_end_margin = 8.0 if metres > 0.0 else 0.0
+		g.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+
+
 func _box(size: Vector3, centre: Vector3, node_name: String) -> void:
 	var cs := CollisionShape3D.new()
 	cs.name = node_name
@@ -75,7 +84,8 @@ func place(path: LanePath) -> void:
 
 
 ## One tick: speed toward `target` (accelerating at `accel`, braking at up to `brake`), then along the lane.
-func drive(path: LanePath, target: float, delta: float, brake: float, accel: float) -> void:
+## `visual` false skips the body lean, wheel roll and brake lights (the car is out of view range: Traffic LOD).
+func drive(path: LanePath, target: float, delta: float, brake: float, accel: float, visual: bool = true) -> void:
 	var before: float = speed
 	if target > speed:
 		# ease in near the target so cars do not jerk to a constant speed
@@ -92,6 +102,9 @@ func drive(path: LanePath, target: float, delta: float, brake: float, accel: flo
 	var dyaw: float = angle_difference(_yaw, want)
 	_yaw += dyaw * (1.0 - exp(-10.0 * delta))
 	global_transform = Transform3D(Basis(Vector3.UP, _yaw), pos)
+	_cooldown = maxf(_cooldown - delta, 0.0)
+	if not visual:
+		return
 	# visual body motion: dive under braking, squat on pull-away, lean out of turns
 	var acc: float = (speed - before) / maxf(delta, 0.0001)
 	_accel_vis = lerpf(_accel_vis, acc, 1.0 - exp(-4.0 * delta))
@@ -99,7 +112,6 @@ func drive(path: LanePath, target: float, delta: float, brake: float, accel: flo
 	model.rotation = Vector3(clampf(-_accel_vis * 0.006, -0.03, 0.03), 0.0, _lean)
 	model.roll(speed * delta)
 	model.set_brake(clampf(-_accel_vis / 3.0, 0.0, 1.0) if speed > 0.3 or before > 0.3 else 0.6)
-	_cooldown = maxf(_cooldown - delta, 0.0)
 
 
 ## Knocks the skater down when this car runs into them.

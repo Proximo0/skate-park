@@ -136,15 +136,36 @@ func test_spine_coping_and_footprint() -> void:
 		assert_eq(r.kind, "coping", "coping kind")
 		assert_eq(r.points.size(), 2, "straight coping")
 		assert_near(r.points[0].y, 2.4, 0.0001, "coping at height")
-		assert_near(r.points[0].z, 2.2, 0.0001, "coping on the shared centre line")
+		var reach: float = Transfers.spine_reach(2.2, 2.4)
+		assert_near(r.points[0].z, reach + 0.1, 0.0001, "coping on the shared centre line")
 		assert_near(r.points[0].x, 0.0, 0.0001, "coping starts at x 0")
 		assert_near(r.points[1].x, 8.0, 0.0001, "coping ends at length")
 	var b: Array[Vector3] = _bounds(root)
 	assert_near(b[0].x, 0.0, 0.0001, "spine min x")
 	assert_near(b[1].x, 8.0, 0.0001, "spine max x")
 	assert_near(b[0].z, 0.0, 0.0001, "spine min z")
-	assert_near(b[1].z, 4.4, 0.0001, "spine max z is 2 * radius")
+	assert_near(b[1].z, 2.0 * Transfers.spine_reach(2.2, 2.4) + 0.2, 0.0001, "spine max z is two faces and the fin")
 	assert_near(b[1].y, 2.45, 0.0001, "spine top at height plus the 0.05 coping pipe radius")
+
+
+## The faces end below the skater's vert threshold (normal.y 0.35), so a launch off the fin is a transfer, not a
+## straight-up vert air; but still steep (a real spine), and they rise monotonically to the coping height.
+func test_spine_faces_end_below_vert_but_steep() -> void:
+	var tune_ny: float = 0.35
+	var reach: float = Transfers.spine_reach(2.2, 2.4)
+	var dy: float = Transfers.spine_face(reach, 2.2, 2.4) - Transfers.spine_face(reach - 0.1, 2.2, 2.4)
+	var end_slope_deg: float = rad_to_deg(atan2(dy, 0.1))
+	assert_true(cos(deg_to_rad(end_slope_deg)) > tune_ny, "the fin end is below the vert threshold, got %.1f deg" % end_slope_deg)
+	assert_true(end_slope_deg > 55.0, "but still steep, got %.1f deg" % end_slope_deg)
+	assert_near(Transfers.spine_face(reach, 2.2, 2.4), 2.4, 0.0001, "face reaches the coping height")
+	assert_near(Transfers.spine_face(0.0, 2.2, 2.4), 0.0, 0.0001, "face starts on the ground")
+	var prev: float = -1.0
+	for i: int in 41:
+		var h: float = Transfers.spine_face(reach * float(i) / 40.0, 2.2, 2.4)
+		assert_true(h >= prev - 0.00001, "face never dips")
+		prev = h
+	# a short spine (lower than the arc) still ends at the coping height
+	assert_near(Transfers.spine_face(Transfers.spine_reach(2.2, 1.0), 2.2, 1.0), 1.0, 0.0001, "low spine reaches its height")
 
 
 func test_hip_rails_and_footprint() -> void:
