@@ -23,7 +23,7 @@ static func table() -> Array:
 	return [
 		["m_ollie_tap", ["ollie_height_tap", "ollie_airtime_tap"]],
 		["m_ollie_full", ["ollie_height_full", "ollie_airtime_full"]],
-		["m_push", ["push_time_to_top", "push_top_speed"]],
+		["m_push", ["push_time_to_top", "push_top_speed", "push_accel_0_5"]],
 		["m_coast", ["coast_distance_8ms"]],
 		["m_brake", ["brake_distance_8ms"]],
 		["m_turn_4", ["turn_radius_4ms"]],
@@ -38,6 +38,22 @@ static func table() -> Array:
 		["m_loop", ["loop_min_entry_speed"]],
 		["m_grind", ["grind_speed_loss_per_m"]],
 		["m_bank", ["roll_down_speed_bank3m"]],
+		["m_ollie_latency", ["ollie_pop_latency_ms"]],
+		["m_ollie_buffer", ["ollie_land_buffer_ms"]],
+		["m_flip", ["flip_rotations_per_s", "flip_catch_margin_tap_s"]],
+		["m_flip_buffer", ["flip_prepop_buffer_ms"]],
+		["m_spin", ["spin_deg_full_ollie", "spin_under_rotation_grace_deg"]],
+		["m_land_heading", ["land_clean_heading_max_deg", "land_sketchy_heading_max_deg", "land_clean_tilt_max_deg"]],
+		["m_revert", ["revert_pre_land_buffer_ms", "revert_post_land_window_ms"]],
+		["m_manual_window", ["manual_entry_window_ms"]],
+		["m_manual_balance", ["manual_fall_nostick_s", "manual_hold_human_s"]],
+		["m_grind_balance", ["grind_fall_nostick_s", "grind_hold_human_s"]],
+		["m_grind_reach", ["grind_snap_reach_m", "grind_press_buffer_ms"]],
+		["m_wallride", ["wallride_duration_s"]],
+		["m_wall_slam", ["wall_slam_speed_ms"]],
+		["m_vert", ["vert_air_14ms", "vert_air_18ms"]],
+		["m_wall_carve", ["wall_carve_speed_retention"]],
+		["m_slope", ["slope_accel_15deg"]],
 	]
 
 
@@ -128,7 +144,12 @@ func m_push() -> Dictionary:
 		if float(sp[i]) >= 0.95 * top:
 			t95 = float(i + 1) * DT
 			break
-	return {"push_time_to_top": t95, "push_top_speed": top}
+	var t5: float = -1.0
+	for i: int in n:
+		if float(sp[i]) >= 5.0:
+			t5 = float(i + 1) * DT
+			break
+	return {"push_time_to_top": t95, "push_top_speed": top, "push_accel_0_5": 5.0 / t5 if t5 > 0.0 else 0.0}
 
 
 func m_coast() -> Dictionary:
@@ -405,3 +426,530 @@ func m_bank() -> Dictionary:
 	var res: Dictionary = {"roll_down_speed_bank3m": at_toe, "x_bank_ideal_sqrt2gh_ms": sqrt(2.0 * g * h), "x_bank_went_air": went_air}
 	await clear()
 	return res
+
+
+# --- feel targets (docs/feel_targets.md) --------------------------------------------------------------
+# Timing windows are measured by scanning the press tick against a probe run's event tick; heights, times and
+# speeds the same way as above. The balance metrics use a "human" stick model: it pushes back against the lean it
+# saw HUMAN_REACT_TICKS ago (the lean and how fast it tips), so they read how hard the balance is for a steady
+# player, not a perfect bot.
+
+const HUMAN_REACT_TICKS: int = 12  ## 0.2 s: a typical visual reaction time
+const HUMAN_GAIN: float = 1.0  ## stick per unit of lean (the meter runs -1..1)
+const HUMAN_RATE_GAIN: float = 0.3  ## stick per unit of lean speed (1/s): a player reads which way it is tipping
+const BALANCE_CAP_S: float = 30.0
+
+
+## Tap ollie at `v0` on the flat. Before each tick `hook.call(ttl, since)` gives that tick's [stick, just_pressed, held]:
+## ttl = predicted ticks until touchdown (1 = this tick lands; 999 on the ground before it), since = ticks since the
+## touchdown tick (-1 before it). Windows are judged against the run's own flight, so a one-tick shift in when the
+## sandbox starts can't skew them. Returns {result, state_after (2 ticks after touchdown), ids (tricks), bails, ttl_err}.
+func _ollie_run(v0: float, hook: Callable, after_ticks: int = 30) -> Dictionary:
+	await _flat_start(v0)
+	for i: int in 10:
+		await tick()
+	var ids: Array = []
+	sk.trick_started.connect(func(t: Dictionary) -> void: ids.append(str(t.get("id", ""))))
+	await tick(NONE, ["ollie"], ["ollie"])
+	var landed_at: int = -1
+	var result: String = ""
+	var state_after: String = ""
+	var preds: Array = []
+	var g: float = tv("gravity", 18.0)
+	for i: int in 200:
+		var ttl: int = 999
+		if landed_at < 0 and sname() == "AIR":
+			var y: float = maxf(sk.global_position.y, 0.0)
+			var vy: float = sk.velocity.y
+			ttl = maxi(1, ceili((vy + sqrt(vy * vy + 2.0 * g * y)) / g / DT))
+			preds.append([i, ttl])
+		var inp: Array = hook.call(ttl, i - landed_at if landed_at >= 0 else -1)
+		await tick(inp[0], inp[1], inp[2])
+		if landed_at < 0:
+			for e: String in sk.events:
+				if e.begins_with("land:"):
+					landed_at = i
+					result = e.substr(5)
+		if landed_at >= 0 and i == landed_at + 2:
+			state_after = sname()
+		if landed_at >= 0 and i >= landed_at + after_ticks:
+			break
+	var err: float = 0.0
+	for pr: Array in preds:
+		err = maxf(err, absf(float(int(pr[0]) + int(pr[1]) - 1 - landed_at)))
+	var res: Dictionary = {"result": result, "state_after": state_after, "ids": ids, "bails": bails, "ttl_err": err,
+		"air_ticks": landed_at + 1}
+	await clear()
+	return res
+
+
+func _no_input(_ttl: int, _since: int) -> Array:
+	return [NONE, [], []]
+
+
+func m_ollie_latency() -> Dictionary:
+	await _flat_start(4.0)
+	for i: int in 10:
+		await tick()
+	await tick(NONE, ["ollie"], ["ollie"])
+	var n: int = 0
+	for i: int in 20:
+		await tick()
+		n += 1
+		if sname() == "AIR":
+			break
+	await clear()
+	return {"ollie_pop_latency_ms": float(n) * DT * 1000.0}
+
+
+## Ollie tapped (pressed and released) `k` ticks before touchdown: does the skater pop again on landing? The longest
+## such lead that still pops (0: an ollie tapped in the air is dropped).
+func m_ollie_buffer() -> Dictionary:
+	var best: int = 0
+	for k: int in range(1, 16):
+		var hook: Callable = func(ttl: int, _since: int) -> Array:
+			return [NONE, ["ollie"], ["ollie"]] if ttl == k + 1 else [NONE, [], []]
+		var r: Dictionary = await _ollie_run(6.0, hook, 12)
+		if r["state_after"] != "AIR":
+			break
+		best = k
+	return {"ollie_land_buffer_ms": float(best) * DT * 1000.0}
+
+
+## Full ollie with a kickflip pressed on the pop: how long the flip takes (ticks the flip anim plays), and how much air
+## a tap ollie leaves after a flip (margin before the late-catch / bail rule bites).
+func m_flip() -> Dictionary:
+	await _flat_start(6.0)
+	for i: int in 10:
+		await tick()
+	await tick(NONE, ["ollie"], ["ollie"])
+	await tick(Vector2(-1, 0), ["flip"], ["flip"])  ## W + flip: the kickflip (any flip: same flip_time)
+	var flip_ticks: int = 0
+	var air: int = 0
+	for i: int in 120:
+		await tick()
+		if sname() == "AIR":
+			air += 1
+			if sk._air_trick_until > sk._t:
+				flip_ticks += 1
+		elif air > 0:
+			break
+	var verdict: String = landings[landings.size() - 1] if not landings.is_empty() else "none"
+	await clear()
+	var dur: float = float(flip_ticks + 1) * DT
+	var probe: Dictionary = await _ollie_run(6.0, _no_input)
+	var tap_air: float = float(int(probe["air_ticks"])) * DT
+	return {"flip_rotations_per_s": 1.0 / dur, "flip_catch_margin_tap_s": tap_air - dur, "x_flip_duration_s": dur,
+		"x_flip_tap_landing": verdict}
+
+
+## Flip pressed `k` ticks before the ollie pops (while crouched): the longest lead that still does the flip.
+func m_flip_buffer() -> Dictionary:
+	var best: int = 0
+	for k: int in range(1, 30):
+		await _flat_start(6.0)
+		for i: int in 5:
+			await tick()
+		var ids: Array = []
+		sk.trick_started.connect(func(t: Dictionary) -> void: ids.append(str(t.get("kind", ""))))
+		for i: int in k:
+			await tick(Vector2(-1, 0) if i == 0 else NONE, ["flip", "ollie"] if i == 0 else [], ["ollie"])
+		for i: int in 30:
+			await tick()
+		var flipped: bool = ids.has("flip")
+		await clear()
+		if flipped:
+			best = k
+		else:
+			break
+	return {"flip_prepop_buffer_ms": float(best) * DT * 1000.0}
+
+
+## Full ollie at 8 m/s holding the spin button the whole air: how far it turns on the flat.
+func m_spin() -> Dictionary:
+	await _flat_start(8.0)
+	for i: int in 10:
+		await tick()
+	for i: int in 30:
+		await tick(NONE, ["ollie"] if i == 0 else [], ["ollie"])
+	var deg: float = 0.0
+	for i: int in 120:
+		await tick(NONE, [], ["spin_left"])
+		if sname() == "AIR":
+			deg = absf(sk.spin.degrees())
+		elif deg > 0.0:
+			break
+	await clear()
+	var st: SpinTracker = SpinTracker.new()
+	var grace: float = 180.0
+	for d: int in range(180, 90, -1):
+		st.start(0.0)
+		for j: int in 10:
+			st.update(deg_to_rad(float(d)) * float(j + 1) / 10.0)
+		if st.spins180() < 1:
+			break
+		grace = 180.0 - float(d)
+	return {"spin_deg_full_ollie": deg, "spin_under_rotation_grace_deg": grace}
+
+
+## Lands a full ollie at 8 m/s turned `deg` off the travel direction (an analog stick spin through the first part of the
+## air). Returns {result, deg (the actual turn)}.
+func _land_turned(deg: float) -> Dictionary:
+	var rate: float = tv("spin_rate", 7.5)
+	var n: int = maxi(1, ceili(deg_to_rad(deg) / (rate * DT)))
+	var f: float = deg_to_rad(deg) / (float(n) * rate * DT)
+	while f < 0.3 and n > 1:
+		n -= 1
+		f = deg_to_rad(deg) / (float(n) * rate * DT)
+	var sx: float = -(0.35 + 0.5 * clampf(f, 0.3, 1.0))  ## left spin
+	await _flat_start(8.0)
+	for i: int in 10:
+		await tick()
+	for i: int in 30:
+		await tick(NONE, ["ollie"] if i == 0 else [], ["ollie"])
+	var turned: float = 0.0
+	var res: String = ""
+	var k: int = 0
+	for i: int in 120:
+		var spinning: bool = sname() == "AIR" and k < n and deg > 0.0
+		await tick(Vector2(sx, 0.0) if spinning else NONE)
+		if spinning:
+			k += 1
+		if sname() == "AIR":
+			turned = absf(sk.spin.degrees())
+		for e: String in sk.events:
+			if e.begins_with("land:"):
+				res = e.substr(5)
+		if res != "":
+			break
+	await clear()
+	return {"result": res, "deg": turned}
+
+
+## The biggest heading error (board vs travel) that still lands clean, and that still rides away (sketchy).
+func m_land_heading() -> Dictionary:
+	var out: Dictionary = {}
+	for want: String in ["clean", "sketchy"]:
+		var lo: float = 0.0
+		var hi: float = 100.0
+		var lo_deg: float = 0.0
+		for i: int in 8:
+			var mid: float = (lo + hi) * 0.5
+			var r: Dictionary = await _land_turned(mid)
+			var good: bool = r["result"] == "clean" or (want == "sketchy" and r["result"] == "sketchy")
+			if good:
+				lo = mid
+				lo_deg = float(r["deg"])
+			else:
+				hi = mid
+		out["land_%s_heading_max_deg" % want] = lo_deg
+	var tilt: float = 0.0
+	for d: int in range(0, 90):
+		var th: float = deg_to_rad(float(d))
+		var up := Vector3(sin(th), cos(th), 0.0)
+		if Landing.judge(Vector3.FORWARD, up, Vector3.FORWARD * 6.0, Vector3.UP)["result"] != "clean":
+			break
+		tilt = float(d)
+	out["land_clean_tilt_max_deg"] = tilt
+	return out
+
+
+## Revert: pressed `off` ticks from the touchdown tick (negative = still in the air). Earliest and latest that count.
+func m_revert() -> Dictionary:
+	var probe: Dictionary = await _ollie_run(6.0, _no_input)
+	var pre: int = 0
+	for k: int in range(1, 30):
+		if not await _reverts(-k):
+			break
+		pre = k
+	var post: int = 0
+	for k: int in range(1, 60):
+		if not await _reverts(k):
+			break
+		post = k
+	return {"revert_pre_land_buffer_ms": float(pre) * DT * 1000.0, "revert_post_land_window_ms": float(post) * DT * 1000.0,
+		"x_ttl_prediction_err_ticks": probe["ttl_err"]}
+
+
+func _reverts(off: int) -> bool:
+	var hook: Callable = func(ttl: int, since: int) -> Array:
+		var hit: bool = (off < 0 and ttl == 1 - off) or (off >= 0 and since == off)
+		return [NONE, ["revert"], ["revert"]] if hit else [NONE, [], []]
+	var r: Dictionary = await _ollie_run(6.0, hook, maxi(off, 0) + 4)
+	return (r["ids"] as Array).has("revert") and int(r["bails"]) == 0
+
+
+## Manual flicked in the air (N then S, two ticks each) ending `k` ticks before touchdown: the longest lead that still
+## lands in a manual.
+func m_manual_window() -> Dictionary:
+	var best: int = 0
+	for k: int in range(1, 40):
+		var hook: Callable = func(ttl: int, _since: int) -> Array:
+			var e: int = k + 1  ## the flick's last tick, as a ttl
+			if ttl == e + 3 or ttl == e + 2:
+				return [Vector2(0, -1), [], []]
+			if ttl == e + 1 or ttl == e:
+				return [Vector2(0, 1), [], []]
+			return [NONE, [], []]
+		var r: Dictionary = await _ollie_run(6.0, hook, 4)
+		if r["state_after"] != "MANUAL":
+			break
+		best = k
+	return {"manual_entry_window_ms": float(best) * DT * 1000.0}
+
+
+## Starts a manual on the flat at 6 m/s, then balances it with `human` (the delayed proportional stick) or no stick.
+## Seconds until the fall (capped at BALANCE_CAP_S).
+func _manual_hold(human: bool) -> float:
+	await _flat_start(6.0)
+	for i: int in 5:
+		await tick()
+	for s: Vector2 in [Vector2(0, -1), Vector2(0, -1), Vector2(0, 1), Vector2(0, 1)]:
+		await tick(s)
+	var seen: Array = []
+	var t: float = 0.0
+	if sname() != "MANUAL":
+		await clear()
+		return -1.0
+	while t < BALANCE_CAP_S and sname() == "MANUAL":
+		seen.append(_lean())
+		var stick: Vector2 = NONE
+		if human and seen.size() > HUMAN_REACT_TICKS:
+			stick = Vector2(0.0, clampf(float(seen[seen.size() - 1 - HUMAN_REACT_TICKS]), -1.0, 1.0))
+		sk.speed = 6.0
+		sk.velocity = sk.velocity.normalized() * 6.0  ## hold the speed: the clock, not friction, should end it
+		if sk.global_position.z < -60.0:
+			sk.global_position.z += 120.0
+		await tick(stick)
+		t += DT
+	await clear()
+	return t
+
+
+## What the player model reacts to: lean plus how fast it is tipping, weighted.
+func _lean() -> float:
+	return HUMAN_GAIN * float(sk.balance.angle) + HUMAN_RATE_GAIN * float(sk.balance.velocity)
+
+
+func m_manual_balance() -> Dictionary:
+	return {"manual_fall_nostick_s": await _manual_hold(false), "manual_hold_human_s": await _manual_hold(true)}
+
+
+## 50-50 on a long flat rail at `v0`, balanced by `human` or not: seconds on the rail until it topples or bails.
+func _grind_hold(human: bool) -> float:
+	await sandbox([STREET.flat_rail(200.0, 0.45)])
+	var rails: Array = host.get_tree().get_nodes_in_group("grind_rail")
+	var cx: float = (rails[0] as GrindRail).global_points()[0].x
+	place(Vector3(cx, 0.0, -0.4), Vector3(0, 0, 1), 9.0)
+	await host.get_tree().physics_frame
+	await tick(NONE, ["grind"], [])
+	var t: float = 0.0
+	var seen: Array = []
+	while t < BALANCE_CAP_S and sname() == "GRIND":
+		seen.append(_lean())
+		var stick: Vector2 = NONE
+		if human and seen.size() > HUMAN_REACT_TICKS:
+			stick = Vector2(clampf(-float(seen[seen.size() - 1 - HUMAN_REACT_TICKS]), -1.0, 1.0), 0.0)
+		sk._rail_speed = 8.0 * signf(sk._rail_speed)  ## hold the speed: the balance, not friction, should end it
+		await tick(stick)
+		t += DT
+	await clear()
+	return t
+
+
+func m_grind_balance() -> Dictionary:
+	return {"grind_fall_nostick_s": await _grind_hold(false), "grind_hold_human_s": await _grind_hold(true)}
+
+
+## Rolling at 8 m/s alongside a 0.45 m rail, `d` m to its side, grind pressed: does it snap on?
+func _grind_catch(d: float) -> bool:
+	await sandbox([STREET.flat_rail(30.0, 0.45)])
+	var rails: Array = host.get_tree().get_nodes_in_group("grind_rail")
+	var rp: Vector3 = (rails[0] as GrindRail).global_points()[0]
+	place(Vector3(rp.x + d, 0.0, 3.0), Vector3(0, 0, 1), 8.0)
+	await host.get_tree().physics_frame
+	for i: int in 3:
+		await tick()
+	await tick(NONE, ["grind"], [])
+	var ok: bool = false
+	for i: int in 3:
+		await tick()
+		ok = ok or sname() == "GRIND"
+	await clear()
+	return ok
+
+
+## Rolling at 8 m/s straight at a rail's end from 5 m out. Grind is pressed once, on the first tick the skater is past
+## `z_press` (or on every tick when `every`). Returns the z of the tick before the grind started (99 when none did).
+## Triggered by position, not tick count, so a one-tick shift in the sandbox's start can't skew it.
+func _grind_press_at(z_press: float, every: bool = false) -> float:
+	await sandbox([STREET.flat_rail(30.0, 0.45)])
+	var rails: Array = host.get_tree().get_nodes_in_group("grind_rail")
+	var rp: Vector3 = (rails[0] as GrindRail).global_points()[0]
+	place(Vector3(rp.x, 0.0, -5.0), Vector3(0, 0, 1), 8.0)
+	await host.get_tree().physics_frame
+	var pressed: bool = false
+	var z_prev: float = sk.global_position.z
+	var got: float = 99.0
+	for i: int in 50:
+		var press: bool = every or (not pressed and sk.global_position.z >= z_press)
+		pressed = pressed or press
+		z_prev = sk.global_position.z
+		await tick(NONE, ["grind"] if press else [], [])
+		if sname() == "GRIND":
+			got = z_prev
+			break
+	await clear()
+	return got
+
+
+func m_grind_reach() -> Dictionary:
+	var lo: float = 0.0
+	var hi: float = 2.5
+	for i: int in 8:
+		var mid: float = (lo + hi) * 0.5
+		if await _grind_catch(mid):
+			lo = mid
+		else:
+			hi = mid
+	# Where a grind starts when grind is mashed: the rail just came into reach. Then the earliest single press before
+	# that point that still grinds (buffered), in ticks of travel at 8 m/s.
+	var z_reach: float = await _grind_press_at(0.0, true)
+	var best: int = 0
+	for k: int in range(1, 30):
+		if await _grind_press_at(z_reach - float(k) * 8.0 * DT + 0.01) > 50.0:
+			break
+		best = k
+	return {"grind_snap_reach_m": lo, "grind_press_buffer_ms": float(best) * DT * 1000.0}
+
+
+## Ollie into a tall wall at 25 degrees with grind tapped through the air: how long the wallride lasts.
+func m_wallride() -> Dictionary:
+	var wall := Node3D.new()
+	wall.add_child(PieceKit.box(Vector3(-30, 0, -0.2), Vector3(60, 5, 0.4), PieceKit.PAINT_RED, "Wall"))
+	wall.position = Vector3(0, 0, -4.0)
+	await sandbox([wall])
+	var th: float = deg_to_rad(25.0)  ## 25 degrees into the wall's face: a shallow approach, as wallrides are done
+	var d := Vector3(cos(th), 0.0, -sin(th))
+	place(Vector3(-15.0, 0.0, -1.5), d, 8.0)
+	await host.get_tree().physics_frame
+	for i: int in 3:
+		await tick()
+	for i: int in 20:
+		await tick(NONE, ["ollie"] if i == 0 else [], ["ollie"])
+	var wr: int = 0
+	var y0: float = 0.0
+	var y1: float = 0.0
+	for i: int in 240:
+		await tick(NONE, ["grind"] if i % 4 == 0 and wr == 0 else [], [])
+		if sname() == "WALLRIDE":
+			if wr == 0:
+				y0 = sk.global_position.y
+			wr += 1
+			y1 = sk.global_position.y
+		elif wr > 0:
+			break
+	await clear()
+	return {"wallride_duration_s": float(wr) * DT, "x_wallride_height_change_m": y1 - y0}
+
+
+## Head-on into a flat wall at v0: bail or not.
+func _slams(v0: float) -> bool:
+	var wall := Node3D.new()
+	wall.add_child(PieceKit.box(Vector3(-2, 0, -0.2), Vector3(4, 3, 0.4), PieceKit.PAINT_RED, "Wall"))
+	wall.position = Vector3(0, 0, -6.2)
+	await sandbox([wall])
+	var dir := Vector3(0, 0, -1)
+	place(Vector3(0, 0, -5.7) - dir * v0 * 0.5, dir, v0)
+	await host.get_tree().physics_frame
+	for i: int in 60:
+		await tick()
+	var b: bool = bails > 0
+	await clear()
+	return b
+
+
+func m_wall_slam() -> Dictionary:
+	var lo: float = 4.0
+	var hi: float = 22.0
+	if not await _slams(hi):
+		return {"wall_slam_speed_ms": 99.0}
+	for i: int in 7:
+		var mid: float = (lo + hi) * 0.5
+		if await _slams(mid):
+			hi = mid
+		else:
+			lo = mid
+	return {"wall_slam_speed_ms": hi}
+
+
+## A 4 m quarter pipe (radius 3.5, like the halfpipe's walls) at v0, no input: board height above the coping.
+func _vert(v0: float) -> float:
+	await sandbox([QP.build(10.0, 3.5, 4.0, 1.5)])
+	place(Vector3(5.0, 0.0, 6.8), Vector3(0, 0, -1), v0)
+	await host.get_tree().physics_frame
+	var peak: float = 0.0
+	for i: int in 300:
+		await tick()
+		peak = maxf(peak, sk.global_position.y)
+	await clear()
+	return peak - 4.0
+
+
+func m_vert() -> Dictionary:
+	var g: float = tv("gravity", 18.0)
+	return {"vert_air_14ms": await _vert(14.0), "vert_air_18ms": await _vert(18.0),
+		"x_vert_ideal_18ms_m": 18.0 * 18.0 / (2.0 * g) - 4.0}
+
+
+## Bowl-style carve: up a 2.5 m quarter pipe at 45 degrees and 8 m/s, no input, and back down. Speed back on the flat
+## over the entry speed.
+func m_wall_carve() -> Dictionary:
+	await sandbox([QP.build(30.0, 2.5, 2.5, 1.5)])
+	var d := Vector3(1, 0, -1).normalized()
+	place(Vector3(5.0, 0.0, 7.0), d, 8.0)
+	await host.get_tree().physics_frame
+	var v_in: float = -1.0
+	var v_out: float = -1.0
+	var climbed: bool = false
+	var peak: float = 0.0
+	for i: int in 300:
+		await tick()
+		var p: Vector3 = sk.global_position
+		peak = maxf(peak, p.y)
+		if v_in < 0.0 and p.z < 4.05:
+			v_in = sk.velocity.length()  ## at the toe
+		if p.y > 0.3:
+			climbed = true
+		if climbed and p.z > 4.05 and sk.velocity.z > 0.0:
+			v_out = sk.velocity.length()
+			break
+	var res: Dictionary = {"wall_carve_speed_retention": v_out / maxf(v_in, 0.01), "x_wall_carve_peak_m": peak,
+		"x_wall_carve_bails": bails, "x_wall_carve_air": sk != null and sname() == "AIR"}
+	await clear()
+	return res
+
+
+## A long 15 degree hill: mean acceleration rolling down it, no input, over 1 s (from 0.5 s to 1.5 s).
+func m_slope() -> Dictionary:
+	var ang: float = deg_to_rad(15.0)
+	var run: float = 30.0
+	var h: float = run * tan(ang)
+	var prof := PackedVector2Array([Vector2(0.0, -2.0), Vector2(0.0, run), Vector2(h, 0.0), Vector2(h, -2.0)])
+	var wedge := Node3D.new()
+	wedge.add_child(PieceKit.body(PieceKit.extrude_profile(prof, 10.0), PieceKit.RAMP_WOOD, "Hill"))
+	wedge.position = Vector3(-5.0, 0.0, 0.0)
+	await sandbox([wedge])
+	place(Vector3(0.0, h - 0.5 * tan(ang) + 0.02, 0.5), Vector3(0, 0, 1), 1.0)
+	await host.get_tree().physics_frame
+	var v_a: float = -1.0
+	var v_b: float = -1.0
+	for i: int in 90:
+		await tick()
+		if i == 29:
+			v_a = sk.velocity.length()
+		if i == 89:
+			v_b = sk.velocity.length()
+	await clear()
+	var g: float = tv("gravity", 18.0)
+	return {"slope_accel_15deg": v_b - v_a, "x_slope_ideal_gsin_ms2": g * sin(ang)}

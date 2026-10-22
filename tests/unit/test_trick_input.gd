@@ -140,3 +140,20 @@ func test_clear_resets_state() -> void:
 	assert_eq(r[0]["dir"], "", "buffer cleared")
 	assert_false(r[0]["double_tap"], "double tap cleared")
 	assert_eq(r[0]["sequence"], [])
+
+
+func test_pressed_within_buffers_any_button_and_consume_forgets_it() -> void:
+	var f: TrickInput = TrickInput.new()
+	assert_false(f.pressed_within("ollie", 6), "never pressed")
+	f.feed(Vector2.ZERO, ["ollie"], ["ollie"])  # tick 1
+	assert_true(f.pressed_within("ollie", 0), "pressed this tick")
+	_trick_input_idle(f, TrickInput.OLLIE_LAND_BUFFER_TICKS)
+	assert_true(f.pressed_within("ollie", TrickInput.OLLIE_LAND_BUFFER_TICKS), "still buffered at the window's edge")
+	f.feed(Vector2.ZERO, [], [])
+	assert_false(f.pressed_within("ollie", TrickInput.OLLIE_LAND_BUFFER_TICKS), "expired one tick later")
+	f.feed(Vector2.ZERO, ["ollie"], ["ollie"])
+	f.consume("ollie")
+	assert_false(f.pressed_within("ollie", 6), "consumed press is gone")
+	var r: Array = f.feed(Vector2.ZERO, ["revert", "flip"], [])
+	assert_eq(r.size(), 1, "only flip/grab/grind make trick requests")
+	assert_true(f.pressed_within("revert", 0) and f.pressed_within("flip", 0), "every button is stamped")
