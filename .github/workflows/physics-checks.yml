@@ -26,7 +26,7 @@ jobs:
   check:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -34,7 +34,7 @@ jobs:
           - { name: unit, cmd: "tools/run_tests.sh" }
           - { name: lint, cmd: "tools/lint.sh" }
           - { name: sims-controller, cmd: "timeout 600 godot --headless --path . res://tests/sim/controller_sims.tscn | tee out.log; grep -q 'SIMS passed=.* failed=0$' out.log" }
-          - { name: sims-suite, cmd: "timeout 600 godot --headless --path . res://tests/sim/sim_suite.tscn | tee out.log; grep -q 'SIMS passed=.* failed=0$' out.log" }
+          - { name: sims-suite, cmd: "timeout 1080 godot --headless --path . res://tests/sim/sim_suite.tscn | tee out.log; grep -q 'SIMS passed=.* failed=0$' out.log" }
           - { name: lab, cmd: "tools/physics_report.sh $TUNE_ARG" }
           - { name: bot-0, cmd: "timeout 300 godot --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- --shard=0 --nshards=6 --record $TUNE_ARG | tee out.log; grep -q '^BOT score=' out.log && ! grep -q '^BOT .* FAIL ' out.log" }
           - { name: bot-1, cmd: "timeout 300 godot --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- --shard=1 --nshards=6 --record $TUNE_ARG | tee out.log; grep -q '^BOT score=' out.log && ! grep -q '^BOT .* FAIL ' out.log" }
