@@ -48,3 +48,16 @@ func test_burst_textures() -> void:
 		assert_eq(img.get_width(), 64)
 		assert_eq(img.get_pixel(0, 0).a, 0.0, "transparent corners")
 	assert_true(BailFx.burst_texture(true).get_image().get_pixel(32, 32).a > 0.9, "the pow star is solid in the middle")
+
+
+func test_focus_and_slowmo_gates() -> void:
+	assert_eq(BailFx.focus_weight(0.0), 0.0)
+	assert_true(BailFx.focus_weight(0.2) > 0.9, "holds on the joint")
+	assert_eq(BailFx.focus_weight(BailFx.PUNCH_TIME), 0.0, "released")
+	assert_true(BailFx.SLOWMO_MIN_SEV >= 0.5, "slow motion only on big slams")
+
+
+func test_land_shake() -> void:
+	assert_eq(SkateFx.land_shake(0.05, 0.2), Vector2.ZERO, "soft landings do not shake")
+	assert_true(SkateFx.land_shake(0.04, 1.0).length() > 0.005, "big landings shake")
+	assert_eq(SkateFx.land_shake(SkateFx.LAND_SHAKE_TIME, 1.0), Vector2.ZERO)

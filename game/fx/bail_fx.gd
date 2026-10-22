@@ -14,7 +14,12 @@ const SHAKE_TIME: float = 0.38
 const SHAKE_AMP: float = 0.09  ## m of camera offset at full severity
 const PUNCH_TIME: float = 0.55
 const PUNCH_FOV: float = 13.0  ## degrees narrower at full severity: the camera punches in on the slam
-const READOUT_TIME: float = 2.6
+const READOUT_TIME: float = 2.8
+const READOUT_IN: float = 0.32
+const READOUT_OUT: float = 0.4
+const SLOWMO_MIN_SEV: float = 0.55  ## only a big slam gets the slow motion
+const FOCUS_TIME: float = 1.1  ## s the on-screen joint callout stays
+const FOCUS_PULL: float = 0.55  ## how far the camera slides toward the hurt joint (1 = centred on it)
 const BURST_TIME: float = 0.22
 const POP_TIME: float = 0.28
 const BURST_COLOR: Color = Color(1.0, 0.92, 0.35)
@@ -30,8 +35,14 @@ var _skater: Node3D
 var _ragdoll: Node
 var _player: AudioStreamPlayer
 var _layer: CanvasLayer
-var _box: VBoxContainer
-var _readout_t: float = 99.0
+var _card: PanelContainer
+var _slide: Control
+var _col: VBoxContainer
+var _meat_label: Label
+var _readout_tween: Tween
+var _mark: FocusMark
+var _focus_node: Node3D
+var _focus_t: float = 99.0
 var _shake_t: float = 99.0
 var _punch_t: float = 99.0
 var _sev: float = 0.0
@@ -79,9 +90,10 @@ func _on_injured(points: Array) -> void:
 		_burst(a, BURST_COLOR, BURST_TIME, 0.22 + 0.1 * _sev, true)
 	_shake_t = 0.0
 	_punch_t = 0.0
+	_start_focus()
 	meat_total += int(plan.get("meat", 0))
 	_show_readout()
-	if not Flags.is_scripted_run():
+	if not Flags.is_scripted_run() and _sev >= SLOWMO_MIN_SEV:
 		_start_slowmo()
 
 
@@ -94,12 +106,7 @@ func _on_repairing(points: Array) -> void:
 func _process(delta: float) -> void:
 	var real: float = delta / maxf(Engine.time_scale, 0.01)
 	_tick_camera(real)
-	if _layer != null and _readout_t < READOUT_TIME:
-		_readout_t += real
-		var fade: float = clampf((READOUT_TIME - _readout_t) / 0.35, 0.0, 1.0)
-		_box.modulate.a = fade
-		if _readout_t >= READOUT_TIME:
-			_layer.visible = false
+	_tick_focus(real)
 
 
 # --- camera -------------------------------------------------------------------------------------------------------
@@ -132,7 +139,7 @@ func _tick_camera(real: float) -> void:
 		return
 	_shake_t += real
 	_punch_t += real
-	var o: Vector2 = shake_offset(_shake_t, _sev)
+	var o: Vector2 = shake_offset(_shake_t, _sev) + _focus_offset()
 	_cam.h_offset = o.x
 	_cam.v_offset = o.y
 	# The chase camera writes its own fov each physics tick: punch relative to the last value it wrote.
@@ -142,6 +149,27 @@ func _tick_camera(real: float) -> void:
 	_cam.fov = _cam_fov_written
 	if _shake_t >= SHAKE_TIME and _punch_t >= PUNCH_TIME:
 		_restore_camera()
+
+
+## Weight of the camera's slide toward the hurt joint t seconds into the slam: eases in, holds, eases out. Pure.
+static func focus_weight(t: float) -> float:
+	if t < 0.0 or t >= PUNCH_TIME:
+		return 0.0
+	return smoothstep(0.0, 0.1, t) * (1.0 - smoothstep(0.3, PUNCH_TIME, t))
+
+
+## Frustum shift (m) that pulls the first hurt joint toward the screen centre (the camera "looks" at the injury).
+func _focus_offset() -> Vector2:
+	if _focus_node == null or not is_instance_valid(_focus_node) or _cam == null or not _focus_node.is_inside_tree():
+		return Vector2.ZERO
+	var local: Vector3 = _cam.global_transform.affine_inverse() * _focus_node.global_position
+	if local.z > -0.5:
+		return Vector2.ZERO
+	return Vector2(local.x, local.y) * FOCUS_PULL * focus_weight(_punch_t) * sev_focus(_sev)
+
+
+static func sev_focus(sev: float) -> float:
+	return 0.5 + 0.5 * clampf(sev, 0.0, 1.0)
 
 
 func _restore_camera() -> void:
@@ -185,49 +213,157 @@ static func readout_lines(p: Dictionary) -> PackedStringArray:
 	return out
 
 
+## On-screen callout of the hurt joint: a pulsing ring, a leader line and the injury name, so the injury reads at the
+## normal chase distance. Placed each frame at the joint's screen position.
+class FocusMark:
+	extends Control
+	var text: String = ""
+	var t: float = 0.0
+	var at: Vector2 = Vector2.ZERO
+
+	func _draw() -> void:
+		var life: float = clampf(1.0 - t / BailFx.FOCUS_TIME, 0.0, 1.0)
+		var pop: float = clampf(t / 0.12, 0.0, 1.0)
+		var fade: float = minf(life / 0.25, 1.0)
+		var r: float = 30.0 + 14.0 * (1.0 - pop) + 4.0 * sin(t * 14.0)
+		var ink: Color = Color(UiStyle.INK, fade)
+		var hot: Color = Color(UiStyle.BUBBLEGUM, fade)
+		draw_arc(at, r, 0.0, TAU, 40, ink, 9.0, true)
+		draw_arc(at, r, 0.0, TAU, 40, hot, 5.0, true)
+		var dir: Vector2 = Vector2(1.0, -1.0).normalized()
+		var p0: Vector2 = at + dir * (r + 2.0)
+		var elbow: Vector2 = p0 + dir * 34.0 * pop
+		var tail: Vector2 = elbow + Vector2(150.0, 0.0) * pop
+		draw_polyline(PackedVector2Array([p0, elbow, tail]), ink, 7.0, true)
+		draw_polyline(PackedVector2Array([p0, elbow, tail]), Color(UiStyle.WHITE, fade), 3.0, true)
+		if pop >= 1.0:
+			var font: Font = SkateThemeBuilder.heading_font()
+			var sz: int = UiStyle.SIZE_SMALL
+			var pos: Vector2 = elbow + Vector2(6.0, -10.0)
+			draw_string_outline(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, sz, 10, ink)
+			draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, sz, Color(UiStyle.SUNSHINE, fade))
+
+
+func _start_focus() -> void:
+	var nodes: Array = _anchors([])
+	_focus_node = null
+	for n: Variant in nodes:
+		if n is Node3D:
+			_focus_node = n
+			break
+	var inj: Array = plan.get("injuries", [])
+	if _focus_node == null or inj.is_empty() or not is_inside_tree():
+		return
+	_ensure_layer()
+	if _mark == null:
+		_mark = FocusMark.new()
+		_mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_mark.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_layer.get_child(0).add_child(_mark)
+	_layer.visible = true
+	_mark.visible = true
+	_mark.text = str(inj[0]["label"]).to_upper()
+	_mark.t = 0.0
+	_focus_t = 0.0
+
+
+func _tick_focus(real: float) -> void:
+	if _mark == null or _focus_t >= FOCUS_TIME:
+		return
+	_focus_t += real
+	_mark.t = _focus_t
+	var cam: Camera3D = _cam if _cam != null and is_instance_valid(_cam) else get_viewport().get_camera_3d()
+	if cam != null and _focus_node != null and is_instance_valid(_focus_node) and _focus_node.is_inside_tree() \
+			and not cam.is_position_behind(_focus_node.global_position):
+		var vp: Vector2 = get_viewport().get_visible_rect().size
+		var sp: Vector2 = cam.unproject_position(_focus_node.global_position)
+		# keep the callout on screen: the leader runs up and right
+		_mark.at = Vector2(clampf(sp.x, 60.0, vp.x - 330.0), clampf(sp.y, 90.0, vp.y - 60.0))
+	_mark.queue_redraw()
+	if _focus_t >= FOCUS_TIME:
+		_mark.visible = false
+
+
+func _ensure_layer() -> void:
+	if _layer != null:
+		return
+	_layer = CanvasLayer.new()
+	_layer.layer = 12
+	add_child(_layer)
+	var root: Control = Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_layer.add_child(root)
+
+
+## The Hall of Meat card: a navy plate that slides in from the right, lists the injuries one by one, counts the meat
+## up, then slides away. Clean typography (no outlined action text) so it reads as a scoreboard.
 func _show_readout() -> void:
 	var lines: PackedStringArray = readout_lines(plan)
 	if lines.is_empty() or not is_inside_tree():
 		return
-	if _layer == null:
-		_layer = CanvasLayer.new()
-		_layer.layer = 12
-		add_child(_layer)
-		var root: Control = Control.new()
-		root.set_anchors_preset(Control.PRESET_FULL_RECT)
-		root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_layer.add_child(root)
-		_box = VBoxContainer.new()
-		_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_box.alignment = BoxContainer.ALIGNMENT_CENTER
-		_box.add_theme_constant_override("separation", -6)
-		_box.anchor_left = 0.8  # lower right: the chase camera keeps the skater in the middle of the screen
-		_box.anchor_right = 0.8
-		_box.anchor_top = 0.66
-		_box.anchor_bottom = 0.66
-		_box.grow_horizontal = Control.GROW_DIRECTION_BOTH
-		_box.grow_vertical = Control.GROW_DIRECTION_BOTH
-		root.add_child(_box)
-	for c: Node in _box.get_children():
-		_box.remove_child(c)
-		c.queue_free()
-	_layer.visible = true
-	_readout_t = 0.0
-	_box.modulate.a = 1.0
-	var head: Label = UiStyle.label("HALL OF MEAT  -  " + lines[0], UiStyle.SIZE_SMALL, UiStyle.WHITE)
-	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_box.add_child(head)
+	_ensure_layer()
+	var root: Control = _layer.get_child(0) as Control
+	if _slide != null:
+		_slide.queue_free()
+	_slide = Control.new()
+	_slide.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_slide.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_slide)
+	_card = PanelContainer.new()
+	_card.theme_type_variation = SkateThemeBuilder.PNL_NAVY
+	_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_card.anchor_left = 1.0
+	_card.anchor_right = 1.0
+	_card.anchor_top = 0.62
+	_card.anchor_bottom = 0.62
+	_card.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_card.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_card.offset_right = -48.0
+	_card.offset_left = -48.0
+	_slide.add_child(_card)
+	_col = VBoxContainer.new()
+	_col.add_theme_constant_override("separation", 2)
+	_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_card.add_child(_col)
+	var head: Label = UiStyle.label("HALL OF MEAT", UiStyle.SIZE_SMALL - 4, UiStyle.BUBBLEGUM, false)
+	_col.add_child(head)
+	var title: Label = UiStyle.label(lines[0].to_upper(), UiStyle.SIZE_BODY + 4, UiStyle.WHITE, false)
+	_col.add_child(title)
+	var rule: ColorRect = ColorRect.new()
+	rule.color = Color(UiStyle.WHITE, 0.25)
+	rule.custom_minimum_size = Vector2(0.0, 3.0)
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_col.add_child(rule)
+	var rows: Array[Control] = []
 	for i: int in range(1, lines.size() - 1):
-		var t: AnimeText = AnimeText.new("", UiStyle.SIZE_BIG, UiStyle.BUBBLEGUM)
-		t.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		t.impact_lines = false  # the HUD's Bail! already bursts; keep the skater in view
-		_box.add_child(t)
-		t.pop(lines[i])
-	var m: AnimeText = AnimeText.new("", UiStyle.SIZE_BODY + 6, UiStyle.SUNSHINE)
-	m.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	m.impact_lines = false
-	_box.add_child(m)
-	m.pop(lines[lines.size() - 1])
+		var r: Label = UiStyle.label("+ " + lines[i], UiStyle.SIZE_BODY, UiStyle.SUNSHINE, false)
+		r.modulate.a = 0.0
+		_col.add_child(r)
+		rows.append(r)
+	var total: int = int(plan.get("meat", 0))
+	_meat_label = UiStyle.label("0 MEAT", UiStyle.SIZE_BIG - 6, UiStyle.LIME, false)
+	_meat_label.modulate.a = 0.0
+	_col.add_child(_meat_label)
+	# animate: slide in, rows stagger, meat counts up, slide out (real time, so slow motion does not stretch it)
+	_slide.position.x = 420.0
+	_card.modulate.a = 0.0
+	if _readout_tween != null and _readout_tween.is_valid():
+		_readout_tween.kill()
+	var tw: Tween = _card.create_tween().set_ignore_time_scale(true)
+	_readout_tween = tw
+	tw.set_parallel(true)
+	tw.tween_property(_card, "modulate:a", 1.0, READOUT_IN * 0.6)
+	tw.tween_property(_slide, "position:x", 0.0, READOUT_IN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var at: float = READOUT_IN + 0.05
+	for r: Control in rows:
+		tw.tween_property(r, "modulate:a", 1.0, 0.18).set_delay(at)
+		at += 0.22
+	tw.tween_property(_meat_label, "modulate:a", 1.0, 0.18).set_delay(at)
+	tw.tween_method(func(v: float) -> void: _meat_label.text = "%s MEAT" % Hud.format_points(int(v)), 0.0, float(total), 0.7).set_delay(at)
+	var out_at: float = READOUT_TIME - READOUT_OUT
+	tw.tween_property(_card, "modulate:a", 0.0, READOUT_OUT).set_delay(out_at)
+	tw.tween_property(_slide, "position:x", 160.0, READOUT_OUT).set_delay(out_at).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 # --- 3D bursts ------------------------------------------------------------------------------------------------------

@@ -47,3 +47,17 @@ func test_zero_point_landing_spawns_no_pop() -> void:
 	hud._flush_landing()
 	assert_true(hud._fx.get_child_count() > 0, "a real landing still pops")
 	hud.queue_free()
+
+
+func test_balance_title_and_trick_size() -> void:
+	assert_eq(Hud.balance_title("grind"), "GRIND")
+	assert_eq(Hud.balance_title("manual"), "MANUAL")
+	assert_eq(Hud.balance_title("lip"), "LIP")
+	assert_true(Hud.trick_size("Ollie") > Hud.trick_size("Backside Tailslide to Fakie"), "long names shrink")
+	assert_true(Hud.trick_size("Kickflip") == Hud.TRICK_SIZE, "short names full size")
+
+
+func test_trick_string_is_below_the_skater() -> void:
+	# the skater sits mid-screen; the trick string and the pop-ups must live in the lower band, never over them
+	assert_true(Hud.TRICK_Y >= 0.72, "trick string bottom-centre")
+	assert_true(Hud.FLOAT_Y >= 0.8 and Hud.FLOAT_X > 0.65, "points pop lower right")

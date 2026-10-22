@@ -107,3 +107,41 @@ func test_noise_is_seeded() -> void:
 	assert_true(SfxSynth.roll_loop().data == SfxSynth.roll_loop().data, "roll repeatable")
 	assert_true(SfxSynth.grind_loop().data == SfxSynth.grind_loop().data, "grind repeatable")
 	assert_true(SfxSynth.bail().data == SfxSynth.bail().data, "bail repeatable")
+
+
+func test_material_loops() -> void:
+	for st: AudioStreamWAV in [SfxSynth.roll_wood_loop(), SfxSynth.grind_concrete_loop(), SfxSynth.grind_wood_loop()]:
+		_sfx_check_format(st, 22050, "material loop")
+		_sfx_check_loop(st, "material loop")
+
+
+func test_land_heavy() -> void:
+	var st: AudioStreamWAV = SfxSynth.land_heavy()
+	_sfx_check_format(st, int(0.32 * SfxSynth.RATE), "land_heavy")
+	_sfx_check_one_shot(st, "land_heavy")
+
+
+func test_ambience_loops() -> void:
+	for kind: String in ["crowd", "wind", "surf", "hum", "city"]:
+		var st: AudioStreamWAV = SfxSynth.ambience_loop(kind)
+		_sfx_check_format(st, 44100, "ambience " + kind)
+		_sfx_check_loop(st, "ambience " + kind)
+
+
+func test_surface_classification() -> void:
+	assert_eq(SkateAudio.classify_surface(PackedStringArray(["Collision", "Quarterpipe_1", "Park"])), "wood")
+	assert_eq(SkateAudio.classify_surface(PackedStringArray(["Ground", "Park"])), "concrete")
+	assert_eq(SkateAudio.classify_surface(PackedStringArray(["Handrail", "Ramp"])), "metal")
+	assert_eq(SkateAudio.classify_grind("GrindRail_3"), "metal")
+	assert_eq(SkateAudio.classify_grind("Ledge_box"), "concrete")
+	assert_eq(SkateAudio.classify_grind("Coping_N"), "wood")
+
+
+func test_landing_shape_scales_with_impact() -> void:
+	var soft: Array = SkateAudio.land_shape(0.1)
+	var hard: Array = SkateAudio.land_shape(0.9)
+	assert_eq(soft[0], "land")
+	assert_eq(hard[0], "land_heavy")
+	assert_true(float(hard[2]) > float(soft[2]) and float(hard[1]) < float(soft[1]), "harder: louder and lower")
+	assert_eq(SkateAudio.ambience_for("beach"), "surf")
+	assert_eq(SkateAudio.ambience_for("nonsense"), "crowd")

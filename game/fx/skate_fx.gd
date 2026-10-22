@@ -48,6 +48,9 @@ var _burst: CPUParticles3D
 var _streaks: SpeedStreaks
 var _orbit_t: float = 0.0
 var _star_pop: float = 0.0
+var _lshake_t: float = 99.0  ## big-landing camera shake clock (s since the landing)
+var _lshake_amp: float = 0.0
+var _shake_cam: Camera3D
 
 
 ## Attaches the effects to the skater and connects to its landed and bailed signals. Safe to call once per skater.
@@ -167,9 +170,38 @@ func _build() -> void:
 		_stars.append(m)
 
 
+const LAND_SHAKE_MIN: float = 0.45  ## land_impact (0..1) below this: no shake
+const LAND_SHAKE_TIME: float = 0.28
+const LAND_SHAKE_AMP: float = 0.07  ## m of camera offset at full impact
+
+
+## Camera shake offset (m) t seconds after a landing of this 0..1 impact: a short decaying wobble, none below
+## LAND_SHAKE_MIN. Pure.
+static func land_shake(t: float, impact: float) -> Vector2:
+	if impact < LAND_SHAKE_MIN or t < 0.0 or t >= LAND_SHAKE_TIME:
+		return Vector2.ZERO
+	var k: float = 1.0 - t / LAND_SHAKE_TIME
+	var a: float = LAND_SHAKE_AMP * clampf((impact - LAND_SHAKE_MIN) / (1.0 - LAND_SHAKE_MIN) * 0.8 + 0.2, 0.0, 1.0) * k * k
+	return Vector2(sin(t * 71.0) * a * 0.5, cos(t * 53.0) * a)
+
+
+func _tick_land_shake(delta: float) -> void:
+	if _lshake_t >= LAND_SHAKE_TIME:
+		return
+	if _shake_cam == null or not is_instance_valid(_shake_cam):
+		_shake_cam = get_viewport().get_camera_3d()
+	if _shake_cam == null:
+		return
+	_lshake_t += delta
+	var o: Vector2 = land_shake(_lshake_t, _lshake_amp)
+	_shake_cam.h_offset = o.x
+	_shake_cam.v_offset = o.y
+
+
 func _process(delta: float) -> void:
 	if not _built or _skater == null or not is_instance_valid(_skater):
 		return
+	_tick_land_shake(delta)
 	if _visual == null:
 		_visual = _skater.get_node_or_null("Visual") as Node3D
 	var frame: Transform3D = _visual.global_transform if _visual != null else _skater.global_transform
@@ -235,6 +267,9 @@ func _on_bailed() -> void:
 func _on_landed(result: String) -> void:
 	if not _built or _skater == null or result == "bail":
 		return
+	if _skater.land_impact >= LAND_SHAKE_MIN:
+		_lshake_t = 0.0
+		_lshake_amp = _skater.land_impact
 	var clean: bool = result == "clean"
 	var count: int = 3 if clean else 5
 	var col: Color = PUFF_CLEAN_COLOR if clean else PUFF_SKETCHY_COLOR
