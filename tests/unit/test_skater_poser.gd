@@ -471,3 +471,38 @@ func test_vert_air_turns_the_rider_toward_world_up() -> void:
 	assert_true(deg > 55.0 and deg < 75.0, "the rider rights itself most of the way (%f deg)" % deg)
 	var landing: Dictionary = SkaterPoser.pose_for("air", 0.9, 0.0, 0.0, false, 0.0, 0.0, {"vy": -8.0, "tilt_w": 1.0, "up_local": up_local})
 	assert_near((landing["tilt"] as Vector3).length(), 0.0, 0.001, "the tilt is gone by the time the legs reach for the ramp")
+
+
+func test_flatland_poses_are_distinct_and_full() -> void:
+	var seen: Dictionary = {}
+	for a: String in ["manual_casper", "manual_pogo", "manual_anti_casper", "manual_truckstand", "manual_handstand", "manual_manual"]:
+		var p: Dictionary = SkaterPoser.pose_for(a, 0.5, 0.3, 0.0)
+		assert_true(_has_full_pose(p), "full pose for " + a)
+		var key: String = "%s|%s|%s" % [str(p["board_rot"]), str(p["pitch"]), str(p["lift"])]
+		assert_false(seen.has(key), a + " has its own pose")
+		seen[key] = true
+	assert_true(float(SkaterPoser.pose_for("manual_handstand", 0.5, 0.3, 0.0)["pitch"]) > 150.0, "handstand inverts the rider")
+	assert_near(float((SkaterPoser.pose_for("manual_casper", 0.5, 0.3, 0.0)["board_rot"] as Vector3).z), 180.0, 0.01, "casper flips the board")
+
+
+func test_manual_pivot_spins_half_round() -> void:
+	var ctx: Dictionary = {"pivot_p": 0.0, "pivot_dir": 1.0}
+	var start: Dictionary = SkaterPoser.pose_for("manual_nose_manual", 0.5, 0.2, 0.0, true, 0.0, 0.0, ctx)
+	var done: Dictionary = SkaterPoser.pose_for("manual_nose_manual", 0.5, 0.2, 0.0, true)
+	assert_near(absf(float(start["body_yaw"]) - float(done["body_yaw"])), 180.0, 0.01, "rider starts a half turn away")
+	assert_near(absf(float((start["board_rot"] as Vector3).y)), 180.0, 0.01, "board starts a half turn away")
+	assert_near(float((done["board_rot"] as Vector3).y), 0.0, 0.01, "board ends square")
+
+
+func test_new_grabs_grinds_and_lips_have_full_poses() -> void:
+	var anims: PackedStringArray = ["grab_madonna", "grab_judo", "grab_crossbone", "grab_rocket_air", "grab_christ_air",
+			"grab_cannonball", "grab_crail", "grab_japan", "grab_roast_beef", "grab_double_airwalk", "grab_unknown_thing",
+			"grind_overcrook", "grind_willy_grind", "grind_salad_grind", "grind_suski_grind", "grind_darkslide",
+			"grind_hurricane", "grind_noseslide", "grind_tailslide", "grind_nosebluntslide", "lip_invert", "lip_eggplant",
+			"lip_one_foot_invert", "lip_nose_pick", "lip_blunt_to_fakie", "lip_feeble_stall", "lip_smith_stall"]
+	for a: String in anims:
+		for t: float in [0.05, 0.4]:
+			assert_true(_has_full_pose(SkaterPoser.pose_for(a, t, 0.5, 0.2)), "full pose for %s at %f" % [a, t])
+	var rot_a: Vector3 = SkaterPoser.pose_for("grind_overcrook", 0.4, 0.6, 0.0)["board_rot"]
+	var rot_b: Vector3 = SkaterPoser.pose_for("grind_crooked_grind", 0.4, 0.6, 0.0)["board_rot"]
+	assert_true(rot_a.distance_to(rot_b) > 5.0, "overcrook differs from crooked")
