@@ -115,3 +115,26 @@ func test_level_content() -> void:
 	assert_true(dt.traffic.cars.size() >= 18, "the busiest traffic (%d cars)" % dt.traffic.cars.size())
 	assert_eq(dt.transit.trains.size(), 2, "a train each way on the Line")
 	lvl.free()
+
+
+func test_fountain_rim_is_one_seamless_collider() -> void:
+	# the kit's ring_ledge collides as 28 angled boxes whose corner edges snagged the rider (31% loss in the sweep): one trimesh ring now
+	var lvl: Level = LevelRegistry.create("downtown")
+	_tree().root.add_child(lvl)
+	var sb: StaticBody3D = lvl.find_child("CivicCollision", true, false) as StaticBody3D
+	assert_true(sb != null, "the civic collision body exists")
+	var ring: ConcavePolygonShape3D = null
+	var near_boxes: int = 0
+	var c: Vector3 = DtPlan.FOUNTAIN
+	for ch: Node in sb.get_children():
+		var cs: CollisionShape3D = ch as CollisionShape3D
+		if cs == null:
+			continue
+		var d: Vector2 = Vector2(cs.global_position.x - c.x, cs.global_position.z - c.z)
+		if cs.shape is ConcavePolygonShape3D and cs.global_position.is_equal_approx(sb.global_position):
+			ring = cs.shape as ConcavePolygonShape3D
+		elif cs.shape is BoxShape3D and absf(d.length() - (DtPlan.FOUNTAIN_R - 0.3)) < 0.05:
+			near_boxes += 1
+	assert_true(ring != null, "the rim is a trimesh ring")
+	assert_eq(near_boxes, 0, "no angled rim boxes remain")
+	lvl.free()

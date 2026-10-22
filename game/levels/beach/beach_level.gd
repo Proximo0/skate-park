@@ -153,6 +153,11 @@ func setup_environment(preset_id: String = "") -> void:
 func slab(rect: Rect2, kind: String, colour: Color, node_name: String, top_y: float = 0.0, thick: float = 1.0, pattern: float = 1.0) -> StaticBody3D:
 	var sb: StaticBody3D = PieceKit.box(Vector3(rect.position.x, top_y - thick, rect.position.y), Vector3(rect.size.x, thick, rect.size.y), colour, node_name)
 	(sb.get_node("Mesh") as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# a box shape, not the box mesh's trimesh: the road and sidewalk slabs are 840 m long, and a trimesh of triangles that size
+	# reports phantom underside contacts metres from the skater (a dead stop at the WalkSouth/ParkSlab line, 100% loss)
+	var box := BoxShape3D.new()
+	box.size = Vector3(rect.size.x, thick, rect.size.y)
+	(sb.get_node("Collision") as CollisionShape3D).shape = box
 	WorldSurface.apply(sb, kind, colour, pattern)
 	add_child(sb)
 	return sb

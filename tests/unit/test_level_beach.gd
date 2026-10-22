@@ -81,3 +81,17 @@ func test_level_content_counts() -> void:
 	assert_true(rails >= 25, "at least 25 grind edges (%d)" % rails)
 	assert_true(lips > 0, "ramp lips for snap (%d)" % lips)
 	lvl.free()
+
+
+func test_ground_slabs_collide_as_boxes_not_giant_trimeshes() -> void:
+	# an 840 m trimesh slab gave phantom underside contacts at the WalkSouth/ParkSlab line (a dead stop, 100% loss in the snag sweep)
+	var lvl: Level = LevelRegistry.create("beach")
+	(Engine.get_main_loop() as SceneTree).root.add_child(lvl)
+	for nm: String in ["Road", "WalkNorth", "WalkSouth", "Seawall"]:
+		var sb: StaticBody3D = lvl.get_node(nm) as StaticBody3D
+		assert_true(sb != null, nm + " exists")
+		var cs: CollisionShape3D = sb.get_node("Collision") as CollisionShape3D
+		assert_true(cs.shape is BoxShape3D, nm + " collides as a box")
+		var box: BoxShape3D = cs.shape as BoxShape3D
+		assert_near(sb.position.y + box.size.y * 0.5, 0.0 if nm != "Seawall" else 0.0, 0.001, nm + " top flush with y = 0")
+	lvl.free()

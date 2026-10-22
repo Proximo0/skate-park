@@ -204,13 +204,57 @@ func _stairs() -> void:
 	DtKit.zone(_rails, "hall_bottom", Vector3(-half, p, bot_z + 0.3), Vector3(half * 2.0, 1.6, 6.0))
 
 
+## One seamless closed ring (top annulus, outer and inner wall) as a front-face trimesh: no box corners or shared top edges.
+func _ring_collision(c: Vector3, r_in: float, r_out: float, y_top: float, y_bot: float, n: int) -> void:
+	var pts := PackedVector3Array()
+	for i: int in n:
+		var a0: float = TAU * float(i) / float(n)
+		var a1: float = TAU * float(i + 1) / float(n)
+		var d0 := Vector3(cos(a0), 0.0, sin(a0))
+		var d1 := Vector3(cos(a1), 0.0, sin(a1))
+		var ot0: Vector3 = c + d0 * r_out + Vector3.UP * y_top
+		var ot1: Vector3 = c + d1 * r_out + Vector3.UP * y_top
+		var it0: Vector3 = c + d0 * r_in + Vector3.UP * y_top
+		var it1: Vector3 = c + d1 * r_in + Vector3.UP * y_top
+		var ob0 := Vector3(ot0.x, y_bot, ot0.z)
+		var ob1 := Vector3(ot1.x, y_bot, ot1.z)
+		var ib0 := Vector3(it0.x, y_bot, it0.z)
+		var ib1 := Vector3(it1.x, y_bot, it1.z)
+		var dm: Vector3 = (d0 + d1).normalized()
+		_tri(pts, it0, ot0, ot1, Vector3.UP)
+		_tri(pts, it0, ot1, it1, Vector3.UP)
+		_tri(pts, ot0, ob0, ob1, dm)
+		_tri(pts, ot0, ob1, ot1, dm)
+		_tri(pts, it0, ib0, ib1, -dm)
+		_tri(pts, it0, ib1, it1, -dm)
+	var cs := CollisionShape3D.new()
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(pts)
+	shape.backface_collision = false
+	cs.shape = shape
+	_sb.add_child(cs)
+
+
+## Append a triangle wound so its front (clockwise in Godot) faces `out`.
+func _tri(pts: PackedVector3Array, a: Vector3, b: Vector3, c: Vector3, out: Vector3) -> void:
+	if (b - a).cross(c - a).dot(out) > 0.0:
+		pts.append_array(PackedVector3Array([a, c, b]))
+	else:
+		pts.append_array(PackedVector3Array([a, b, c]))
+
+
 ## The fountain plaza (west): the round rim, water, the kit fountain in the middle with jets, a launch bump on the
 ## east side for the fountain gap, two parallel ledges to the south, benches round the west edge.
 func _fountain() -> void:
 	var c: Vector3 = DtPlan.FOUNTAIN
 	var p: float = DtPlan.P
 	var r: float = DtPlan.FOUNTAIN_R
-	DtKit.ring_ledge(_bt, _sb, _rails, c, r - 0.6, r, 0.55, p, 28, DtKit.GRANITE, DtKit.GRANITE_WARM, "FountainRim")
+	# the kit's ring_ledge collides as 28 overlapping angled boxes (their top edges and corners are snag seams); the visuals and
+	# the grind rail are kept, its boxes go to a scratch body and one seamless trimesh ring takes over the collision
+	var scratch := StaticBody3D.new()
+	DtKit.ring_ledge(_bt, scratch, _rails, c, r - 0.6, r, 0.55, p, 28, DtKit.GRANITE, DtKit.GRANITE_WARM, "FountainRim")
+	scratch.free()
+	_ring_collision(c, r - 0.6, r, p + 0.55, p - DtKit.SINK, 28)
 	# basin floor (blue tiles) and the water
 	_bt.cyl(Vector3(c.x, p + 0.004, c.z), r - 0.55, 0.01, Color("3f7fa6"), 28)
 	var water := MeshInstance3D.new()
