@@ -17,6 +17,10 @@ signal physics_ticked(frame: Dictionary)
 signal ramp_snapped(mode: String)
 ## The ramp snap was pressed with no ramp in reach (the HUD shows a hint).
 signal ramp_snap_missed
+## A powerslide started (true) or ended (false): the hook for the skid sound and the wheel-dust fx.
+signal powerslide_changed(active: bool)
+## The nollie stance was toggled (the nollie button): the HUD shows NOLLIE while it is on.
+signal nollie_changed(on: bool)
 
 const SPIN_POINTS_PER_180 := 100
 ## Floor contacts bending more than about 25 degrees from the current floor in one tick are checked against the
@@ -117,6 +121,21 @@ const SNAP_YAW_MAX_DEG: float = 5.5  ## the snap's turn never runs faster than t
 const SNAP_YAW_PEAK: float = 1.25  ## the turn profile's peak rate over its average (eased ends)
 const SNAP_ARC_STRETCH_MAX: float = 0.75  ## s: longest a snap hop may be stretched for its turn
 const SNAP_EASE_TIME: float = 0.1
+## Powerslide (THUG2: the revert button while rolling, outside a landing's revert window; "powerslide" in scripted
+## input): the board is kicked a quarter turn across the line and skids, slowing at tune.powerslide_decel. It lasts
+## while the button is held, at least POWERSLIDE_MIN_TIME, and ends when the roll is nearly stopped, the floor gets
+## steep or the skater leaves the ground. Steering is cut to POWERSLIDE_STEER of a normal carve while it skids.
+const POWERSLIDE_MIN_TIME: float = 0.3
+const POWERSLIDE_STEER: float = 0.35
+const POWERSLIDE_MIN_NY: float = 0.8  ## flat-ish ground only (normal y): not on a transition or a bank
+## Rolling over a convex bend (a coping, a roll-in edge, a crest) the speed is set from the energy: what the body had
+## coming in plus what it dropped this tick, less the rolling friction. Projecting the velocity onto each new facet
+## and the floor snap dragging the body down round the bend otherwise ate about 60% of a slow roll-in's energy in a
+## quarter second. Only a real bend counts: the floor normal (or the travel against it) turning more than
+## CONVEX_MIN_DEG in the tick; flat-ground contact jitter (millimetres, a fraction of a degree) never does.
+const CONVEX_MIN_DEG: float = 3.0
+const FLAT_NY: float = 0.99  ## floors flatter than this (normal y) count as flat for _limit_flat_step
+const FLAT_SLACK: float = 0.01  ## m a flat ground tick may move sideways past speed * dt
 
 ## Live physics tuning. Every ride number is read from here each tick.
 var tune: PhysicsTuning = PhysicsTuning.shared()
@@ -206,6 +225,12 @@ var _roll_in_dir: Vector3 = Vector3.ZERO  ## inward (down the ramp) of the copin
 var _roll_in_hold: int = 0  ## ground ticks left in which a roll-in's coping bend does not count as convex
 var _curv: float = 0.0  ## signed floor curvature along the path, 1/m (see _update_curvature)
 var _lone_spin: float = 0.0  ## rad the shoulder buttons spun since both were last up (undone if they make a chord)
+## Nollie stance (THUG2: the nollie button toggles it): ollies off the ground pop off the nose (anim "nollie") and the
+## air tricks after them are named "Nollie ...". Stays on until toggled off, a bail, a respawn or stepping off.
+var nollie: bool = false
+var _nollie_air: bool = false  ## this air came from a nollie
+var powersliding: bool = false  ## skidding sideways in a powerslide (anim "powerslide")
+var _slide_time: float = 0.0  ## s into the current powerslide
 
 
 func _ready() -> void:
@@ -311,6 +336,11 @@ func _step(delta: float) -> void:
 	var requests: Array = tricks.feed(_stick, _just_pressed, _held)
 	_recent_grind_press = 0 if _just_pressed.has("grind") else _recent_grind_press + 1
 	_recent_revert_press = 0 if _just_pressed.has("revert") else mini(_recent_revert_press + 1, 100)
+	if _just_pressed.has("nollie") and state.state in [SkateState.State.ROLLING, SkateState.State.MANUAL,
+			SkateState.State.AIR, SkateState.State.GRIND, SkateState.State.LIP]:
+		_set_nollie(not nollie)
+	if powersliding and state.state != SkateState.State.ROLLING:
+		_end_powerslide()
 	anim_time += delta
 	camera_hold = maxf(camera_hold - delta, 0.0)
 	if state.state == SkateState.State.ROLLING and _floor_normal.y > 0.95 and _snap.is_empty():
@@ -373,6 +403,15 @@ func _tick_rolling(delta: float, requests: Array) -> void:
 		_score_trick({"id": "revert", "name": "Revert", "points": 100, "kind": "revert", "anim": "revert"})
 		_set_anim("revert")
 		return
+	if powersliding:
+		_slide_time += delta
+		var slide_held: bool = _held.has("revert") or _held.has("powerslide")
+		if (_slide_time >= POWERSLIDE_MIN_TIME and not slide_held) or speed < tune.powerslide_min_speed / 3.0 \
+				or _floor_normal.y < POWERSLIDE_MIN_NY:
+			_end_powerslide()
+	elif (_just_pressed.has("revert") or _just_pressed.has("powerslide")) and speed >= tune.powerslide_min_speed \
+			and _floor_normal.y >= POWERSLIDE_MIN_NY and _crouch_time == 0.0:
+		_start_powerslide()
 	var seq: Array = tricks.manual_tap_sequence()
 	if seq.size() == 2 and speed > 1.0:
 		var m: Dictionary = db.find_sequence(seq, "")
@@ -412,12 +451,19 @@ func _ollie(power: float) -> void:
 	var up: Vector3 = Vector3.UP
 	if state.state != SkateState.State.GRIND and _floor_normal.y < 0.8:
 		up = (_floor_normal + Vector3.UP).normalized()  # on a steep transition, pop out of the ramp too
+	var from_ground: bool = state.state in [SkateState.State.ROLLING, SkateState.State.MANUAL]
+	var is_nollie: bool = nollie and from_ground
+	if is_nollie:
+		power *= tune.nollie_pop  # popped off the nose: a touch lower
 	velocity += up * power
 	if state.state != SkateState.State.GRIND:
 		position += up * 0.05
 	if state.event("ollie"):
+		_nollie_air = is_nollie
 		_ev("ollie")
-		_set_anim("ollie")
+		if is_nollie:
+			_ev("nollie")
+		_set_anim("nollie" if is_nollie else "ollie")
 		_enter_air(false)
 
 
@@ -500,6 +546,7 @@ func _publish() -> void:
 		"vert_air": vert_air, "launch_normal": _launch_normal, "wall_normal": _wall_normal,
 		"pumping": _d_pumping, "pushing": _d_pushing, "push_pulse": _d_pulse, "braking": _d_braking,
 		"left_edge": _left_edge, "on_wall": is_on_wall(), "rail": rail_name, "events": events,
+		"nollie": nollie, "powerslide": powersliding,
 	}
 	physics_ticked.emit(debug)
 
@@ -508,6 +555,10 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	var n: Vector3 = _floor_normal
 	var v: Vector3 = velocity.slide(n)
 	var in_spd: float = velocity.length()
+	var e_in: float = 0.5 * in_spd * in_spd + tune.gravity * global_position.y
+	var convex_min: float = sin(deg_to_rad(CONVEX_MIN_DEG))
+	# Coming onto this floor over a convex bend: the travel still points out of it (it ran along the last facet).
+	var convex: bool = in_spd > 0.5 and velocity.dot(n) > in_spd * convex_min
 	if in_spd > 0.5 and v.length() > 0.01 and absf(velocity.dot(n)) < 0.35 * in_spd:
 		# Following a curve onto the next facet: turn the velocity onto it rather than cutting it.
 		v = v.normalized() * in_spd
@@ -527,6 +578,8 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		stick_x = clampf(stick_x + _carve_side * TOPPLE_CARVE_STEER * (_carve_left / TOPPLE_CARVE_TIME), -1.0, 1.0)
 		_carve_left = maxf(_carve_left - delta, 0.0)
 	var steer: float = -stick_x * turn_rate * delta * clampf(v.length() / 1.5, 0.25, 1.0)
+	if powersliding:
+		steer *= POWERSLIDE_STEER
 	if absf(steer) > 0.0:
 		var pre_facing: Vector3 = facing
 		var pre_v: Vector3 = v
@@ -542,7 +595,10 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	# gravity along the slope
 	v += Vector3.DOWN.slide(n) * tune.gravity * delta
 	var along: float = v.dot(facing)
-	if allow_push and _stick.y < -0.3 and along < tune.push_max and n.y > 0.8:
+	if powersliding:
+		# Skidding sideways: the wheels scrub the speed off, nothing else adds or takes any.
+		along = move_toward(along, 0.0, tune.powerslide_decel * delta)
+	elif allow_push and _stick.y < -0.3 and along < tune.push_max and n.y > 0.8:
 		_d_pushing = true
 		if anim != "push" and crouch == 0.0:
 			_set_anim("push")
@@ -574,7 +630,7 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		v = v.normalized() * tune.max_speed
 	if anim == "push" and _stick.y >= -0.3:
 		_set_anim("idle_ride")
-	if crouch > 0.0 and anim != "crouch":
+	if crouch > 0.0 and anim != "crouch" and not powersliding:
 		_set_anim("crouch")
 	# Going up a steep wall: no snap and no push into the surface, so the skater leaves the lip
 	# into vert air instead of wrapping over onto the deck.
@@ -595,6 +651,8 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	floor_snap_length = 0.6
 	_left_edge = false
 	_limit_step(pre_pos, maxf(in_spd, v.length()) * delta)
+	if n.y > FLAT_NY and is_on_floor() and get_floor_normal().y > FLAT_NY:
+		_limit_flat_step(pre_pos, Vector2(v.x, v.z).length() * delta)
 	if is_on_floor():
 		var fn: Vector3 = get_floor_normal()
 		var was: Vector3 = _floor_normal
@@ -644,6 +702,10 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			if keep_dir.length() >= 0.1 * spd:
 				velocity = keep_dir.normalized() * spd
 			# else: wedged into an inside corner with no way along either wall: the speed is lost to it.
+		if fn.dot(was) < cos(deg_to_rad(CONVEX_MIN_DEG)) and (fn - was).dot(v) > 0.0:
+			convex = true  # the floor bent away ahead this tick (over the coping, down the roll-in)
+		if convex:
+			_keep_convex_energy(e_in, fn, delta)
 		_update_curvature(was, fn, v, global_position.distance_to(pre_pos))
 		if _ground_below(fn):
 			return
@@ -675,6 +737,49 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		_launch_normal = _floor_normal
 
 
+## Over a convex bend: the speed along the floor `fn` is raised (never lowered) to what the energy coming in (`e_in`,
+## per unit mass) gives at the height reached, less this tick's rolling friction. Pumping, pushing and braking already
+## changed the speed this tick and are kept when they leave it higher.
+func _keep_convex_energy(e_in: float, fn: Vector3, delta: float) -> void:
+	var dir: Vector3 = velocity.slide(fn)
+	if dir.length() < 0.1:
+		return
+	var sq: float = 2.0 * (e_in - tune.gravity * global_position.y)
+	if sq <= 0.0:
+		return
+	var target: float = minf(sqrt(sq) - tune.roll_friction * delta, tune.max_speed)
+	if velocity.length() < target:
+		velocity = dir.normalized() * target
+		_ev("convex_keep")
+
+
+func _start_powerslide() -> void:
+	powersliding = true
+	_slide_time = 0.0
+	_set_anim("powerslide")
+	_ev("powerslide")
+	powerslide_changed.emit(true)
+
+
+func _end_powerslide() -> void:
+	if not powersliding:
+		return
+	powersliding = false
+	_slide_time = 0.0
+	if anim == "powerslide":
+		_set_anim("idle_ride")
+	_ev("powerslide_end")
+	powerslide_changed.emit(false)
+
+
+func _set_nollie(on: bool) -> void:
+	if on == nollie:
+		return
+	nollie = on
+	_ev("nollie_on" if on else "nollie_off")
+	nollie_changed.emit(on)
+
+
 ## Still committed to a roll-in on the floor `fn`: within ROLL_IN_HOLD_TICKS of rolling over a coping, with the floor
 ## still tipping toward the ramp (a normal swinging round sideways is the ramp's side edge, not its wall).
 func _roll_in_holds(fn: Vector3) -> bool:
@@ -695,6 +800,22 @@ func _limit_step(pre_pos: Vector3, allowed: float) -> void:
 	var to: Vector3 = pre_pos + moved.normalized() * lim
 	if test_move(Transform3D(global_transform.basis, pre_pos), to - pre_pos):
 		return  # the shorter step would end inside something: keep the slide's own result
+	global_position = to
+	_ev("pop_limited")
+
+
+## Flat floor to flat floor (a curb top, the ground): the slide's overlap recovery may not carry the body sideways further
+## than its speed allows plus FLAT_SLACK in one tick (after landing on a curb's top near its edge it slid 7 cm sideways in
+## one tick). Height changes (curb steps) are left alone. Cut back only where the shorter step fits.
+func _limit_flat_step(pre_pos: Vector3, allowed: float) -> void:
+	var moved: Vector3 = global_position - pre_pos
+	var h: Vector2 = Vector2(moved.x, moved.z)
+	if h.length() <= allowed + FLAT_SLACK:
+		return
+	var hk: Vector2 = h.normalized() * (allowed + FLAT_SLACK)
+	var to: Vector3 = Vector3(pre_pos.x + hk.x, global_position.y, pre_pos.z + hk.y)
+	if test_move(Transform3D(global_transform.basis, pre_pos), to - pre_pos):
+		return
 	global_position = to
 	_ev("pop_limited")
 
@@ -1185,6 +1306,7 @@ func _air_trick(r: Dictionary) -> void:
 
 ## impact: the velocity just before touching down (move_and_slide has already removed the part into the floor).
 func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
+	_nollie_air = false
 	_floor_normal = n
 	_curv = 0.0
 	_roll_in_hold = 0
@@ -1202,10 +1324,20 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	elif flip_left > 0.0 and result == "clean":
 		result = "sketchy"  # caught it late
 	var spins: int = spin.spins180()
+	# Skate-3-style height slam: even upright, hitting the surface square at over tune.slam_impact m/s (a flat drop of
+	# about 16 m) buckles the knees. Only the speed into the surface counts, so a big air onto a transition or a bank
+	# that turns the fall into roll stays ridable.
+	var slam: bool = result != "bail" and maxf(-hit_v.dot(n), 0.0) > tune.slam_impact
+	if slam:
+		result = "bail"
+		_ev("height_slam")
 	_ev("land:" + result)
 	if result == "bail":
-		_bail({"cause": "flip" if flip_left > 0.2 else "land", "velocity": hit_v, "normal": n,
-				"spin_deg": spin.degrees()})
+		var ctx: Dictionary = {"cause": "flip" if flip_left > 0.2 else "land", "velocity": hit_v, "normal": n,
+				"spin_deg": spin.degrees()}
+		if slam:
+			ctx["kind"] = "big_drop"
+		_bail(ctx)
 		landed.emit(result)
 		return
 	if spins > 0:
@@ -1902,6 +2034,7 @@ func _try_dismount() -> void:
 	_pending_air.clear()
 	crouch = 0.0
 	_crouch_time = 0.0
+	_set_nollie(false)
 	balance_kind = ""
 	_left_edge = false
 	_set_anim("dismount")
@@ -1954,6 +2087,9 @@ func _set_walk_physics(walking: bool) -> void:
 ## ctx: what caused it (BailKind context keys; the ragdoll's plan is classified from it).
 func _bail(ctx: Dictionary = {}) -> void:
 	_bail_ctx = ctx
+	_end_powerslide()
+	_set_nollie(false)
+	_nollie_air = false
 	balance_kind = ""
 	_snap = {}
 	_snap_hold_up = Vector3.ZERO
@@ -1964,6 +2100,10 @@ func _bail(ctx: Dictionary = {}) -> void:
 	_air_trick_until = 0.0
 	vert_air = false
 	state.event("bail")
+	if combo.is_active():
+		# A combo of gaps only (scored with no trick opening it) leaves state.combo_open false, so the bail above did
+		# not drop it: drop it here, or it comes back after the get-up.
+		_on_combo_bailed()
 	_set_anim("bail_fall")
 	_start_ragdoll()
 	bailed.emit()
@@ -2055,6 +2195,9 @@ func respawn() -> void:
 	_set_walk_physics(false)
 	combo.bail()
 	gaps.reset_combo()
+	_end_powerslide()
+	_set_nollie(false)
+	_nollie_air = false
 	_set_anim("idle_ride")
 
 
@@ -2121,6 +2264,10 @@ func snapshot() -> Dictionary:
 		"snap": _snap.duplicate(true),
 		"snap_hold_up": _snap_hold_up,
 		"lone_spin": _lone_spin,
+		"nollie": nollie,
+		"nollie_air": _nollie_air,
+		"powersliding": powersliding,
+		"slide_time": _slide_time,
 		"camera_hold": camera_hold,
 		"camera_anchor": camera_anchor,
 		"chord": chord.to_dict(),
@@ -2215,6 +2362,10 @@ func restore(d: Dictionary) -> void:
 	_snap = (d.get("snap", {}) as Dictionary).duplicate(true)
 	_snap_hold_up = d.get("snap_hold_up", Vector3.ZERO)
 	_lone_spin = float(d.get("lone_spin", 0.0))
+	nollie = bool(d.get("nollie", false))
+	_nollie_air = bool(d.get("nollie_air", false))
+	powersliding = bool(d.get("powersliding", false))
+	_slide_time = float(d.get("slide_time", 0.0))
 	camera_hold = float(d.get("camera_hold", 0.0))
 	camera_anchor = d.get("camera_anchor", Vector3.ZERO)
 	chord.from_dict(d.get("chord", {}))
@@ -2283,7 +2434,9 @@ func _start_balance_trick(t: Dictionary, kind: String) -> void:
 func _score_trick(t: Dictionary) -> void:
 	var points: int = int(t.get("points", 0))
 	var nm: String = str(t.get("name", "Trick"))
-	if switch_stance and t.get("kind", "") in ["flip", "grab", "grind", "manual"]:
+	if _nollie_air and state.state == SkateState.State.AIR and t.get("kind", "") in ["flip", "grab"]:
+		nm = "Nollie " + nm
+	elif switch_stance and t.get("kind", "") in ["flip", "grab", "grind", "manual"]:
 		nm = "Switch " + nm
 	combo.add_trick(str(t.get("id", nm)), nm, points)
 	special.add_points(points)

@@ -4,13 +4,14 @@ extends "res://tests/sim/sim_base.gd"
 ##               BankSandMid hotspot): falls off the side into the air and lands on the ground below; never ROLLING on a
 ##               near-vertical face (|floor normal y| < 0.15), never gaining energy while rolling
 ##  dome_roll_in rolling slowly (4 m/s) over the practice dome bowl's rim (the DomeBowl hotspot): the skater follows the
-##               wall down to the bottom without peeling off it into the air or bailing, and loses no more energy over the
-##               coping than before the grip limit (the coping's own loss, worst 0.25 s window, is ~64% of the start energy
-##               and is left as it is: the bot lines are tuned to it)
+##               wall down to the bottom without peeling off it into the air or bailing, and keeps its energy over the
+##               rim: in the worst 0.25 s window the loss past rolling friction's work is under ROLL_IN_MAX_LOSS of the
+##               start energy (it was ~64% before Skater._keep_convex_energy)
 ##  wall_carve   carving along the dome's steep upper wall (normal y 0.2): at 3 m/s there is not enough press for the
 ##               wheels to hold the line and the skater slides down (over 0.4 m in 0.6 s); at 9 m/s it holds (under 0.25 m)
 
 const BankPiece := preload("res://game/park/pieces/walls.gd")
+const ROLL_IN_MAX_LOSS: float = 0.15
 
 
 func _energy() -> float:
@@ -58,18 +59,22 @@ func _dome_roll_in() -> Array:
 	sk.physics_ticked.connect(func(f: Dictionary) -> void:
 		if (f["events"] as Array).has("roll_in"):
 			seen["roll_in"] = true)
+	var fw: Array = []  # rolling friction's work so far (roll_friction x distance): the loss allowed anywhere
+	var work: float = 0.0
 	for i: int in 70:
 		await tick()
 		es.append(_energy())
+		work += sk.tune.roll_friction * sk.velocity.length() * DT
+		fw.append(work)
 		if sname() == "AIR" and sk.global_position.y < -0.1:
 			air = true
 	var worst: float = 0.0
 	for i: int in range(15, es.size()):
-		worst = maxf(worst, float(es[i - 15]) - float(es[i]))
+		worst = maxf(worst, float(es[i - 15]) - float(es[i]) - (float(fw[i]) - float(fw[i - 15])))
 	var rolled_in: bool = seen["roll_in"]
-	var ok: bool = rolled_in and worst < 0.7 * start_ref and bails == 0 and not air and sk.global_position.y < -5.0
-	var row: Array = ok_line("cling_dome_roll_in", ok, "rolled in %s, worst 0.25 s energy loss %.1f (%.0f%% of the start's %.1f, want < 70%%), fell off the wall %s, bails %d, now %s at y %.1f (want < -5) %.1f m/s"
-		% [str(rolled_in), worst, 100.0 * worst / start_ref, start_ref, str(air), bails, sname(), sk.global_position.y, sk.speed])
+	var ok: bool = rolled_in and worst < ROLL_IN_MAX_LOSS * start_ref and bails == 0 and not air and sk.global_position.y < -5.0
+	var row: Array = ok_line("cling_dome_roll_in", ok, "rolled in %s, worst 0.25 s energy loss past rolling friction %.1f (%.0f%% of the start's %.1f, want < %.0f%%), fell off the wall %s, bails %d, now %s at y %.1f (want < -5) %.1f m/s"
+		% [str(rolled_in), worst, 100.0 * worst / start_ref, start_ref, 100.0 * ROLL_IN_MAX_LOSS, str(air), bails, sname(), sk.global_position.y, sk.speed])
 	await clear()
 	return row
 

@@ -139,15 +139,15 @@ no new snapshot state (`_last_press` is already in the snapshot). In `_tick_roll
 
 ## Watch / not done
 
-- **No powerslide.** Stick back is a straight brake. A Skate-3 powerslide would mean a sideways slide state with a decel of about
-  mu·g, roughly 5 to 7 m/s² here. It would be a new `skater.gd` feature, so it is out of scope for tuning.
+- **Powerslide (round 3).** The revert button while rolling outside a landing's revert window (THUG2) kicks the board a quarter
+  turn and skids at `powerslide_decel` (7 m/s², lab 7.2). Stick back is still the plain foot brake.
 - `wall_carve_speed_retention` (0.926) sits near its low edge; `roll_friction` 0.45 would fix it but needs the bot lines re-routed (see Round 3).
 - `turn_radius_8ms` (3.3 m) is tighter than its 4.5 m target but inside the band. It is THUG-sharp. To widen it, lower `carve_grip`
   toward 15, but that also widens the 12 m/s turn to about 9.6 m.
 
 ## Round 3: carve retention and lab coverage
 
-**Tuning (not shipped).** `roll_friction` 0.6 stays the default. Lowering it to 0.45 (mu about 0.025 at gravity 18; real wheels are 0.02)
+**Tuning (shipped in round 3 with the bot lines re-routed).** `roll_friction` was 0.6. Lowering it to 0.45 (mu about 0.025 at gravity 18; real wheels are 0.02)
 fixes the drag in the lab: wall carve retention 0.926 to 0.956 (reference about 0.96 per carve), a full hands-off lap round the practice
 DomeBowl (new `dome_lap_speed_retention`, r 8 m dome, 6.3 m ring, 4.4 s) 0.81 to 0.89, coast from 8 m/s 53 to 71 m (band 35 to 90),
 halfpipe pump gain 1.88 to 1.90 (the pump is untouched). The lap loss scales linearly with `roll_friction` (0.35 gives 0.92, 0.25 gives
@@ -169,16 +169,15 @@ then set the default to 0.45 and the WARN clears. The beach bowl is a rounded re
 | `revert_speed_keep` | 1.00 | A revert is a stance switch only, in both reference games; it must never brake the combo |
 | `fakie_landing_retention` | 0.94 | A 180 spin landed backward costs the same as a forward landing plus a little roll |
 | `big_air_landing_keep` | 0.94 | 8 m drop (mega ramp scale, 19 m/s impact): scrub is clamped at about 5 percent |
-| `big_air_clean_drop_m` | 20 (cap) | See below |
-| `nollie_height_ratio` | PENDING | Real nollie about 0.9 of an ollie; THUG matches it |
-| `powerslide_decel_ms2` | PENDING | Skate 3 slide sheds about half of 8 m/s in 0.7 s (about 6 m/s^2) |
+| `big_air_clean_drop_m` | 14 (height slam at 24 m/s into the surface) | See below |
+| `nollie_height_ratio` | 0.905 | Real nollie about 0.9 of an ollie; THUG matches it |
+| `powerslide_decel_ms2` | 7.2 | Skate 3 slide sheds about half of 8 m/s in 0.7 s (about 6 m/s^2) |
 
 **Pending moves.** A target whose `why` begins with `PENDING` and whose move returns NaN prints `PENDING` and counts as neither pass nor warn.
-`m_nollie` presses the `nollie` button after a tap-height check and goes live as soon as it pops (height at least 0.2 m). `m_powerslide`
-holds `powerslide` with a full stick at 10 m/s and goes live as soon as any state name contains `SLIDE` (the skater currently has none; the
-poser already has a `powerslide` pose). If the trigger gets another name, change the string in `m_powerslide`.
+`m_nollie` toggles nollie stance with the `nollie` button, then taps ollie (THUG2 controls). `m_powerslide` holds `powerslide` (scripted
+alias of the revert button) with a full stick at 10 m/s and reads `Skater.powersliding`. Both are live since round 3.
 
-**Gap found: no impact bail.** `Landing.judge` and `_land` decide a bail from board pose and heading only. An upright board lands clean
+**Gap found (fixed in round 3: `slam_impact`, 24 m/s square into the surface, slams as `big_drop`): no impact bail.** `Landing.judge` and `_land` decide a bail from board pose and heading only. An upright board lands clean
 from 20 m (impact 26.6 m/s), keeping about 94 percent of its speed. That suits a THUG-leaning game and means a mega ramp can never slam
 a clean board, but there is no height slam as in Skate 3. If one is wanted, add it in `_land` (for example a bail when `into` passes
 about 24 m/s on flat) and tighten `big_air_clean_drop_m` max_ok to match; the lab move already searches up to 20 m.

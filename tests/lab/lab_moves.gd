@@ -108,6 +108,11 @@ func _ollie(hold_ticks: int, button: String = "ollie") -> Dictionary:
 	await _flat_start(4.0)
 	for i: int in 20:
 		await tick()
+	if button == "nollie":
+		# THUG2 nollie: the nollie button toggles nollie stance, then the ollie button pops off the nose
+		await tick(NONE, ["nollie"], ["nollie"])
+		await tick()
+		button = "ollie"
 	var y0: float = sk.global_position.y
 	for i: int in hold_ticks:
 		await tick(NONE, [button] if (i == 0 and button != "ollie") else [], [button])
@@ -1028,8 +1033,8 @@ func m_bowl_lap() -> Dictionary:
 		"x_dome_lap_bails": r["bails"]}
 
 
-## Powerslide: PENDING until the skater has a slide trigger. Probes for a state whose name contains SLIDE after holding the
-## trigger; when present, the mean deceleration over the first 0.5 s of a full-stick slide at 10 m/s.
+## Powerslide (the revert button while rolling, or "powerslide" in scripted input; Skater.powersliding while it skids):
+## the mean deceleration over the first 0.5 s of a full-stick slide at 10 m/s.
 func m_powerslide() -> Dictionary:
 	await _flat_start(10.0)
 	for i: int in 6:
@@ -1039,7 +1044,7 @@ func m_powerslide() -> Dictionary:
 	var v1: float = v0
 	for i: int in 30:
 		await tick(Vector2(1.0, 0.0), ["powerslide"] if i == 0 else [], ["powerslide"])
-		if sname().contains("SLIDE"):
+		if bool(sk.get("powersliding")):
 			slid = true
 	v1 = sk.velocity.length()
 	await clear()
@@ -1048,7 +1053,7 @@ func m_powerslide() -> Dictionary:
 	return {"powerslide_decel_ms2": (v0 - v1) / 0.5}
 
 
-## Nollie against ollie: tap height ratio. PENDING until the nollie button pops (no air from it).
+## Nollie against ollie: tap height ratio (nollie stance toggled with the nollie button, then a tap ollie).
 func m_nollie() -> Dictionary:
 	var tap: Dictionary = await _ollie(1)
 	var nol: Dictionary = await _ollie(1, "nollie")

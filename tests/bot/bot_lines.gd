@@ -332,14 +332,16 @@ func _dome() -> Array:
 	var rim: float = 8.0
 	var c: Vector3 = Vector3(dome.global_position.x + rim + 1.5, 0.0, dome.global_position.z + rim + 1.5)
 	var out: Array = [tp(Vector3(c.x, Y0, c.z - rim - 0.7), Vector3(0, 0, 1), 3.0)]
-	out.append(wp(c.x, c.z - 3.0, 8.0, {"r": 1.8, "pump": true}))
-	# a carve once round the bowl, widening up the wall
+	# the roll-in keeps its energy over the rim (Skater._keep_convex_energy): no pumping down the drop, gravity alone
+	# brings the rider to about 15 m/s at the bottom of the 6.7 m dish
+	out.append(wp(c.x, c.z - 3.0, 8.0, {"r": 1.8}))
+	# a carve once round the bowl, widening up the wall; pumping only tops the speed up to what the carve can hold
 	var a: float = PI * 0.5
 	var radius: float = 4.2
 	for i: int in 11:
 		a += 0.6
 		radius = minf(radius + 0.15, 5.6)
-		out.append(wp(c.x + cos(a) * radius, c.z + sin(a) * radius, 10.0, {"r": 1.8, "pump": true, "tmo": 8.0}))
+		out.append(wp(c.x + cos(a) * radius, c.z + sin(a) * radius, 10.0, {"r": 1.8, "pump": true, "pump_max": 12.0, "tmo": 8.0}))
 	# then pump straight across the bowl, wall to wall, until the passes reach the rim (no pumping at the lip, and back to
 	# the middle if a pass carries the rider out of the dish)
 	out.append(wp(c.x, c.z, 10.0, {"r": 0.1, "tmo": 30.0, "pump": true, "pipe": {"axis": "x", "lane": c.z, "ref": 0.0, "min_y": -3.0, "want": 5,

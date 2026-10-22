@@ -17,7 +17,7 @@ const FIELDS: Array = [
 	["push_cycle", 0.6, 0.2, 1.5, 0.01, "Push", "Length of one push cycle, s."],
 	["push_contact", 0.55, 0.1, 1.0, 0.01, "Push", "Share of the cycle the foot is on the ground."],
 	["brake", 6.0, 0.0, 30.0, 0.25, "Rolling", "Braking deceleration (stick back), m/s²."],
-	["roll_friction", 0.6, 0.0, 5.0, 0.05, "Rolling", "Rolling resistance, m/s²."],
+	["roll_friction", 0.45, 0.0, 5.0, 0.05, "Rolling", "Rolling resistance, m/s² (mu about 0.025 at gravity 18: a bowl lap keeps about 0.9 of its speed, Skate-3-like carves)."],
 	["side_grip", 25.0, 1.0, 100.0, 1.0, "Rolling", "How hard the wheels stop sideways sliding, m/s²."],
 	["turn_rate", 2.6, 0.5, 8.0, 0.05, "Rolling", "Turn rate at low speed, rad/s."],
 	["turn_rate_fast", 1.7, 0.3, 6.0, 0.05, "Rolling", "Turn rate at max speed, rad/s."],
@@ -50,6 +50,10 @@ const FIELDS: Array = [
 	["snap_reach_air", 15.0, 3.0, 30.0, 0.5, "Ramp snap", "Q + E in the air: farthest ramp lip it snaps you into, m."],
 	["snap_drop_speed", 1.0, 0.5, 10.0, 0.25, "Ramp snap", "Slowest speed a snap drop-in starts down the wall with, m/s (gravity does the rest)."],
 	["snap_out_speed", 5.0, 1.0, 12.0, 0.25, "Ramp snap", "Rolling speed after a snap out of a ramp, m/s."],
+	["powerslide_decel", 7.0, 1.0, 20.0, 0.25, "Powerslide", "Powerslide deceleration (revert button while rolling), m/s². A little more than the foot brake."],
+	["powerslide_min_speed", 3.0, 0.5, 10.0, 0.25, "Powerslide", "Slowest roll a powerslide starts from, m/s; it ends below a third of this."],
+	["nollie_pop", 0.95, 0.5, 1.2, 0.01, "Air", "Nollie pop speed as a share of the ollie's (a real nollie is a touch lower)."],
+	["slam_impact", 24.0, 10.0, 60.0, 0.5, "Air", "Landing square into the surface faster than this (m/s) slams even upright (about a 16 m flat drop at gravity 18)."],
 ]
 
 static var _shared: PhysicsTuning = null
@@ -96,6 +100,10 @@ var snap_reach_roll: float
 var snap_reach_air: float
 var snap_drop_speed: float
 var snap_out_speed: float
+var powerslide_decel: float
+var powerslide_min_speed: float
+var nollie_pop: float
+var slam_impact: float
 
 
 func _init() -> void:

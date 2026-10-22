@@ -231,6 +231,8 @@ func teleport(pos: Vector3, dir: Vector3, speed: float) -> void:
 	sk.speed = speed
 	teleported = true
 	_act = {}
+	_revert_in = -1  # a revert queued for the last line's landing must not fire on the next one (it would powerslide)
+	_want_revert = false
 	wall_test = false
 	_have_prev = false
 	_pipe_dir = 1.0

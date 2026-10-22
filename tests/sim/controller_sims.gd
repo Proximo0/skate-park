@@ -26,6 +26,9 @@ const SCENARIOS: Array = [
 	["respawn", 20.0],
 ]
 
+## Ride-feel sims in the sim_base.gd style run after the scenarios (sim_suite.tscn is near its 600 s limit).
+const SIM_FILES: Array = ["sim_nollie_powerslide"]
+
 var _park: Node
 var _sk: Skater
 var _verdict: int = 0  ## 0 running, 1 pass, -1 fail
@@ -62,6 +65,17 @@ func _run_all() -> void:
 		else:
 			failed += 1
 		print("SIM %s %s %s" % [sc_name, "PASS" if _verdict == 1 else "FAIL", _detail])
+	# Ride-feel sims (sim_base.gd style) that run in this scene to share the 600 s budget with sim_suite.tscn.
+	for f: String in SIM_FILES:
+		var sim: Variant = (load("res://tests/sim/%s.gd" % f) as GDScript).new()
+		sim.host = self
+		var rows: Array = await sim.run()
+		for r: Array in rows:
+			if r[1]:
+				passed += 1
+			else:
+				failed += 1
+			print("SIM %s %s %s" % [r[0], "PASS" if r[1] else "FAIL", r[2]])
 	print("SIMS passed=%d failed=%d" % [passed, failed])
 	get_tree().quit(1 if failed > 0 else 0)
 

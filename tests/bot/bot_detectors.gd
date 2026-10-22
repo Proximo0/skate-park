@@ -143,7 +143,8 @@ func feed(f: Dictionary, moving_intent: bool, bot_teleported: bool, hit: Diction
 			bails += 1
 			_issue("bail", pos, tick, why_bail)
 	# --- build this tick's lite record
-	var excuse: bool = state in ["BAIL", "GRIND", "LIP", "WALLRIDE"] or bool(f["braking"]) or snapping_now
+	var excuse: bool = state in ["BAIL", "GRIND", "LIP", "WALLRIDE"] or bool(f["braking"]) or bool(f.get("powerslide", false)) \
+		or snapping_now
 	for e: String in evs:
 		if EXCUSE_EVENTS.has(e) or e.begins_with("land:"):
 			excuse = true

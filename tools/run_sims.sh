@@ -10,7 +10,7 @@ GODOT="${GODOT:-godot}"
 (flock 9; "$GODOT" --headless --path . --import) 9>/tmp/skate_import.lock >/tmp/godot_import.log 2>&1 || { cat /tmp/godot_import.log; exit 1; }
 passed=0; failed=0; rc=0
 for scene in controller_sims sim_suite; do
-  out=$(timeout 600 "$GODOT" --headless --path . "res://tests/sim/$scene.tscn" 2>&1 \
+  out=$(timeout 900 "$GODOT" --headless --path . "res://tests/sim/$scene.tscn" 2>&1 \
     | grep -vE '^(Godot Engine v|$|WARNING: .*audio|   at: )')
   echo "$out" | grep -v '^SIMS passed='
   totals=$(echo "$out" | grep '^SIMS passed=' | tail -1)
