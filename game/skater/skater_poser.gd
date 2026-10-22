@@ -20,6 +20,11 @@ extends Node
 ## front); "fpitch_L"/"fpitch_R" shoe pitch in degrees (+ toe up, heel-to-toe walking); "feet_on_board" 0..1 (1 = shoes lie flat on the deck, 0 = level); "feet_free" 0..1 (1 = feet hang
 ## from the hips instead of their targets, for bails); "hand_L"/"hand_R" hand targets in visual space with
 ## "grip_L"/"grip_R" 0..1 IK weights. pose_for() is pure and unit tested.
+##
+## Context (pose_for's ctx, filled from the live skater by _skater_ctx): "impact" (land_impact 0..1, scales the
+## landing absorb), "carve" (-1..1 sideways acceleration, lean into turns), "ride_speed" (m/s, idle variety only
+## when stopped), "vy" (vertical speed, the legs reach for the ground when falling). After a ragdoll bail the get-up
+## blends the joints and board from where the ragdoll left them (_blend_from_ragdoll).
 
 const BLEND_RATE: float = 12.0  ## per second, exponential so the result does not depend on frame rate
 const BLEND_RATE_FAST: float = 40.0  ## flips and the pop follow almost exactly, a lagging board looks late
@@ -52,13 +57,39 @@ static var _push_cycle: float = PUSH_CYCLE
 static var _push_contact: float = PUSH_CONTACT
 const POP_TIME: float = 0.08  ## tail snap
 const LEVEL_TIME: float = 0.22  ## board levels out and rises to the feet
-const LAND_TIME: float = 0.2
+const LAND_TIME: float = 0.2  ## recovery of a landing at the default impact (land_time() scales it)
+## Landing absorb (ctx "impact", Skater.land_impact 0..1): a small hop barely dips the knees and is back up in about
+## 0.17 s, a big drop compresses deep (hips down to ~0.29 m below idle) and springs back over ~0.55 s.
+const LAND_IMPACT_DEFAULT: float = 0.35
+const LAND_TIME_MIN: float = 0.15
+const LAND_TIME_PER_IMPACT: float = 0.42
+const LAND_HIT: float = 0.22  ## share of the landing spent compressing; the rest springs back
+const LAND_DEPTH_MAX: float = 1.2  ## crouch-equivalent at impact 1 (hips CROUCH_DROP * this below idle)
+const BLEND_RATE_LAND: float = 30.0  ## a landing dip is quick; the slow blend would swallow a small one
+## Carving (ctx "carve", -1..1, + = turning toward visual +X): the body leans into the turn, the deck rolls on its
+## trucks, the shoulders lead and the head looks through the turn.
+const CARVE_LEAN: float = 16.0
+const CARVE_ROLL: float = 6.0
+const CARVE_ACCEL: float = 9.0  ## m/s^2 of sideways acceleration for a full carve
+const CARVE_ANIMS: PackedStringArray = ["idle_ride", "crouch", "push", "land"]
+## Idle variety while stopped (ctx "ride_speed" under IDLE_STILL_SPEED): a cycle of shifting the weight onto the back
+## foot, looking around, re-setting the front foot and loosening the arms, after IDLE_DELAY seconds of idling.
+const IDLE_STILL_SPEED: float = 1.5
+const IDLE_DELAY: float = 1.5
+const IDLE_CYCLE: float = 10.0
+## Get-up after a ragdoll bail: the body blends from where the ragdoll left it into the get-up pose over this long.
+const GETUP_BLEND: float = 0.45
+const GETUP_BOARD_REACH: float = 1.5  ## a ragdoll board farther than this from the feet is not blended back
+## Powerslide (anim "powerslide"): board turned across the line, rider sitting back against the slide.
+const POWERSLIDE_YAW: float = 80.0
 const REVERT_TIME: float = 0.3
 const SPECIAL_SPIN_TIME: float = 2.0
 const FALL_TIME: float = 0.5
 const LEAN_MAX: float = 25.0
 const MANUAL_PITCH: float = 12.0
 const LIP_PITCH: float = 70.0
+const GRIND_STALL: float = 6.0  ## 5-0 / nosegrind: board pitch about the grinding truck, the free end up
+const GRIND_BLUNT: float = 50.0  ## blunt slide: board stood up nose high on its tail
 ## "drop_in" (the ramp snap): tail hooked on the coping with the nose up for RampSnap.HANG_TIME, then the front foot
 ## stomps the nose down over RampSnap.STOMP_TIME while the rider leans into the ramp; then the board rolls over the
 ## coping onto the wall (the skater tips the whole visual over, RampSnap.TIP_TIME) and the stomp pitch eases back flat
@@ -102,7 +133,8 @@ const CARRY_CENTER: Vector3 = Vector3(0.3, 0.72, -0.02)  ## where the deck's mid
 
 ## The Skater. Typed Object and read with get(): naming the Skater class would make this script (and its unit test)
 ## depend on skater.gd compiling, which needs the Flags autoload. Fields read: anim, anim_time, crouch, balance,
-## switch_stance. Without a skater (title screen) the poser holds `preview_anim`.
+## switch_stance, walker, tune, ragdoll_active, land_impact, speed, velocity, facing. Without a skater (title screen)
+## the poser holds `preview_anim`.
 var skater: Object
 var body: Node3D
 var board: Node3D
@@ -113,6 +145,11 @@ var _rest: Dictionary = {}  ## joint name -> Vector3 rest rotation (radians)
 var _current: Dictionary = {}
 var _has_pose: bool = false
 var _preview_t: float = 0.0
+var _carve_s: float = 0.0  ## smoothed carve (-1..1) from the skater's turn rate
+var _prev_facing: Vector3 = Vector3.ZERO
+var _rag_joints: Dictionary = {}  ## joint name -> global Transform3D on the ragdoll's last frame
+var _rag_board: Transform3D = Transform3D.IDENTITY
+var _rag_pending: bool = false  ## a ragdoll just handed the body back: blend the get-up from its pose
 
 
 func _process(delta: float) -> void:
@@ -121,7 +158,8 @@ func _process(delta: float) -> void:
 	if _nodes.is_empty():
 		_capture_rest()
 	if skater != null and bool(skater.get("ragdoll_active")):
-		return  # a bail ragdoll is driving the joints and the board
+		_record_ragdoll()  # a bail ragdoll is driving the joints and the board; remember where it leaves them
+		return
 	var anim: String = preview_anim
 	var t: float = 0.0
 	var crouch: float = 0.0
@@ -129,6 +167,7 @@ func _process(delta: float) -> void:
 	var switch: bool = false
 	var speed: float = 0.0
 	var phase: float = 0.0
+	var ctx: Dictionary = {}
 	if skater != null:
 		anim = str(skater.get("anim"))
 		t = float(skater.get("anim_time"))
@@ -145,12 +184,13 @@ func _process(delta: float) -> void:
 			_push_plant = float(tn.get("push_plant"))
 			_push_cycle = float(tn.get("push_cycle"))
 			_push_contact = float(tn.get("push_contact"))
+		ctx = _skater_ctx(delta)
 	else:
 		_preview_t += delta
 		t = _preview_t
-	var target: Dictionary = pose_for(anim, t, crouch, bal, switch, speed, phase)
-	if not _has_pose:
-		_current = target
+	var target: Dictionary = pose_for(anim, t, crouch, bal, switch, speed, phase, ctx)
+	if not _has_pose or (_rag_pending and anim == "bail_getup"):
+		_current = target  # straight after a ragdoll: the get-up blend below starts from the ragdoll's own pose
 		_has_pose = true
 	else:
 		for key: String in ["body_yaw", "feet_yaw"]:
@@ -162,10 +202,79 @@ func _process(delta: float) -> void:
 		var tb: Vector3 = target["board_rot"]
 		if absf(wrapf(tb.y - cb.y, -180.0, 180.0)) > 120.0:
 			_current["board_rot"] = Vector3(cb.x, tb.y, cb.z)
-		var rate: float = BLEND_RATE_FAST if (anim.begins_with("flip_") or anim == "ollie" or anim.begins_with("walk")
-				or anim == "dismount") else BLEND_RATE
+		var rate: float = BLEND_RATE
+		if anim.begins_with("flip_") or anim == "ollie" or anim.begins_with("walk") or anim == "dismount":
+			rate = BLEND_RATE_FAST
+		elif anim == "land" and t < land_time(float(ctx.get("impact", LAND_IMPACT_DEFAULT))):
+			rate = BLEND_RATE_LAND
 		_current = _blend(_current, target, 1.0 - exp(-rate * delta))
 	_apply(_current)
+	if anim == "bail_getup" and not _rag_joints.is_empty():
+		var w: float = 1.0 - _smooth(t / GETUP_BLEND)
+		_rag_pending = false
+		if w > 0.0:
+			_blend_from_ragdoll(w)
+		else:
+			_rag_joints.clear()
+	elif anim != "bail_getup":
+		_rag_joints.clear()
+		_rag_pending = false
+
+
+## The pose context from the live skater: landing impact, riding speed, vertical speed and the carve, a smoothed
+## sideways acceleration (speed times turn rate) mapped to -1..1 (+ turning toward visual +X).
+func _skater_ctx(delta: float) -> Dictionary:
+	var ctx: Dictionary = {}
+	ctx["impact"] = float(skater.get("land_impact"))
+	var spd: float = float(skater.get("speed"))
+	ctx["ride_speed"] = spd
+	var v: Variant = skater.get("velocity")
+	ctx["vy"] = (v as Vector3).y if v is Vector3 else 0.0
+	var f: Variant = skater.get("facing")
+	var raw: float = 0.0
+	if f is Vector3:
+		var fh: Vector3 = Vector3((f as Vector3).x, 0.0, (f as Vector3).z)
+		if fh.length() > 0.01 and _prev_facing.length() > 0.01 and delta > 0.0:
+			var turn: float = _prev_facing.signed_angle_to(fh.normalized(), Vector3.UP) / delta  ## rad/s, + = left
+			raw = clampf(-turn * spd / CARVE_ACCEL, -1.0, 1.0)
+		_prev_facing = fh.normalized() if fh.length() > 0.01 else _prev_facing
+	_carve_s = lerpf(_carve_s, raw, 1.0 - exp(-6.0 * delta))
+	ctx["carve"] = _carve_s
+	return ctx
+
+
+## Remembers the ragdoll-driven joints and board (world space) each frame, so the get-up can start from them.
+func _record_ragdoll() -> void:
+	for j: String in JOINTS:
+		var n: Node3D = _nodes[j]
+		_rag_joints[j] = n.global_transform
+	_rag_board = board.global_transform
+	_rag_pending = true
+
+
+## Pulls the posed joints (rotations; the hips also by position) and the board back toward where the ragdoll left
+## them, by w (1 = exactly the ragdoll pose). Targets are all read first, then written parents first.
+func _blend_from_ragdoll(w: float) -> void:
+	var want: Dictionary = {}
+	for j: String in JOINTS:
+		var n: Node3D = _nodes[j]
+		var rag: Transform3D = _rag_joints.get(j, n.global_transform)
+		var q: Quaternion = n.global_basis.get_rotation_quaternion().slerp(rag.basis.get_rotation_quaternion(), w)
+		want[j] = Transform3D(Basis(q), n.global_position.lerp(rag.origin, w))
+	for j: String in JOINTS:
+		var n: Node3D = _nodes[j]
+		var x: Transform3D = want[j]
+		if j == "Hips":
+			n.global_transform = x
+		else:
+			n.global_basis = x.basis
+	# The board comes back to the feet quicker than the body stands; one that flew off far just appears under them
+	# (a board sliding metres back across the ground reads worse than the pop).
+	if board.global_position.distance_to(_rag_board.origin) > GETUP_BOARD_REACH:
+		return
+	var wb: float = w * w * w
+	var bq: Quaternion = board.global_basis.get_rotation_quaternion().slerp(_rag_board.basis.get_rotation_quaternion(), wb)
+	board.global_transform = Transform3D(Basis(bq), board.global_position.lerp(_rag_board.origin, wb))
 
 
 ## Extra body yaw for the stance: switch faces the body the other way round on the board. The revert pose spins 0
@@ -312,15 +421,21 @@ static func _blend_angles(a: Vector3, b: Vector3, k: float) -> Vector3:
 ## speed (m/s) and phase (stride cycles) are for the walking anims: "walk" strides by phase, the others use phase
 ## for the cycle they start from.
 static func pose_for(anim: String, t: float, crouch: float, balance: float, switch: bool = false,
-		speed: float = 0.0, phase: float = 0.0) -> Dictionary:
+		speed: float = 0.0, phase: float = 0.0, ctx: Dictionary = {}) -> Dictionary:
 	var pose: Dictionary = _blank()
 	var c: float = clampf(crouch, 0.0, 1.0)
 	var b: float = clampf(balance, -1.0, 1.0)
 	var yaw: float = stance_yaw(anim, switch)
 	pose["body_yaw"] = yaw
 	pose["feet_yaw"] = yaw
+	var impact: float = clampf(float(ctx.get("impact", LAND_IMPACT_DEFAULT)), 0.0, 1.0)
+	var ride_speed: float = float(ctx.get("ride_speed", 99.0))
+	var ext: float = air_extend(float(ctx.get("vy", 0.0)))
+	var carve: float = clampf(float(ctx.get("carve", 0.0)), -1.0, 1.0)
+	if CARVE_ANIMS.has(anim) and absf(carve) > 0.001:
+		_board_turn(pose, Vector3(0.0, 0.0, -CARVE_ROLL * carve), Vector3.ZERO)  ## deck rolls into the turn
 	if anim.begins_with("flip_"):
-		_pose_flip(pose, anim, t)
+		_pose_flip(pose, anim, t, ext)
 	elif anim.begins_with("grab_"):
 		_pose_grab(pose, anim, t)
 	elif anim.begins_with("grind_"):
@@ -344,13 +459,21 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 			"push":
 				_pose_push(pose, t, c)
 			"crouch":
-				_pose_idle(pose, c)
+				_pose_crouch(pose, c, t)
 			"ollie":
-				_pose_ollie(pose, t)
+				_pose_ollie(pose, t, ext)
 			"air":
-				_pose_air(pose, t)
+				_pose_air(pose, t, ext)
 			"land":
-				_pose_land(pose, t, c)
+				_pose_land(pose, t, c, impact)
+				var after: float = t - land_time(impact)
+				if after > 0.0:
+					_idle_life(pose, after, ride_speed)
+			"idle_ride":
+				_pose_idle(pose, c)
+				_idle_life(pose, t, ride_speed)
+			"powerslide":
+				_pose_powerslide(pose, t, c)
 			"revert":
 				_pose_revert(pose, t)
 			"drop_in":
@@ -360,13 +483,100 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 			"bail_getup":
 				_pose_getup(pose, t)
 			"wallride":
-				_pose_idle(pose, 0.3)
-				_arms(pose, Vector3(0.0, 0.0, -55.0), Vector3(0.0, 0.0, 55.0), 20.0)
-				pose["lean"] = 28.0
+				_pose_wallride(pose, t)
 			_:
 				_pose_idle(pose, c)
+	if CARVE_ANIMS.has(anim):
+		_carve(pose, carve)
 	_look(pose)
 	return pose
+
+
+## How far the legs reach down for the landing (0 tucked, 1 extended) from the vertical speed: rising and at the apex
+## the knees stay tucked, falling faster than 2 m/s the legs start reaching for the ground.
+static func air_extend(vy: float) -> float:
+	return clampf((-vy - 2.0) / 4.0, 0.0, 1.0)
+
+
+## Seconds a landing at this impact takes to compress and spring back.
+static func land_time(impact: float) -> float:
+	return LAND_TIME_MIN + LAND_TIME_PER_IMPACT * clampf(impact, 0.0, 1.0)
+
+
+## Crouch-equivalent knee bend of the landing absorb at time t: a quick compression (sine in, LAND_HIT of the
+## landing), then a spring back up with a small overshoot, exactly 0 after land_time(). Deeper for harder impacts.
+static func land_absorb(t: float, impact: float) -> float:
+	var im: float = clampf(impact, 0.0, 1.0)
+	var u: float = t / land_time(im)
+	if u <= 0.0 or u >= 1.0:
+		return 0.0
+	var depth: float = clampf(LAND_DEPTH_MAX * pow(im, 1.3), 0.06, LAND_DEPTH_MAX)
+	if u < LAND_HIT:
+		return depth * sin(PI * 0.5 * u / LAND_HIT)
+	var s: float = (u - LAND_HIT) / (1.0 - LAND_HIT)
+	return depth * ((1.0 - s) * (1.0 - s) * (1.0 + 2.0 * s) - 0.12 * sin(PI * s) * s)
+
+
+## Lean into a carve: body roll toward the inside of the turn, shoulders and head leading round it, knees a little
+## deeper; a heelside carve sits back with the arms reaching over the toes, a toeside one drives the knees in.
+static func _carve(pose: Dictionary, carve: float) -> void:
+	if absf(carve) < 0.001:
+		return
+	var toe_x: float = cos(deg_to_rad(float(pose["body_yaw"])))  ## +1 when the rider faces visual +X
+	var heel: float = clampf(-carve * signf(toe_x), 0.0, 1.0)  ## share of a heelside carve
+	pose["lean"] = float(pose["lean"]) + CARVE_LEAN * carve
+	pose["hips_y"] = float(pose["hips_y"]) - 0.03 * absf(carve) - 0.03 * heel
+	pose["Spine"] = (pose["Spine"] as Vector3) + Vector3(0.0, -6.0 * carve, 0.0)
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.0, -10.0 * carve, 0.0)
+	pose["Head"] = (pose["Head"] as Vector3) + Vector3(0.0, -10.0 * carve, 0.0)
+	_curl(pose, 8.0 * heel)
+	for side: Array in [["LeftUpperArm", -1.0], ["RightUpperArm", 1.0]]:
+		pose[side[0]] = (pose[side[0]] as Vector3) + Vector3(25.0 * heel - 8.0 * absf(carve) * (1.0 - heel), 0.0,
+				float(side[1]) * 10.0 * absf(carve))
+
+
+## Idle life on top of a riding stance: breathing always; when stopped a slow cycle of habits (weight onto the back
+## foot, a look round over the shoulders, re-setting the front foot, loosening the arms). Nothing in the first
+## IDLE_DELAY seconds, so a short stop stays still. Pure function of t.
+static func _idle_life(pose: Dictionary, t: float, ride_speed: float) -> void:
+	var breathe: float = sin(t * 1.7)
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(1.2 * breathe, 0.0, 0.0)
+	pose["Head"] = (pose["Head"] as Vector3) + Vector3(0.0, 4.0 * sin(t * 0.43) * minf(t, 1.0), 0.0)
+	var still: float = 1.0 - clampf(ride_speed / IDLE_STILL_SPEED, 0.0, 1.0)
+	if still <= 0.0 or t <= IDLE_DELAY:
+		return
+	var u: float = fposmod(t - IDLE_DELAY, IDLE_CYCLE)
+	var shift: float = _window(u, 0.0, 3.4) * still
+	var look: float = _window(u, 3.2, 6.6) * still
+	var adjust: float = _window(u, 6.4, 8.0) * still
+	var loose: float = _window(u, 7.8, 10.0) * still
+	# Weight onto the back foot: the body sits back over the tail, the hip drops and the back knee bends.
+	pose["pitch"] = float(pose["pitch"]) - 5.0 * shift
+	pose["hips_y"] = float(pose["hips_y"]) - 0.025 * shift
+	pose["Hips"] = (pose["Hips"] as Vector3) + Vector3(0.0, 0.0, 5.0 * shift)
+	pose["Spine"] = (pose["Spine"] as Vector3) + Vector3(0.0, 0.0, -4.0 * shift)
+	pose["LeftUpperArm"] = (pose["LeftUpperArm"] as Vector3) + Vector3(-6.0, 0.0, 6.0) * shift
+	# A look round: over the back shoulder, then forward down the line.
+	var sweep: float = sin(PI * clampf((u - 3.2) / 3.4, 0.0, 1.0) * 2.0)
+	pose["Head"] = (pose["Head"] as Vector3) + Vector3(4.0 * look, -50.0 * sweep * look, 4.0 * sweep * look)
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.0, -12.0 * sweep * look, 0.0)
+	# Re-set the front foot: a small lift and a twist of the toes, then down again.
+	var step: float = sin(PI * clampf((u - 6.4) / 1.6, 0.0, 1.0))
+	pose["foot_L"] = (pose["foot_L"] as Vector3) + Vector3(0.0, 0.045 * step * adjust, 0.0)
+	pose["toe_L"] = float(pose["toe_L"]) + 14.0 * step * adjust
+	pose["Head"] = (pose["Head"] as Vector3) + Vector3(-12.0 * adjust, 0.0, 0.0)  ## glance down at the foot
+	# Loosen the arms: a shake out and a shoulder roll.
+	var shake: float = sin(t * 9.0) * loose
+	pose["LeftUpperArm"] = (pose["LeftUpperArm"] as Vector3) + Vector3(12.0 * shake, 0.0, -6.0 * loose)
+	pose["RightUpperArm"] = (pose["RightUpperArm"] as Vector3) + Vector3(-12.0 * shake, 0.0, 6.0 * loose)
+	pose["LeftLowerArm"] = (pose["LeftLowerArm"] as Vector3) + Vector3(10.0 * loose, 0.0, 0.0)
+	pose["RightLowerArm"] = (pose["RightLowerArm"] as Vector3) + Vector3(10.0 * loose, 0.0, 0.0)
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.0, 0.0, 3.0 * sin(t * 2.2) * loose)
+
+
+## 0 outside [a, b], 1 inside it, with 0.6 s smooth ramps at both ends.
+static func _window(u: float, a: float, b: float) -> float:
+	return _smooth((u - a) / 0.6) * (1.0 - _smooth((u - (b - 0.6)) / 0.6))
 
 
 static func _blank() -> Dictionary:
@@ -457,6 +667,7 @@ static func _pose_push(pose: Dictionary, t: float, c: float) -> void:
 	var foot: Vector3
 	var drive: float = 0.0  ## 0 foot planted forward, 1 at the end of the drive (hips lowest, arms widest)
 	var settle: float = 1.0  ## 0 on the deck, 1 stepped off into the push stance (first step only)
+	var fpitch: float = 0.0  ## push shoe pitch: flat on the plant, heel up into the toe-off, toe trailing on the return
 	if t < _push_plant:
 		var k: float = _smooth(t / _push_plant)
 		var out: float = _smooth(minf(t / _push_plant * 1.6, 1.0))  ## out to the side first, then forward
@@ -470,62 +681,94 @@ static func _pose_push(pose: Dictionary, t: float, c: float) -> void:
 		if u < _push_contact:
 			drive = _smooth(u / _push_contact)
 			foot = ground_point(pose, plant.lerp(finish, drive))
+			# Heel rises through the last of the drive: the push ends on the ball of the foot.
+			var toe_off: float = _smooth((u / _push_contact - 0.65) / 0.35)
+			fpitch = -26.0 * toe_off
+			foot += Vector3.UP * _roll_raise(fpitch)
 		else:
 			var k: float = _smooth((u - _push_contact) / (1.0 - _push_contact))
 			drive = 1.0 - k
-			var arc: float = sin(PI * k)
+			# The foot comes forward low, the toe trailing near the ground before it swings through flat to plant.
+			var arc: float = sin(PI * k) * _smooth(k / 0.3)
+			fpitch = lerpf(-26.0, 0.0, _smooth(k / 0.7))
 			foot = ground_point(pose, finish.lerp(plant, k) + Vector3(0.03 * arc, 0.07 * arc, 0.0))
+			foot += Vector3.UP * _roll_raise(fpitch) * (1.0 - k)
 	pose["body_yaw"] = float(pose["body_yaw"]) + PUSH_YAW * (0.4 + 0.6 * settle)
 	pose["pitch"] = (PUSH_PITCH + 3.0 * drive) * settle
 	pose["lean"] = 3.0 * settle
 	pose["Hips"] = Vector3(PUSH_PITCH * 0.4 * settle, 0.0, 0.0)  ## pelvis tipped back so the chest stays up
 	pose["hips_y"] = IDLE_HIPS - (0.085 + 0.09 * drive) * settle - 0.06 * c
 	_curl(pose, 10.0 + 4.0 * drive)
-	pose["Head"] = Vector3(8.0 * settle, 0.0, 0.0)  ## chin up, eyes down the line
+	var swing: float = (2.0 * drive - 1.0) * settle
+	# The shoulders counter-turn a little against the push leg; the head holds steady down the line.
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.0, 5.0 * swing, 0.0)
+	pose["Head"] = Vector3(8.0 * settle, -5.0 * swing, 0.0)  ## chin up, eyes down the line
 	pose["foot_L"] = deck_point(pose, PUSH_FRONT + ankle)
 	pose["foot_R"] = foot
+	pose["fpitch_R"] = fpitch * settle
 	pose["toe_L"] = PUSH_FRONT_TOE
 	pose["toe_R"] = PUSH_BACK_TOE
-	var swing: float = (2.0 * drive - 1.0) * settle
 	_arms(pose, Vector3(-34.0 * swing, 0.0, -12.0), Vector3(34.0 * swing, 0.0, 12.0), 22.0 + 10.0 * absf(swing))
 
 
 ## Tail snaps down (board pitched nose up about the tail tip), then the board levels and rises into the tucked feet
 ## as the front foot slides up toward the nose.
-static func _pose_ollie(pose: Dictionary, t: float) -> void:
+static func _pose_ollie(pose: Dictionary, t: float, ext: float = 0.0) -> void:
 	var pop: float = clampf(t / POP_TIME, 0.0, 1.0)
 	var level: float = _smooth(clampf((t - POP_TIME) / (LEVEL_TIME - POP_TIME), 0.0, 1.0))
+	var slide: float = _smooth((t - 0.01) / (LEVEL_TIME - 0.01))  ## front foot dragging up the grip
+	var tuck: float = _smooth((t - POP_TIME * 0.5) / 0.2)  ## knees come up as the board rises
 	var pitch: float = 26.0 * sin(PI * 0.5 * pop) * (1.0 - level)
 	_board_turn(pose, Vector3(pitch, 0.0, 0.0), TAIL_TIP)
-	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.0, 0.2 * level, 0.0)
-	pose["hips_y"] = IDLE_HIPS - 0.02 * level
-	_curl(pose, 18.0)
-	_arms(pose, Vector3(-25.0 * pop, 0.0, -70.0 * pop), Vector3(25.0 * pop, 0.0, 70.0 * pop), 25.0)
-	_feet_on_board(pose, Vector3(0.0, 0.0, -0.07) * pop, Vector3.ZERO)
+	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.0, 0.2 * tuck * (1.0 - 0.85 * ext), 0.0)
+	# Out of the crouch the back leg snaps straight (hips up), then the knees tuck under the rising board.
+	var coil: float = 1.0 - _smooth(pop)
+	pose["hips_y"] = IDLE_HIPS - 0.16 * coil + 0.025 * sin(PI * pop) - 0.02 * tuck * (1.0 - ext)
+	pose["pitch"] = -4.0 * coil
+	_curl(pose, 12.0 + 14.0 * coil + 6.0 * tuck * (1.0 - ext))
+	pose["Head"] = Vector3(-8.0 * tuck, 0.0, 0.0)  ## eyes on the board
+	# Arms: loaded low and back in the crouch, thrown up and out with the pop, front arm leading.
+	var up: float = _smooth(pop * 1.4) * (1.0 - 0.35 * ext)
+	_arms(pose, Vector3(-14.0 * coil + 22.0 * up, 0.0, -18.0 - 34.0 * up),
+			Vector3(18.0 * coil + 22.0 * up, 0.0, 18.0 + 52.0 * up), 22.0 + 3.0 * up)
+	# The front foot slides up toward the nose (toe lifting as the side of the shoe drags the grip), then comes back
+	# over the bolts to level the board; the back foot rides the tail through the snap.
+	var front_z: float = -0.12 * slide * (1.0 - 0.45 * tuck)
+	_feet_on_board(pose, Vector3(0.0, 0.0, front_z), Vector3(0.0, 0.0, 0.07 * (1.0 - level) * (1.0 - level)))
+	pose["fpitch_L"] = 14.0 * sin(PI * slide)
 
 
 ## In the air the board stays up under tucked feet, then the legs extend for the landing.
-static func _pose_air(pose: Dictionary, t: float) -> void:
-	pose["board_pos"] = Vector3(0.0, 0.2 * exp(-1.6 * t) + 0.05, 0.0)
-	pose["hips_y"] = IDLE_HIPS - 0.02
-	_curl(pose, 14.0)
-	_arms(pose, Vector3(-15.0, 0.0, -55.0), Vector3(15.0, 0.0, 55.0), 25.0)
+static func _pose_air(pose: Dictionary, t: float, ext: float = 0.0) -> void:
+	var tuck: float = (0.2 * exp(-1.6 * t) + 0.05) * (1.0 - 0.8 * ext)
+	pose["board_pos"] = Vector3(0.0, tuck, 0.0)
+	pose["hips_y"] = IDLE_HIPS - 0.02 * (1.0 - ext)
+	_curl(pose, 14.0 - 4.0 * ext)
+	pose["Head"] = Vector3(-6.0 * (1.0 - ext), 0.0, 0.0)
+	_arms(pose, Vector3(-10.0 + 25.0 * ext, 0.0, -50.0 + 15.0 * ext), Vector3(12.0 - 20.0 * ext, 0.0, 52.0 - 15.0 * ext), 25.0)
 	_feet_on_board(pose)
 
 
-static func _pose_land(pose: Dictionary, t: float, c: float) -> void:
-	var bump: float = sin(PI * clampf(t / LAND_TIME, 0.0, 1.0))
-	_pose_idle(pose, maxf(c, 0.7 * bump))
-	_arms(pose, Vector3(30.0 * bump, 0.0, -25.0 * bump - 8.0), Vector3(-20.0 * bump, 0.0, 25.0 * bump + 8.0), 25.0)
+static func _pose_land(pose: Dictionary, t: float, c: float, impact: float = LAND_IMPACT_DEFAULT) -> void:
+	var a: float = land_absorb(t, impact)
+	_pose_idle(pose, maxf(c, a))
+	# Chest folds over the knees and the eyes drop to the board; the arms throw out to catch the balance, wider the
+	# harder the hit, and come back in as the legs spring up.
+	_curl(pose, 10.0 * a)
+	pose["pitch"] = 3.0 * a
+	pose["Head"] = Vector3(-10.0 * a, 0.0, 0.0)
+	var arm: float = a * (0.6 + 0.6 * impact)
+	_arms(pose, Vector3(10.0 + 22.0 * arm, 0.0, -8.0 - 42.0 * arm), Vector3(-6.0 - 16.0 * arm, 0.0, 8.0 + 46.0 * arm),
+			14.0 + 22.0 * arm)
 
 
 ## Flip tricks. The feet leave the deck right after the flick, the board spins under them (eased: quick off the
 ## flick, slowing into the catch) and the feet come back down onto it at CATCH.
-static func _pose_flip(pose: Dictionary, anim: String, t: float) -> void:
+static func _pose_flip(pose: Dictionary, anim: String, t: float, ext: float = 0.0) -> void:
 	var dbl: bool = anim.contains("double")
 	var dur: float = DOUBLE_FLIP_TIME if dbl else FLIP_TIME
 	var p: float = clampf(t / dur, 0.0, 1.0)
-	var rise: float = 0.18 * sin(PI * minf(p * 1.2, 1.0)) + 0.06 * p
+	var rise: float = 0.18 * sin(PI * minf(p * 1.2, 1.0)) + 0.06 * p * (1.0 - 0.8 * ext)
 	var pivot: Vector3 = DECK_CENTER
 	if anim.contains("impossible"):
 		pivot = Vector3(0.0, 0.12, BACK_FOOT.z)  ## wraps round the back foot
@@ -536,21 +779,55 @@ static func _pose_flip(pose: Dictionary, anim: String, t: float) -> void:
 		off = 0.12 * sin(PI * 0.5 * minf(p / 0.25, 1.0))
 	else:
 		off = 0.12 * (1.0 - _smooth((p - CATCH) / (1.0 - CATCH)))
-	# The kick: front foot flicks out toward the toe side and the nose, then tucks back over the board.
 	var kick: float = sin(PI * clampf(p / 0.45, 0.0, 1.0))
-	var front: Vector3 = Vector3(0.13 * kick, 0.0, -0.08 * kick)
-	var back: Vector3 = Vector3.ZERO
-	if anim.contains("shove") or anim.contains("varial") or anim.contains("laser") or anim.contains("hardflip"):
-		back = Vector3(0.06 * kick, 0.0, 0.05 * kick)  ## the back foot scoops
+	var k: Dictionary = flick(anim)
+	var front: Vector3 = (k["front"] as Vector3) * kick
+	var back: Vector3 = (k["back"] as Vector3) * kick
 	var ankle: Vector3 = Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)
 	var level: Dictionary = pose.duplicate()
 	level["board_rot"] = Vector3.ZERO
 	level["board_pos"] = Vector3(0.0, rise, 0.0)
 	pose["foot_L"] = deck_point(level, FRONT_FOOT + front + ankle + Vector3.UP * off)
 	pose["foot_R"] = deck_point(level, BACK_FOOT + back + ankle + Vector3.UP * off)
+	pose["toe_L"] = FRONT_TOE + float(k["toe"]) * kick  ## heelflips lead with the heel, kickflips with the toe
+	pose["fpitch_L"] = float(k["pitch"]) * kick
 	pose["feet_on_board"] = 0.0 if (p > 0.05 and p < CATCH + 0.1) else 1.0
-	_curl(pose, 20.0)
-	_arms(pose, Vector3(-20.0, 0.0, -50.0), Vector3(20.0, 0.0, 50.0), 30.0)
+	# The catch: both feet stomp back on and the knees give, then the legs reach for the ground.
+	var stomp: float = sin(PI * clampf((p - CATCH) / (1.0 - CATCH), 0.0, 1.0)) if p > CATCH else 0.0
+	pose["hips_y"] = IDLE_HIPS - 0.02 - 0.05 * stomp
+	_curl(pose, 18.0 + 6.0 * kick + 6.0 * stomp - 4.0 * ext)
+	pose["Head"] = Vector3(-14.0 * (1.0 - 0.5 * ext), 0.0, 0.0)  ## watching the board turn under the feet
+	# Arms rise with the flick (front arm forward over the kicking foot), open out wide for the catch.
+	_arms(pose, Vector3(-10.0 + 30.0 * kick, 0.0, -42.0 - 14.0 * kick), Vector3(18.0 - 10.0 * kick, 0.0, 48.0 + 10.0 * stomp),
+			26.0 + 14.0 * kick)
+
+
+## The feet of a flip trick (stance frame, metres at the peak of the flick): the front foot's flick ("front": a
+## kickflip flicks out over the toe-side edge by the nose, a heelflip kicks forward off the nose heel first, a
+## shove-it just lifts) and the back foot's scoop ("back": toward the heel side for a backside shove, the toe side for
+## frontside ones, wrapping under for an impossible), the front shoe's extra yaw ("toe", degrees) and pitch ("pitch").
+static func flick(anim: String) -> Dictionary:
+	var front: Vector3 = Vector3(0.13, 0.0, -0.08)  ## kickflip
+	var toe: float = 0.0
+	var pitch: float = 0.0
+	var back: Vector3 = Vector3.ZERO
+	var heel: bool = anim.contains("heelflip") or anim.contains("laser")
+	if heel:
+		front = Vector3(0.04, 0.02, -0.17)
+		toe = 30.0
+		pitch = 18.0
+	elif anim.contains("impossible"):
+		front = Vector3(0.03, 0.06, -0.04)  ## front foot gets out of the way
+		back = Vector3(0.0, -0.04, 0.08)  ## back foot scoops the tail round under
+	elif anim.contains("shove") and not anim.contains("varial"):
+		front = Vector3(0.02, 0.05, -0.02)
+	elif anim.contains("hardflip"):
+		front = Vector3(0.06, -0.02, -0.14)  ## front foot kicks forward and down
+		pitch = -12.0
+	var spin: Vector3 = _board_spin(anim, FLIP_TIME * 0.3)
+	if absf(spin.y) > 0.5:
+		back = Vector3(-0.07 if spin.y > 0.0 else 0.07, 0.0, 0.06)  ## backside scoops to the heel side
+	return {"front": front, "back": back, "toe": toe, "pitch": pitch}
 
 
 ## Board rotation (degrees, YXZ Euler) for a flip_* anim at time t: the long-axis roll (Z) for kickflips (+) and
@@ -597,75 +874,99 @@ static func _wrap(deg: float) -> float:
 ## Grabs. The board comes up to the knees, the rider curls down, and one hand (IK) holds the named board spot.
 static func _pose_grab(pose: Dictionary, anim: String, t: float) -> void:
 	var k: float = _smooth(t / 0.18)
-	var hand: String = "L"  ## front hand
-	var spot: Vector3 = Vector3(-EDGE, 0.0, -0.09)  ## melon: heel edge, just behind the front foot
-	var tweak: Vector3 = Vector3(0.0, 0.0, -1.8 * GRAB_ROLL)  ## extra board rotation (degrees): heel edge up
-	var front: Vector3 = Vector3.ZERO
-	var back: Vector3 = Vector3.ZERO
-	var curl: float = GRAB_CURL * 0.7  ## heel-side grabs reach back, so less forward curl
-	if anim.contains("indy"):
-		hand = "R"
-		spot = Vector3(EDGE, 0.0, 0.02)
-		tweak = Vector3(0.0, 0.0, GRAB_ROLL)
-		curl = GRAB_CURL * 1.4
-	elif anim.contains("mute"):
-		spot = Vector3(EDGE, 0.0, -0.03)
-		tweak = Vector3(0.0, 0.0, GRAB_ROLL)
-		curl = GRAB_CURL * 1.4
-	elif anim.contains("stalefish"):
-		hand = "R"
-		spot = Vector3(-EDGE, 0.0, 0.1)
-	elif anim.contains("method"):
-		spot = Vector3(-EDGE, 0.0, -0.08)
-		tweak = Vector3(0.0, 0.0, -2.0 * GRAB_ROLL)  ## board pulled up behind, heel edge high
-		back = Vector3(-0.12, 0.08, 0.03)
-		curl = GRAB_CURL * 0.6
-	elif anim.contains("nosegrab"):
-		spot = Vector3(0.0, 0.0, -0.36)
-		tweak = Vector3(18.0, 0.0, 0.0)  ## nose pulled up to the hand
-	elif anim.contains("tailgrab"):
-		hand = "R"
-		spot = Vector3(0.0, 0.0, 0.37)
-		tweak = Vector3(-18.0, 0.0, 0.0)
-	elif anim.contains("benihana"):
-		hand = "R"
-		spot = Vector3(0.0, 0.0, 0.37)
-		tweak = Vector3(-18.0, 0.0, 0.0)
-		back = Vector3(0.05, -0.32, 0.12)  ## back foot kicked off and down
-	elif anim.contains("airwalk"):
-		spot = Vector3(0.0, 0.0, -0.36)
-		tweak = Vector3(18.0, 0.0, 0.0)
-		front = Vector3(0.22, 0.05, -0.18)  ## front foot walks off forward
-		back = Vector3(-0.15, 0.0, 0.12)
-	# Lean the whole body toward the grabbed spot so the short cartoon arm reaches it.
+	var g: Dictionary = grab_shape(anim)
+	var hand: String = str(g["hand"])
+	var spot: Vector3 = g["spot"]
+	var front: Vector3 = g["front"]
+	var back: Vector3 = g["back"]
+	# Lean the whole body toward the grabbed spot so the arm reaches it; each grab adds its own body shape.
 	var sway: float = cos(deg_to_rad(float(pose["feet_yaw"])))
-	pose["lean"] = (0.0 if spot.x > 0.0 else -25.0 if spot.x < 0.0 else 0.0) * sway * k
-	pose["pitch"] = (22.0 if spot.z < -0.2 else -22.0 if spot.z > 0.2 else 0.0) * k
-	_board_turn(pose, tweak * k, DECK_CENTER)
+	pose["lean"] = float(g["lean"]) * sway * k
+	pose["pitch"] = float(g["pitch"]) * k
+	_board_turn(pose, (g["tweak"] as Vector3) * k, DECK_CENTER)
 	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.0, GRAB_RISE * k, 0.0)
 	pose["lift"] = GRAB_LIFT * k
-	_curl(pose, curl * k)
-	if anim.contains("melon") or anim.contains("method") or anim.contains("stalefish") or anim.contains("mute"):
-		# Low grabs: the Houdini rig's arms fall short, so the spine bends down and rolls toward the grabbed edge.
-		pose["Spine"] = (pose["Spine"] as Vector3) + Vector3(-25.0, 0.0, 15.0) * k
-		pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(-10.0, 0.0, 6.0) * k
+	_curl(pose, float(g["curl"]) * k)
+	pose["Spine"] = (pose["Spine"] as Vector3) + (g["spine"] as Vector3) * k
+	pose["Chest"] = (pose["Chest"] as Vector3) + (g["chest"] as Vector3) * k
+	pose["Head"] = (pose["Head"] as Vector3) + (g["head"] as Vector3) * k
 	_feet_on_board(pose, front * k, back * k)
 	if front != Vector3.ZERO or back.y < -0.1:
 		pose["feet_on_board"] = 0.0
 	pose["hand_" + hand] = deck_point(pose, spot + Vector3(0.0, 0.01, 0.0))
 	pose["grip_" + hand] = k
+	# The free arm styles the grab: thrown out and up for balance, its own way per grab.
+	var free: Vector3 = (g["free"] as Vector3) * k
 	if hand == "L":
-		_arms(pose, Vector3.ZERO, Vector3(-20.0, 0.0, 70.0), 20.0)
+		_arms(pose, Vector3.ZERO, free, 20.0 + 15.0 * k)
 	else:
-		_arms(pose, Vector3(-20.0, 0.0, -70.0), Vector3.ZERO, 20.0)
+		_arms(pose, Vector3(free.x, -free.y, -free.z), Vector3.ZERO, 20.0 + 15.0 * k)
+
+
+## The body shape of a grab: grabbing hand ("L" front, "R" back) and the board spot it holds (stance frame), the
+## board tweak (degrees), feet offsets, body lean/pitch (degrees), spine curl and extra spine/chest/head rotation, and
+## the free arm (as the right arm's offsets; mirrored for a free left arm).
+## Indy: back hand on the toe edge between the feet, knees tucked up, front arm out. Mute: front hand on the toe
+## edge. Melon: front hand on the heel edge, the body leaning back over it, back arm up. Method: melon grip with the
+## board pulled up behind (heel edge high), knees bent back and the chest arched, free arm reaching forward and up.
+## Stalefish: back hand round behind the back leg onto the heel edge. Nosegrab: front hand on the nose, front knee
+## tucked, back leg straight. Tailgrab: back hand on the tail, back knee tucked, front leg straight. Benihana and
+## airwalk throw a foot off the board.
+static func grab_shape(anim: String) -> Dictionary:
+	var g: Dictionary = {
+		"hand": "L", "spot": Vector3(-EDGE, 0.0, -0.09), "tweak": Vector3(0.0, 0.0, -1.8 * GRAB_ROLL),
+		"front": Vector3.ZERO, "back": Vector3.ZERO, "lean": -22.0, "pitch": 0.0, "curl": GRAB_CURL * 0.55,
+		"spine": Vector3(-20.0, 0.0, 12.0), "chest": Vector3(-6.0, 0.0, 6.0), "head": Vector3(-6.0, 0.0, 0.0),
+		"free": Vector3(-35.0, 0.0, 95.0),
+	}  ## melon
+	if anim.contains("indy"):
+		g.merge({"hand": "R", "spot": Vector3(EDGE, 0.0, 0.02), "tweak": Vector3(0.0, 0.0, GRAB_ROLL), "lean": 0.0,
+				"curl": GRAB_CURL * 1.15, "spine": Vector3.ZERO, "chest": Vector3(6.0, 0.0, 0.0),
+				"head": Vector3(10.0, 0.0, 0.0), "free": Vector3(-25.0, 0.0, 95.0),
+				"back": Vector3(0.0, 0.02, 0.0)}, true)
+	elif anim.contains("mute"):
+		g.merge({"spot": Vector3(EDGE, 0.0, -0.03), "tweak": Vector3(0.0, 0.0, GRAB_ROLL), "lean": 0.0,
+				"curl": GRAB_CURL * 1.0, "spine": Vector3(0.0, 0.0, -6.0), "chest": Vector3.ZERO,
+				"head": Vector3(8.0, 0.0, 0.0), "free": Vector3(-40.0, 0.0, 90.0)}, true)
+	elif anim.contains("stalefish"):
+		g.merge({"hand": "R", "spot": Vector3(-EDGE, 0.0, 0.1), "lean": -24.0, "curl": GRAB_CURL * 0.5,
+				"chest": Vector3(-6.0, -10.0, 6.0), "free": Vector3(20.0, 0.0, 85.0),
+				"front": Vector3(0.0, 0.0, -0.04)}, true)
+	elif anim.contains("method"):
+		g.merge({"spot": Vector3(-EDGE, 0.0, -0.08), "tweak": Vector3(0.0, 0.0, -2.0 * GRAB_ROLL), "lean": -25.0,
+				"back": Vector3(-0.12, 0.08, 0.03), "curl": GRAB_CURL * 0.3,
+				"spine": Vector3(-14.0, 0.0, 14.0), "chest": Vector3(8.0, 0.0, 6.0), "head": Vector3(12.0, 0.0, 0.0),
+				"free": Vector3(45.0, 0.0, 120.0)}, true)
+	elif anim.contains("nosegrab"):
+		g.merge({"spot": Vector3(0.0, 0.0, -0.36), "tweak": Vector3(18.0, 0.0, 0.0), "lean": 0.0, "pitch": 16.0,
+				"curl": GRAB_CURL * 0.6, "spine": Vector3.ZERO, "chest": Vector3.ZERO, "head": Vector3(4.0, 0.0, 0.0),
+				"back": Vector3(0.0, 0.0, 0.03), "free": Vector3(-50.0, 0.0, 75.0)}, true)
+	elif anim.contains("tailgrab") or anim.contains("benihana"):
+		g.merge({"hand": "R", "spot": Vector3(0.0, 0.0, 0.37), "tweak": Vector3(-18.0, 0.0, 0.0), "lean": 0.0,
+				"pitch": -16.0, "curl": GRAB_CURL * 0.6, "spine": Vector3.ZERO, "chest": Vector3.ZERO,
+				"head": Vector3(4.0, 0.0, 0.0), "free": Vector3(-30.0, 0.0, 80.0)}, true)
+		if anim.contains("benihana"):
+			g["back"] = Vector3(0.05, -0.32, 0.12)  ## back foot kicked off and down
+	elif anim.contains("airwalk"):
+		g.merge({"spot": Vector3(0.0, 0.0, -0.36), "tweak": Vector3(18.0, 0.0, 0.0), "lean": 0.0, "pitch": 16.0,
+				"curl": GRAB_CURL * 0.5, "spine": Vector3.ZERO, "chest": Vector3.ZERO,
+				"front": Vector3(0.22, 0.05, -0.18), "back": Vector3(-0.15, 0.0, 0.12),
+				"free": Vector3(-60.0, 0.0, 70.0)}, true)
+	return g
 
 
 static func _pose_revert(pose: Dictionary, t: float) -> void:
-	var yaw: float = 180.0 * _smooth(t / REVERT_TIME)
-	_pose_idle(pose, 0.4)
+	var k: float = _smooth(t / REVERT_TIME)
+	var mid: float = sin(PI * k)
+	var yaw: float = 180.0 * k
+	_pose_idle(pose, 0.4 + 0.3 * mid)
 	pose["body_yaw"] = float(pose["body_yaw"]) + yaw
 	pose["feet_yaw"] = float(pose["feet_yaw"]) + yaw
-	# The board turns with the rider; it is symmetric, so it ends where it started.
+	# The head and shoulders lead the turn and the arms swing out with it; the board turns with the rider and, being
+	# symmetric, ends where it started.
+	pose["Head"] = Vector3(0.0, 25.0 * mid, 0.0)
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.0, 12.0 * mid, 0.0)
+	_arms(pose, Vector3(15.0 * mid, 0.0, -14.0 - 40.0 * mid), Vector3(-10.0 * mid, 0.0, 14.0 + 40.0 * mid), 20.0)
 	_board_turn(pose, Vector3(0.0, yaw - 180.0, 0.0), Vector3.ZERO)
 	_feet_on_board(pose)
 
@@ -700,60 +1001,92 @@ static func _pose_bail_fall(pose: Dictionary, t: float) -> void:
 
 
 static func _pose_getup(pose: Dictionary, t: float) -> void:
+	# Up from the ground: low on bent knees with the hands pushing off the thighs, then standing up into the stance.
+	# After a ragdoll bail the poser also blends the joints from where the ragdoll left them (GETUP_BLEND).
 	var d: float = SkateState.BAIL_TIME * 0.4  ## the rest of the bail after the fall
 	var rest: float = 1.0 - _smooth(t / d)
-	_pose_idle(pose, 0.8 * rest)
-	_arms(pose, Vector3(40.0 * rest * sin(t * 12.0), 0.0, -40.0 * rest - 5.0),
-			Vector3(40.0 * rest * sin(t * 12.0 + PI), 0.0, 40.0 * rest + 5.0), 30.0)
-	pose["lean"] = 80.0 * rest
-	pose["hips_y"] = float(pose["hips_y"]) - 0.2 * rest
-	pose["feet_free"] = rest
+	_pose_idle(pose, 1.0 * rest)
+	pose["hips_y"] = float(pose["hips_y"]) - 0.06 * rest
+	pose["pitch"] = 8.0 * rest
+	_curl(pose, 20.0 * rest)
+	pose["Head"] = Vector3(14.0 * rest, 0.0, 0.0)
+	_arms(pose, Vector3(40.0 * rest, 0.0, -10.0 - 6.0 * (1.0 - rest)), Vector3(40.0 * rest, 0.0, 10.0 + 6.0 * (1.0 - rest)),
+			20.0 + 25.0 * rest)
+	# Without a ragdoll (sims, the bare fall) the body still comes up from the fall's sideways tip.
+	pose["lean"] = 30.0 * rest * rest
 
 
 static func _pose_grind(pose: Dictionary, anim: String, t: float, c: float, b: float) -> void:
+	# Balance: the body leans with the meter, both arms tilt against it like a balance pole and flail when it is far
+	# out, the hips shift the other way.
 	var flail: float = 35.0 * absf(b) * sin(t * 10.0)
-	_arms(pose, Vector3(flail, 0.0, -40.0), Vector3(-flail, 0.0, 40.0), 20.0)
+	var tilt: float = 28.0 * b
+	_arms(pose, Vector3(flail + 10.0, 0.0, -42.0 + tilt), Vector3(-flail - 6.0, 0.0, 42.0 + tilt), 22.0)
 	pose["lean"] = LEAN_MAX * b
+	pose["Hips"] = Vector3(0.0, 0.0, -6.0 * b)
+	var drop: float = 0.0  ## extra hip drop for the stalls on one truck
+	var front: Vector3 = Vector3.ZERO
+	var back: Vector3 = Vector3.ZERO
 	match anim:
 		"grind_five_oh":
-			_board_turn(pose, Vector3(-14.0, 0.0, 0.0), REAR_TRUCK)
-			pose["pitch"] = -8.0
+			# Back truck on the rail, nose held up: weight over the back foot.
+			_board_turn(pose, Vector3(GRIND_STALL, 0.0, 0.0), REAR_TRUCK)
+			pose["pitch"] = -9.0
 		"grind_nosegrind":
-			_board_turn(pose, Vector3(14.0, 0.0, 0.0), FRONT_TRUCK)
-			pose["pitch"] = 10.0
+			# Front truck on the rail, tail up: weight over the front foot.
+			_board_turn(pose, Vector3(-GRIND_STALL, 0.0, 0.0), FRONT_TRUCK)
+			pose["pitch"] = 11.0
 		"grind_crooked_grind":
+			# Front truck, nose down and the board angled across with the nose's toe-side edge on the rail.
 			_board_turn(pose, Vector3(-12.0, 16.0, 6.0), FRONT_TRUCK)
-			pose["pitch"] = 10.0
+			pose["pitch"] = 11.0
+			drop = 0.03
 		"grind_smith_grind":
-			_board_turn(pose, Vector3(14.0, 0.0, -22.0), REAR_TRUCK)
+			# Back truck on the rail, the front truck dipped down past it: nose down and rolled.
+			_board_turn(pose, Vector3(-12.0, 0.0, -22.0), REAR_TRUCK)
 			pose["pitch"] = -6.0
+			drop = 0.05
 		"grind_feeble_grind":
-			_board_turn(pose, Vector3(10.0, 0.0, 22.0), REAR_TRUCK)
+			# Back truck on the rail, the front truck hanging over the far side.
+			_board_turn(pose, Vector3(-9.0, 0.0, 22.0), REAR_TRUCK)
 			pose["pitch"] = -6.0
+			drop = 0.05
 		"grind_boardslide", "grind_lipslide":
-			# Board across the rail, body turned to face down it.
+			# Board across the rail, body turned to face down it, knees soft and the weight centred.
 			var turn: float = 90.0 if anim == "grind_boardslide" else -90.0
 			pose["body_yaw"] = float(pose["body_yaw"]) + turn
 			pose["feet_yaw"] = float(pose["feet_yaw"]) + turn
 			_board_turn(pose, Vector3(0.0, float(pose["feet_yaw"]), 0.0), Vector3.ZERO)
+			pose["pitch"] = -4.0
+			_arms(pose, Vector3(25.0 + flail, 0.0, -42.0 + tilt), Vector3(25.0 - flail, 0.0, 42.0 + tilt), 38.0)
 		"grind_blunt_slide":
-			_board_turn(pose, Vector3(-55.0, 0.0, 0.0), REAR_TRUCK)
-			pose["pitch"] = -12.0
-	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * c
+			# Tail on the rail with the board stood up nose high, the rider sitting back on it.
+			# Pivot under the back foot so the rider stays over the tail on the rail.
+			_board_turn(pose, Vector3(GRIND_BLUNT, 0.0, 0.0), Vector3(0.0, 0.0, BACK_FOOT.z))
+			pose["pitch"] = -10.0
+			drop = 0.04
+	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * c - drop
 	_curl(pose, 12.0 + 14.0 * c)
-	_feet_on_board(pose)
+	pose["Head"] = Vector3(-10.0, 0.0, 0.0)  ## eyes down the rail
+	_feet_on_board(pose, front, back)
 
 
 static func _pose_manual(pose: Dictionary, anim: String, t: float, c: float, b: float) -> void:
 	var nose: bool = anim == "manual_nose_manual"
 	var sgn: float = -1.0 if nose else 1.0
+	# The balance meter drives everything: the board's pitch, the body over it, the arms counter-swinging fore and
+	# aft (windmilling when it is far out) and a fast wobble in the board that grows near the limits.
+	var wobble: float = 2.5 * absf(b) * absf(b) * sin(t * 13.0)
 	var flail: float = 25.0 * sin(t * 8.0) * b
-	_arms(pose, Vector3(flail, 0.0, -50.0), Vector3(-flail, 0.0, 50.0), 15.0)
+	var counter: float = 30.0 * b  ## arms reach toward the side the board tips away from
+	_arms(pose, Vector3(flail - counter * sgn, 0.0, -50.0), Vector3(-flail - counter * sgn, 0.0, 50.0), 15.0)
 	pose["pitch"] = -10.0 * sgn + 6.0 * b  ## weight back over the tail (forward over the nose)
+	pose["Hips"] = Vector3(-8.0 * sgn + 5.0 * b, 0.0, 0.0)
 	var pivot: Vector3 = Vector3(0.0, 0.0, -WHEEL_CONTACT_Z) if nose else Vector3(0.0, 0.0, WHEEL_CONTACT_Z)
-	_board_turn(pose, Vector3(sgn * MANUAL_PITCH + 8.0 * b, 0.0, 0.0), pivot)
-	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * c
-	_curl(pose, 8.0 + 10.0 * c)
+	_board_turn(pose, Vector3(sgn * MANUAL_PITCH + 8.0 * b + wobble, 0.0, 0.0), pivot)
+	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * c - 0.03 * absf(b)
+	_curl(pose, 8.0 + 10.0 * c + 6.0 * absf(b))
+	pose["Head"] = Vector3(-6.0 - 4.0 * absf(b), 0.0, 0.0)
 	_feet_on_board(pose)
 
 
@@ -833,7 +1166,7 @@ static func _pose_walk(pose: Dictionary, phase: float, speed: float) -> void:
 	pose["LeftLowerArm"] = Vector3(10.0 + maxf(swing, 0.0) * 0.5 * (1.0 - run_k) + 40.0 * run_k * amp, 0.0, 0.0)
 	pose["RightUpperArm"] = Vector3(0.0, 0.0, 6.0)
 	pose["RightLowerArm"] = Vector3(30.0, 0.0, 0.0)
-	_carry_board(pose, bob * 0.6)
+	_carry_board(pose, bob * 0.6, phase, amp)
 
 
 ## Heel-to-toe shoe pitch (degrees, + toe up) at cycle position u: toe up at heel strike, flat through mid-stance,
@@ -860,10 +1193,12 @@ static func _roll_raise(pitch_deg: float) -> float:
 
 
 ## The board on edge under the right arm and the right hand on its top edge.
-static func _carry_board(pose: Dictionary, bob: float) -> void:
-	var rot: Vector3 = Vector3(CARRY_PITCH, 0.0, CARRY_ROLL)
+static func _carry_board(pose: Dictionary, bob: float, phase: float = 0.0, amp: float = 0.0) -> void:
+	# The carried board swings a little with the stride, lagging the step (a pendulum under the hand).
+	var sw: float = sin(TAU * phase - 0.6) * amp
+	var rot: Vector3 = Vector3(CARRY_PITCH + 4.0 * sw, 3.0 * sw, CARRY_ROLL)
 	var b: Basis = Basis.from_euler(rot * (PI / 180.0))
-	var origin: Vector3 = CARRY_CENTER + Vector3(0.0, bob, 0.0) - b * Vector3(0.0, AnimeBoard.DECK_Y, 0.0)
+	var origin: Vector3 = CARRY_CENTER + Vector3(0.0, bob, 0.012 * sw) - b * Vector3(0.0, AnimeBoard.DECK_Y, 0.0)
 	pose["board_rot"] = rot
 	pose["board_pos"] = origin
 	pose["hand_R"] = origin + b * Vector3(AnimeBoard.DECK_WIDTH * 0.5 - 0.01, AnimeBoard.DECK_Y, -0.05)
@@ -920,6 +1255,43 @@ static func _pose_mount(pose: Dictionary, t: float, switch: bool) -> void:
 	out["lift"] = float(out["lift"]) + 0.08 * sin(PI * k)
 	for key: String in out.keys():
 		pose[key] = out[key]
+
+
+## Crouching to pop: knees bend, the weight settles a little toward the tail and the arms load down and back.
+static func _pose_crouch(pose: Dictionary, c: float, t: float) -> void:
+	_pose_idle(pose, c)
+	pose["pitch"] = -3.0 * c
+	pose["Head"] = (pose["Head"] as Vector3) + Vector3(-6.0 * c, 0.0, 0.0)
+	_arms(pose, Vector3(-14.0 * c, 0.0, -10.0 - 8.0 * c), Vector3(18.0 * c, 0.0, 10.0 + 8.0 * c), 18.0 + 12.0 * c)
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.8 * sin(t * 1.7), 0.0, 0.0)
+
+
+## Powerslide (not triggered by the physics yet; ready for a slide state): the board kicked round across the line,
+## the rider sitting back low against the slide with the back hand trailing toward the ground and the front arm out.
+static func _pose_powerslide(pose: Dictionary, t: float, c: float) -> void:
+	var k: float = _smooth(t / 0.15)
+	var turn: float = POWERSLIDE_YAW * k
+	pose["body_yaw"] = float(pose["body_yaw"]) + turn * 0.6
+	pose["feet_yaw"] = float(pose["feet_yaw"]) + turn
+	_board_turn(pose, Vector3(0.0, turn, 0.0), Vector3.ZERO)
+	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * maxf(c, 0.75 * k)
+	pose["lean"] = -14.0 * k
+	_curl(pose, 18.0 * k)
+	pose["Head"] = Vector3(6.0, -20.0 * k, 0.0)
+	_arms(pose, Vector3(30.0, 0.0, -60.0 * k - 10.0), Vector3(-40.0 * k, 0.0, 25.0 + 20.0 * k), 20.0)
+	_feet_on_board(pose)
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.0, 0.0, 2.0 * sin(t * 30.0) * k)  ## chatter
+
+
+## Wallride: knees bent, hips pressed in toward the wall, the wall-side arm reaching down toward it and the free arm
+## thrown up and out, head up looking along the wall.
+static func _pose_wallride(pose: Dictionary, t: float) -> void:
+	_pose_idle(pose, 0.45)
+	var k: float = _smooth(t / 0.15)
+	pose["lean"] = 28.0 * k
+	_curl(pose, 6.0 * k)
+	pose["Head"] = Vector3(10.0 * k, 0.0, -10.0 * k)
+	_arms(pose, Vector3(10.0, 0.0, -30.0 - 50.0 * k), Vector3(-20.0, 0.0, 30.0 + 70.0 * k), 25.0)
 
 
 static func _board_turn(pose: Dictionary, euler_deg: Vector3, pivot: Vector3) -> void:

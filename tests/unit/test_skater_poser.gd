@@ -133,7 +133,7 @@ func test_ollie_pops_the_tail() -> void:
 
 func test_push_foot_sweeps_along_the_ground_behind() -> void:
 	var t0: float = SkaterPoser.PUSH_PLANT + SkaterPoser.PUSH_CYCLE * 0.05
-	var t1: float = SkaterPoser.PUSH_PLANT + SkaterPoser.PUSH_CYCLE * 0.5
+	var t1: float = SkaterPoser.PUSH_PLANT + SkaterPoser.PUSH_CYCLE * 0.35  ## mid drive, before the toe-off
 	var a: Vector3 = SkaterPoser.pose_for("push", t0, 0.0, 0.0)["foot_R"]
 	var b: Vector3 = SkaterPoser.pose_for("push", t1, 0.0, 0.0)["foot_R"]
 	assert_near(a.y, PlaceholderSkater.ANKLE_HEIGHT, 0.001, "push foot planted on the ground")
@@ -221,3 +221,107 @@ func test_drop_in_hangs_nose_up_then_stomps_nose_down() -> void:
 	assert_true((stomp["board_rot"] as Vector3).x < -15.0, "stomped: nose down the ramp")
 	assert_true(float(stomp["pitch"]) > float(hang["pitch"]), "weight goes from the tail onto the front foot")
 	assert_true((hang["foot_L"] as Vector3).y > (SkaterPoser.deck_point(hang, SkaterPoser.FRONT_FOOT) as Vector3).y + 0.05, "front foot hovers while hanging")
+
+
+func _hips(anim: String, t: float, ctx: Dictionary) -> float:
+	return float(SkaterPoser.pose_for(anim, t, 0.0, 0.0, false, 0.0, 0.0, ctx)["hips_y"])
+
+
+func test_landing_absorb_scales_with_impact() -> void:
+	var small: float = 0.0
+	var big: float = 0.0
+	for i: int in 40:
+		var t: float = i * 0.015
+		small = maxf(small, SkaterPoser.land_absorb(t, 0.15))
+		big = maxf(big, SkaterPoser.land_absorb(t, 0.95))
+	assert_true(small < 0.15, "a small hop barely dips (%f)" % small)
+	assert_true(big > 0.9, "a big drop compresses deep (%f)" % big)
+	assert_true(SkaterPoser.land_time(0.95) > SkaterPoser.land_time(0.15) + 0.25, "a big landing takes longer to recover")
+	assert_near(SkaterPoser.land_absorb(SkaterPoser.land_time(0.95) + 0.01, 0.95), 0.0, 0.0001, "fully recovered")
+	var deep: float = _hips("land", SkaterPoser.land_time(0.95) * SkaterPoser.LAND_HIT, {"impact": 0.95})
+	var light: float = _hips("land", SkaterPoser.land_time(0.15) * SkaterPoser.LAND_HIT, {"impact": 0.15})
+	assert_true(deep < light - 0.15, "the hips drop much further on the big landing")
+
+
+func test_carve_leans_into_the_turn_and_rolls_the_deck() -> void:
+	var right: Dictionary = SkaterPoser.pose_for("idle_ride", 1.0, 0.0, 0.0, false, 0.0, 0.0, {"carve": 1.0})
+	var left: Dictionary = SkaterPoser.pose_for("idle_ride", 1.0, 0.0, 0.0, false, 0.0, 0.0, {"carve": -1.0})
+	assert_true(float(right["lean"]) > 10.0 and float(left["lean"]) < -10.0, "body leans toward the inside of the turn")
+	assert_true((right["board_rot"] as Vector3).z < -3.0, "deck rolls down on the inside edge")
+	assert_true((right["Chest"] as Vector3).y < (left["Chest"] as Vector3).y - 10.0, "shoulders lead the turn")
+	assert_near((right["foot_L"] as Vector3).distance_to(SkaterPoser.deck_point(right,
+			SkaterPoser.FRONT_FOOT + Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0))), 0.0, 0.001, "feet ride the rolled deck")
+
+
+func test_idle_variety_only_when_stopped_and_after_a_while() -> void:
+	var early: Dictionary = SkaterPoser.pose_for("idle_ride", 0.5, 0.0, 0.0, false, 0.0, 0.0, {"ride_speed": 0.0})
+	var calm: Dictionary = SkaterPoser.pose_for("idle_ride", 0.5, 0.0, 0.0, false, 0.0, 0.0, {"ride_speed": 6.0})
+	assert_eq(early["foot_L"], calm["foot_L"], "nothing happens in the first moments")
+	var heads: Dictionary = {}
+	var feet_moved: bool = false
+	for i: int in 40:
+		var t: float = SkaterPoser.IDLE_DELAY + i * 0.25
+		var p: Dictionary = SkaterPoser.pose_for("idle_ride", t, 0.0, 0.0, false, 0.0, 0.0, {"ride_speed": 0.0})
+		heads[snappedf((p["Head"] as Vector3).y, 5.0)] = true
+		feet_moved = feet_moved or (p["foot_L"] as Vector3).y > (early["foot_L"] as Vector3).y + 0.02
+		var moving: Dictionary = SkaterPoser.pose_for("idle_ride", t, 0.0, 0.0, false, 0.0, 0.0, {"ride_speed": 6.0})
+		assert_eq(moving["foot_L"], early["foot_L"], "no foot shuffling while riding")
+	assert_true(heads.size() >= 6, "the head looks around while stopped")
+	assert_true(feet_moved, "the front foot gets re-set while stopped")
+
+
+func test_stalls_tip_the_free_end_up() -> void:
+	assert_true(_rot("grind_five_oh", 0.3).x > 5.0, "5-0: nose up over the back truck")
+	assert_true(_rot("grind_nosegrind", 0.3).x < -5.0, "nosegrind: tail up over the front truck")
+	assert_true(_rot("grind_blunt_slide", 0.3).x > 40.0, "blunt: board stood up nose high")
+	assert_true(_rot("grind_smith_grind", 0.3).x < -5.0, "smith: nose dipped below the rail")
+	var five: Dictionary = SkaterPoser.pose_for("grind_five_oh", 0.3, 0.6, 0.0)
+	assert_true((five["foot_L"] as Vector3).y > (five["foot_R"] as Vector3).y, "5-0: front foot above the back foot")
+
+
+func test_flick_directions_match_the_trick() -> void:
+	var kf: Dictionary = SkaterPoser.flick("flip_kickflip")
+	var hf: Dictionary = SkaterPoser.flick("flip_heelflip")
+	assert_true((kf["front"] as Vector3).x > 0.1, "kickflip flicks out over the toe-side edge")
+	assert_true((hf["front"] as Vector3).z < (kf["front"] as Vector3).z, "heelflip kicks further forward off the nose")
+	assert_true(float(hf["toe"]) > 10.0, "heelflip leads with the heel")
+	assert_true((SkaterPoser.flick("flip_pop_shove_it")["back"] as Vector3).x < 0.0, "backside shove scoops to the heel side")
+	assert_true((SkaterPoser.flick("flip_hardflip")["back"] as Vector3).x > 0.0, "frontside (hardflip) scoops to the toe side")
+
+
+func test_ollie_front_foot_slides_up_and_arms_rise() -> void:
+	var start: Dictionary = SkaterPoser.pose_for("ollie", 0.0, 0.0, 0.0)
+	var slide: Dictionary = SkaterPoser.pose_for("ollie", SkaterPoser.LEVEL_TIME, 0.0, 0.0)
+	assert_true(float(start["hips_y"]) < float(slide["hips_y"]) - 0.1, "pops up out of the crouch")
+	var z0: float = SkaterPoser.deck_point(slide, SkaterPoser.FRONT_FOOT + Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)).z
+	assert_true((slide["foot_L"] as Vector3).z < z0 - 0.03, "front foot slides toward the nose")
+	assert_true(absf((slide["LeftUpperArm"] as Vector3).z) > absf((start["LeftUpperArm"] as Vector3).z) + 20.0, "arms thrown out with the pop")
+
+
+func test_falling_extends_the_legs_for_the_landing() -> void:
+	var up: Dictionary = SkaterPoser.pose_for("air", 0.1, 0.0, 0.0, false, 0.0, 0.0, {"vy": 2.0})
+	var down: Dictionary = SkaterPoser.pose_for("air", 0.1, 0.0, 0.0, false, 0.0, 0.0, {"vy": -7.0})
+	assert_true((down["board_pos"] as Vector3).y < (up["board_pos"] as Vector3).y - 0.1, "board reaches down when falling")
+
+
+func test_push_ends_on_the_ball_of_the_foot() -> void:
+	var t: float = SkaterPoser.PUSH_PLANT + SkaterPoser.PUSH_CYCLE * SkaterPoser.PUSH_CONTACT * 0.97
+	assert_true(float(SkaterPoser.pose_for("push", t, 0.0, 0.0)["fpitch_R"]) < -15.0, "heel up at the toe-off")
+	var plant: float = SkaterPoser.PUSH_PLANT + SkaterPoser.PUSH_CYCLE * 0.05
+	assert_near(float(SkaterPoser.pose_for("push", plant, 0.0, 0.0)["fpitch_R"]), 0.0, 0.5, "flat on the plant")
+
+
+func test_grabs_have_their_own_shapes() -> void:
+	var seen: Dictionary = {}
+	for a: String in ["grab_indy", "grab_melon", "grab_method", "grab_stalefish", "grab_mute", "grab_nosegrab", "grab_tailgrab"]:
+		var p: Dictionary = SkaterPoser.pose_for(a, 0.5, 0.0, 0.0)
+		seen[str([p["lean"], p["pitch"], p["Spine"], p["LeftUpperArm"], p["RightUpperArm"]])] = a
+	assert_eq(seen.size(), 7, "each grab has its own body shape")
+
+
+func test_carried_board_sways_with_the_stride_and_stays_in_hand() -> void:
+	var a: Dictionary = SkaterPoser.pose_for("walk", 0.0, 0.0, 0.0, false, 1.4, 0.35)
+	var b: Dictionary = SkaterPoser.pose_for("walk", 0.0, 0.0, 0.0, false, 1.4, 0.85)
+	assert_true((a["board_rot"] as Vector3).distance_to(b["board_rot"]) > 3.0, "board swings with the stride")
+	for p: Dictionary in [a, b]:
+		assert_near(float(p["grip_R"]), 1.0, 0.001, "right hand holds the board")
