@@ -23,6 +23,7 @@ var _cards: Dictionary = {}  ## id -> Button
 var _back: Button
 var _detail: Label
 var _unlock_btn: Button
+var _session_btns: Dictionary = {}  ## session id -> Button (the 2:00 / 5:00 / free skate picker)
 ## Career numbers (stars, goals, bests, locks). The shared store by default; tests hand in their own before add_child.
 var store: ProgressStore = null
 var _locks: Dictionary = {}  ## id -> Control (the LOCKED cover over the preview)
@@ -49,6 +50,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause") or _ls_is_circle(event):
 		get_viewport().set_input_as_handled()
 		closed.emit()
+	elif event.is_action_pressed("spin_left") or event.is_action_pressed("spin_right"):
+		get_viewport().set_input_as_handled()
+		_set_session(SessionMode.cycle(store.session, -1 if event.is_action_pressed("spin_left") else 1))
 	elif event.is_action_pressed("ollie"):
 		# Godot's ui_accept has no gamepad button here, so Cross presses the focused button.
 		var focus: Control = get_viewport().gui_get_focus_owner()
@@ -110,25 +114,47 @@ func _build() -> void:
 	_back = Button.new()
 	_back.text = "Back"
 	_back.theme_type_variation = SkateThemeBuilder.BTN_CORAL
-	_back.custom_minimum_size = Vector2(240, 66)
+	_back.custom_minimum_size = Vector2(200, 66)
 	_back.add_theme_font_size_override("font_size", 32)
 	_back.pressed.connect(func() -> void: closed.emit())
 	_back.mouse_entered.connect(_back.grab_focus)
 	bar.add_child(_back)
+	var seg := HBoxContainer.new()  # the session picker: how long the run is
+	seg.name = "SessionPicker"
+	seg.add_theme_constant_override("separation", 10)
+	seg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(seg)
+	var prev: Button = _back
+	for m: Dictionary in SessionMode.MODES:
+		var sb := Button.new()
+		sb.name = "Session_" + str(m["id"])
+		sb.text = str(m["label"])
+		sb.custom_minimum_size = Vector2(185, 66)
+		sb.add_theme_font_size_override("font_size", 26)
+		sb.pressed.connect(_set_session.bind(str(m["id"])))
+		sb.mouse_entered.connect(sb.grab_focus)
+		sb.focus_entered.connect(_show_session_blurb.bind(str(m["id"])))
+		sb.focus_exited.connect(_show_session_blurb.bind(store.session))
+		seg.add_child(sb)
+		_session_btns[str(m["id"])] = sb
+		prev.focus_neighbor_right = sb.get_path()
+		sb.focus_neighbor_left = prev.get_path()
+		prev = sb
 	_unlock_btn = Button.new()
 	_unlock_btn.name = "UnlockAll"
 	_unlock_btn.theme_type_variation = SkateThemeBuilder.BTN_TEAL
-	_unlock_btn.custom_minimum_size = Vector2(380, 66)
-	_unlock_btn.add_theme_font_size_override("font_size", 28)
+	_unlock_btn.custom_minimum_size = Vector2(250, 66)
+	_unlock_btn.add_theme_font_size_override("font_size", 26)
 	_unlock_btn.pressed.connect(_on_unlock_all)
 	_unlock_btn.mouse_entered.connect(_unlock_btn.grab_focus)
 	bar.add_child(_unlock_btn)
-	_back.focus_neighbor_right = _unlock_btn.get_path()
-	_unlock_btn.focus_neighbor_left = _back.get_path()
+	prev.focus_neighbor_right = _unlock_btn.get_path()
+	_unlock_btn.focus_neighbor_left = prev.get_path()
 	_detail = Label.new()
-	_detail.text = "Cross / Enter: ride    Circle / Esc: back"
+	_detail.text = ""
 	_detail.add_theme_font_override("font", SkateThemeBuilder.heading_font())
-	_detail.add_theme_font_size_override("font_size", 28)
+	_detail.add_theme_font_size_override("font_size", 24)
+	_detail.custom_minimum_size = Vector2(420, 0)
 	_detail.add_theme_color_override("font_color", SkateThemeBuilder.CREAM)
 	_detail.add_theme_color_override("font_outline_color", SkateThemeBuilder.NAVY)
 	_detail.add_theme_constant_override("outline_size", 8)
@@ -291,7 +317,26 @@ func _refresh_locks() -> void:
 		(_lock_texts[id] as Label).text = "Finish %d more goal%s" % [need, "" if need == 1 else "s"]
 		(_stat_texts[id] as Label).text = stat_line(id)
 	if _unlock_btn != null:
-		_unlock_btn.text = "Unlock all levels: %s" % ("On" if store.unlock_all else "Off")
+		_unlock_btn.text = "Unlock all: %s" % ("On" if store.unlock_all else "Off")
+	_refresh_session()
+
+
+## Marks the picked session (sun yellow, the rest cream) and shows its one-liner.
+func _refresh_session() -> void:
+	for id: String in _session_btns:
+		(_session_btns[id] as Button).theme_type_variation = SkateThemeBuilder.BTN_SUN if id == store.session else SkateThemeBuilder.BTN_CREAM
+	_show_session_blurb(store.session)
+
+
+func _show_session_blurb(id: String) -> void:
+	if _detail != null:
+		_detail.text = str(SessionMode.mode(id)["blurb"]) + "   [Q / E]"
+
+
+func _set_session(id: String) -> void:
+	store.session = id
+	store.save()
+	_refresh_session()
 
 
 func _on_unlock_all() -> void:

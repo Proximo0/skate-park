@@ -16,6 +16,21 @@
 			"target": 40000
 		},
 		{
+			"id": "bch_pier_marathon",
+			"title": "Pier Rail Marathon",
+			"description": "Grind the whole pier rail without stepping off.",
+			"type": "named_gap",
+			"gap": "pier_rail_marathon"
+		},
+		{
+			"id": "bch_roof_flip",
+			"title": "Flip the Rooftop Surf",
+			"description": "Land a flip trick over the rooftop gap.",
+			"type": "gap_trick",
+			"gap": "rooftop_surf",
+			"trick_kind": "flip"
+		},
+		{
 			"id": "beach_combo_6k",
 			"title": "Sunset Combo: 6,000",
 			"description": "Land a single combo worth 6,000 points.",
@@ -91,6 +106,56 @@
 			"description": "Land any special trick.",
 			"type": "special",
 			"target": 1
+		},
+		{
+			"id": "bch_variety_5",
+			"title": "Trick Variety: 5 different tricks",
+			"description": "Land one combo with five different tricks in it.",
+			"type": "combo_distinct",
+			"target": 5
+		},
+		{
+			"id": "bch_long_manual",
+			"title": "Boardwalk Cruise: 50 meter manual",
+			"description": "Hold one manual for 50 meters.",
+			"type": "manual_distance",
+			"target": 50
+		},
+		{
+			"id": "bch_grab_bag",
+			"title": "Grab Bag: 4,000 with a grab",
+			"description": "Land a 4,000 point combo that has a grab in it.",
+			"type": "combo_trick",
+			"trick_kind": "grab",
+			"target": 4000
+		},
+		{
+			"id": "mixtape",
+			"title": "Mixtape: find 3 hidden tapes",
+			"description": "Three skate-video cassettes are hidden on landmark spots. Ride through each one.",
+			"type": "pickup",
+			"items": [
+				"VHS",
+				"VHS",
+				"VHS"
+			]
+		}
+	],
+	"pickups": [
+		{
+			"item": "VHS",
+			"zone": "launch_lip",
+			"dy": 1.3
+		},
+		{
+			"item": "VHS",
+			"zone": "pier_qp_lip",
+			"dy": 1.3
+		},
+		{
+			"item": "VHS",
+			"zone": "rock_kick",
+			"dy": 1.2
 		}
 	]
 }

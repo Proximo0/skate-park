@@ -1,0 +1,36 @@
+{
+	"items": {
+		"deck_cruiser": {"goals": 3},
+		"deck_oldschool": {"goals": 9},
+		"truck_low": {"goals": 4},
+		"truck_hollow": {"goals": 12},
+		"wheel_park_54": {"goals": 2},
+		"wheel_cruiser_56": {"goals": 7},
+		"bearing_fast": {"goals": 5},
+		"bearing_smooth": {"goals": 11},
+		"grip_fruit": {"goals": 6},
+		"top_hoodie": {"goals": 4},
+		"top_flannel": {"goals": 6},
+		"bottom_skate_jeans": {"goals": 8},
+		"shoes_cupsole": {"goals": 5},
+		"shoes_puffy": {"goals": 10},
+		"shoes_high_top": {"goals": 14},
+		"acc_sunnies": {"goals": 8},
+		"acc_headband": {"goals": 2, "reward": true},
+		"acc_wristbands": {"goals": 5, "reward": true},
+		"socks_striped": {"goals": 7, "reward": true},
+		"bottom_joggers": {"goals": 10, "reward": true},
+		"acc_cap": {"goals": 16, "reward": true}
+	},
+	"specials": [
+		{"id": "rocket_launch", "goals": 0},
+		{"id": "pizza_spinner", "goals": 0},
+		{"id": "moonwalk", "goals": 6},
+		{"id": "gravity_defier", "goals": 14}
+	],
+	"special_slots": [
+		{"goals": 0, "slots": 2},
+		{"goals": 10, "slots": 3},
+		{"goals": 20, "slots": 4}
+	]
+}

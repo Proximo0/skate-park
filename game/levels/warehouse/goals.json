@@ -16,6 +16,21 @@
 			"target": 40000
 		},
 		{
+			"id": "wh_pipe_dream",
+			"title": "Pipe Dream",
+			"description": "Grind the whole length of the big pipe.",
+			"type": "named_gap",
+			"gap": "pipe_dream"
+		},
+		{
+			"id": "wh_container_grab",
+			"title": "Grab the Container Hop",
+			"description": "Grab a trick over the container hop and land it.",
+			"type": "gap_trick",
+			"gap": "container_hop",
+			"trick_kind": "grab"
+		},
+		{
 			"id": "combo_6k",
 			"title": "Graveyard Shift: 6,000 Combo",
 			"description": "Land a single combo worth 6,000 points.",
@@ -103,6 +118,56 @@
 			"description": "Land any special trick.",
 			"type": "special",
 			"target": 1
+		},
+		{
+			"id": "wh_variety_5",
+			"title": "Trick Variety: 5 different tricks",
+			"description": "Land one combo with five different tricks in it.",
+			"type": "combo_distinct",
+			"target": 5
+		},
+		{
+			"id": "wh_gap_chain_3",
+			"title": "Gap Chain: 3 gaps in a combo",
+			"description": "Link three different gaps in one combo and land it.",
+			"type": "gap_chain",
+			"target": 3
+		},
+		{
+			"id": "wh_gap_rush",
+			"title": "Gap Rush: 3 gaps in 30 seconds",
+			"description": "Hit three different gaps inside 30 seconds.",
+			"type": "timed_gaps",
+			"target": 3,
+			"seconds": 30
+		},
+		{
+			"id": "mixtape",
+			"title": "Mixtape: find 3 hidden tapes",
+			"description": "Three skate-video cassettes are hidden on landmark spots. Ride through each one.",
+			"type": "pickup",
+			"items": [
+				"VHS",
+				"VHS",
+				"VHS"
+			]
+		}
+	],
+	"pickups": [
+		{
+			"item": "VHS",
+			"zone": "gon_b",
+			"dy": 1.2
+		},
+		{
+			"item": "VHS",
+			"zone": "pit_rim_n",
+			"dy": 1.2
+		},
+		{
+			"item": "VHS",
+			"zone": "flatcar_top",
+			"dy": 1.4
 		}
 	]
 }

@@ -17,6 +17,8 @@ const UNLOCK_AT: Dictionary = {"beach": 3, "school": 6, "downtown": 10, "hills":
 static var _shared: ProgressStore = null
 
 var unlock_all: bool = false
+var session: String = SessionMode.DEFAULT_ID  ## "2min" / "5min" / "free" (SessionMode), picked on the level select
+var specials: Variant = null  ## equipped special trick ids (Array); null = never chosen, Unlocks fills in the defaults
 var path: String = ""  ## where save() writes; "" keeps the store in memory only
 var _levels: Dictionary = {}  ## level id -> {"best_score": int, "best_combo": int, "goals": [ids], "runs": int}
 var _tips: Dictionary = {}  ## tip id -> true
@@ -57,7 +59,10 @@ func to_dict() -> Dictionary:
 			"best_score": int(e["best_score"]), "best_combo": int(e["best_combo"]),
 			"goals": (e["goals"] as Array).duplicate(), "runs": int(e["runs"]),
 		}
-	return {"version": VERSION, "unlock_all": unlock_all, "levels": lv, "tips": _tips.keys()}
+	var d: Dictionary = {"version": VERSION, "unlock_all": unlock_all, "levels": lv, "tips": _tips.keys(), "session": session}
+	if typeof(specials) == TYPE_ARRAY:
+		d["specials"] = (specials as Array).duplicate()
+	return d
 
 
 ## Replaces the contents; anything of the wrong type is ignored.
@@ -66,6 +71,16 @@ func from_dict(d: Dictionary) -> void:
 	_tips.clear()
 	var ua: Variant = d.get("unlock_all", false)
 	unlock_all = typeof(ua) == TYPE_BOOL and ua
+	var ses: Variant = d.get("session", SessionMode.DEFAULT_ID)
+	session = str(ses) if typeof(ses) == TYPE_STRING and SessionMode.is_valid(str(ses)) else SessionMode.DEFAULT_ID
+	specials = null
+	var sp: Variant = d.get("specials", null)
+	if typeof(sp) == TYPE_ARRAY:
+		var picked: Array = []
+		for x: Variant in sp as Array:
+			if typeof(x) == TYPE_STRING and not picked.has(x):
+				picked.append(x)
+		specials = picked
 	var lv: Variant = d.get("levels", {})
 	if typeof(lv) == TYPE_DICTIONARY:
 		var levels: Dictionary = lv
@@ -131,6 +146,27 @@ func total_goals_done() -> int:
 	for id: String in _levels:
 		n += (_levels[id]["goals"] as Array).size()
 	return n
+
+
+## Equipped specials, valid for the current goal total (see Unlocks.equipped_specials).
+func equipped_specials() -> PackedStringArray:
+	return Unlocks.equipped_specials(specials, total_goals_done())
+
+
+## Equips or unequips one special. Equipping needs the special unlocked and a free slot. True when anything changed.
+func toggle_special(id: String) -> bool:
+	var now: PackedStringArray = equipped_specials()
+	if now.has(id):
+		now.remove_at(now.find(id))
+	elif Unlocks.special_unlocked(id, total_goals_done()) and now.size() < Unlocks.special_slots(total_goals_done()):
+		now.append(id)
+	else:
+		return false
+	var arr: Array = []
+	for x: String in now:
+		arr.append(x)
+	specials = arr
+	return true
 
 
 ## Records a finished (or ongoing) run: raises the bests, adds the goal ids. Returns what is new:

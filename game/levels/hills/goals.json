@@ -16,6 +16,21 @@
 			"target": 40000
 		},
 		{
+			"id": "hills_hillcrest",
+			"title": "Hillcrest Bomb",
+			"description": "Bomb the long Hillcrest hill from top to bottom.",
+			"type": "named_gap",
+			"gap": "hillcrest_bomb"
+		},
+		{
+			"id": "hills_view_flip",
+			"title": "Flip the Million Dollar View",
+			"description": "Land a flip trick in the same combo as the overlook grind.",
+			"type": "gap_trick",
+			"gap": "million_dollar_view",
+			"trick_kind": "flip"
+		},
+		{
 			"id": "hills_score_90k",
 			"title": "Sick Score: 90,000",
 			"description": "Land 90,000 points in one run.",
@@ -95,6 +110,56 @@
 			"description": "Hold one manual for 5 seconds.",
 			"type": "manual_time",
 			"target": 5
+		},
+		{
+			"id": "hills_variety_5",
+			"title": "Trick Variety: 5 different tricks",
+			"description": "Land one combo with five different tricks in it.",
+			"type": "combo_distinct",
+			"target": 5
+		},
+		{
+			"id": "hills_gap_rush",
+			"title": "Gap Rush: 3 gaps in 30 seconds",
+			"description": "Hit three different gaps inside 30 seconds.",
+			"type": "timed_gaps",
+			"target": 3,
+			"seconds": 30
+		},
+		{
+			"id": "hills_clean_streak",
+			"title": "Smooth Roller: 5 combos, no bail",
+			"description": "Land five combos in a row without bailing.",
+			"type": "streak",
+			"target": 5
+		},
+		{
+			"id": "mixtape",
+			"title": "Mixtape: find 3 hidden tapes",
+			"description": "Three skate-video cassettes are hidden on landmark spots. Ride through each one.",
+			"type": "pickup",
+			"items": [
+				"VHS",
+				"VHS",
+				"VHS"
+			]
+		}
+	],
+	"pickups": [
+		{
+			"item": "VHS",
+			"zone": "drive_lip_1",
+			"dy": 1.3
+		},
+		{
+			"item": "VHS",
+			"zone": "park_pad_a",
+			"dy": 1.2
+		},
+		{
+			"item": "VHS",
+			"zone": "wall_e",
+			"dy": 1.3
 		}
 	]
 }

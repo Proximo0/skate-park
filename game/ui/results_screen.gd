@@ -102,7 +102,10 @@ func _build() -> void:
 	title.name = "Title"
 	title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	col.add_child(title)
-	var sub := UiStyle.label(str(data.get("level_name", "")), UiStyle.SIZE_SMALL, UiStyle.WHITE)
+	var sub_text: String = str(data.get("level_name", ""))
+	if str(data.get("session", "")) != "":
+		sub_text += "  -  " + str(data["session"])
+	var sub := UiStyle.label(sub_text, UiStyle.SIZE_SMALL, UiStyle.WHITE)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(sub)
 
@@ -207,6 +210,17 @@ func _goals_block() -> Control:
 		box.add_child(UiStyle.label("and %d more" % (titles.size() - shown), UiStyle.SIZE_SMALL - 4, UiStyle.WHITE, false))
 	if titles.is_empty():
 		box.add_child(UiStyle.label("No new goals. Check the goal list (Tab) for the next one.", UiStyle.SIZE_SMALL - 4, UiStyle.WHITE, false))
+	var unlocks: Array = data.get("unlocks", []) as Array
+	if not unlocks.is_empty():
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(0, 8)
+		box.add_child(gap)
+		var u := UiStyle.label("UNLOCKED: " + ", ".join(PackedStringArray(unlocks.map(func(x: Variant) -> String: return str(x)))),
+			UiStyle.SIZE_SMALL - 2, UiStyle.BUBBLEGUM, false)
+		u.name = "Unlocked"
+		u.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		u.custom_minimum_size = Vector2(900, 0)
+		box.add_child(u)
 	return box
 
 

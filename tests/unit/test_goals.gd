@@ -40,11 +40,11 @@ func test_default_file_has_the_big_park_goals() -> void:
 	assert_true(g.is_completed("long_haul_4"), "a 4.5 second grind completes Long Haul")
 
 
-func test_default_file_loads_sixteen_valid_goals() -> void:
+func test_default_file_loads_valid_goals() -> void:
 	var g: Goals = Goals.load_default()
 	assert_true(g.load_errors.is_empty(), "no load errors: %s" % str(g.load_errors))
 	var all: Array[Dictionary] = g.all_goals()
-	assert_eq(all.size(), 16, "sixteen goals")
+	assert_eq(all.size(), 24, "twenty four goals")
 	assert_near(g.run_seconds, 120.0, 0.0001, "2-minute run")
 	var seen: Dictionary = {}
 	for goal: Dictionary in all:
@@ -443,5 +443,5 @@ func test_all_goal_types_complete_once_in_default_set() -> void:
 	done_total += g.on_trick("moonwalk", "special").size()
 	done_total += g.on_hold("manual", 5.0).size()
 	done_total += g.on_hold("grind", 3.0).size()
-	assert_eq(g.completed_ids().size(), 12, "every default goal done")
+	assert_eq(g.completed_ids().size(), 12, "every classic default goal done")
 	assert_eq(done_total, 12, "each completion reported once")
