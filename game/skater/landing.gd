@@ -51,5 +51,20 @@ static func judge(board_forward: Vector3, board_up: Vector3, velocity: Vector3, 
 	return _landing_judgement(result, backward_side)
 
 
+## A landing back on a steep wall from vert air: the better of judging the instantaneous velocity and the velocity
+## `lookahead` s later under `gravity`. At the top of a sideways carve the velocity runs along the wall, and a board
+## pointed down the fall line (the right re-entry) reads as nearly across it; gravity is about to turn it down the
+## wall. Never harsher than judge().
+static func judge_reentry(board_forward: Vector3, board_up: Vector3, velocity: Vector3, ground_normal: Vector3,
+		gravity: float, lookahead: float) -> Dictionary:
+	var now: Dictionary = judge(board_forward, board_up, velocity, ground_normal)
+	if now["result"] == RESULT_CLEAN:
+		return now
+	var later: Dictionary = judge(board_forward, board_up, velocity + Vector3.DOWN * gravity * lookahead, ground_normal)
+	if later["result"] == RESULT_CLEAN or (later["result"] == RESULT_SKETCHY and now["result"] == RESULT_BAIL):
+		return later
+	return now
+
+
 static func _landing_judgement(result: String, is_switch: bool) -> Dictionary:
 	return {"result": result, "switch": is_switch}

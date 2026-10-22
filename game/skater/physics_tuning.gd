@@ -48,7 +48,7 @@ const FIELDS: Array = [
 	["getup_time", 0.6, 0.1, 2.0, 0.05, "Bail", "Get-up time after a bail, s."],
 	["snap_reach_roll", 12.0, 3.0, 30.0, 0.5, "Ramp snap", "Q + E while rolling: farthest ramp lip it snaps you into, m."],
 	["snap_reach_air", 15.0, 3.0, 30.0, 0.5, "Ramp snap", "Q + E in the air: farthest ramp lip it snaps you into, m."],
-	["snap_drop_speed", 3.0, 0.5, 10.0, 0.25, "Ramp snap", "Slowest speed a snap drop-in starts down the wall with, m/s."],
+	["snap_drop_speed", 1.0, 0.5, 10.0, 0.25, "Ramp snap", "Slowest speed a snap drop-in starts down the wall with, m/s (gravity does the rest)."],
 	["snap_out_speed", 5.0, 1.0, 12.0, 0.25, "Ramp snap", "Rolling speed after a snap out of a ramp, m/s."],
 ]
 

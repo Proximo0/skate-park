@@ -1,7 +1,8 @@
 extends SceneTree
 ## Real-physics harness for SkaterRagdoll (the unit runner cannot step frames). Run by test_skater_ragdoll.gd:
 ##   godot --headless --fixed-fps 60 --path . -s res://tests/ragdoll_harness.gd -- <scenario> <speed>
-## scenario: "ground" (falls and slides on flat ground) or "wall" (flies into a wall 5 m ahead).
+## scenario: "ground" (falls and slides on flat ground) or "wall" (flies into a wall 5 m ahead); "inj_<kind>"
+## falls on the ground with a BailKind plan of that kind (styles and injuries).
 ## Prints one line: RAGDOLL key=value ...
 
 const PAIRS: Array = [
@@ -63,15 +64,24 @@ func _run() -> void:
 	await physics_frame
 	var nodes_before: int = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	var vel: Vector3 = Vector3(0, 0, -speed)
-	if scenario == "ground":
+	var plan: Dictionary = {}
+	if scenario.begins_with("inj_"):
+		plan = BailKind.classify({"kind": scenario.trim_prefix("inj_"), "impact": speed, "velocity": vel})
+	if scenario == "ground" or not plan.is_empty():
 		vel = Vector3(0.0, -speed * 0.35, -speed * 0.94)
 		holder.position.y = 1.5
-	var rd: SkaterRagdoll = SkaterRagdoll.spawn(body, board, vel, Vector3(2.0, 0.5, -1.0), world)
+	var rd: SkaterRagdoll = SkaterRagdoll.spawn(body, board, vel, Vector3(2.0, 0.5, -1.0), world, plan)
+	var injured_t: Array = [-1.0]
+	var repair_t: Array = [-1.0]
+	var peak_w: Array = [0.0]
+	rd.injured.connect(func(_p: Array) -> void: injured_t[0] = rd._time)
+	rd.repairing.connect(func(_p: Array) -> void: repair_t[0] = rd._time)
 	var rest: Dictionary = {}
 	for p: Array in PAIRS:
 		rest[p[1]] = (body.find_child(p[0], true, false) as Node3D).global_position.distance_to(
 			(body.find_child(p[1], true, false) as Node3D).global_position)
 	var min_y: float = 99.0
+	var min_part: String = ""
 	var nan: int = 0
 	var stretch: float = 0.0
 	var stretch_frames: int = 0
@@ -91,8 +101,9 @@ func _run() -> void:
 			var rb: RigidBody3D = rd.parts[pname]
 			if _bad(rb.global_position) or _bad(rb.linear_velocity):
 				nan += 1
-			if pname != "board":
-				min_y = minf(min_y, rb.global_position.y)
+			if pname != "board" and rb.global_position.y < min_y:
+				min_y = rb.global_position.y
+				min_part = "%s@%d" % [pname, frames]
 		board_min_y = minf(board_min_y, (rd.parts["board"] as RigidBody3D).global_position.y)
 		max_speed = maxf(max_speed, (rd.parts["pelvis"] as RigidBody3D).linear_velocity.length())
 		for p: Array in PAIRS:
@@ -127,8 +138,10 @@ func _run() -> void:
 			var e2: float = _flex(body, s + "UpperArm", s + "LowerArm")
 			var k2: float = _flex(body, s + "UpperLeg", s + "LowerLeg")
 			final_viol = maxf(final_viol, maxf(maxf(SkaterRagdoll.ELBOW_RANGE.x - e2, e2 - SkaterRagdoll.ELBOW_RANGE.y), maxf(SkaterRagdoll.KNEE_RANGE.x - k2, k2 - SkaterRagdoll.KNEE_RANGE.y)))
+		peak_w[0] = maxf(peak_w[0], rd.injury_weight())
 		if settle_t < 0.0 and rd.settled():
 			settle_t = frames / 60.0
+	var end_w: float = rd.injury_weight()
 	var end_t: Transform3D = rd.pelvis_transform()
 	var end_raw: Vector3 = rd.pelvis_raw_transform().origin
 	var pelvis_final_speed: float = (rd.parts["pelvis"] as RigidBody3D).linear_velocity.length()
@@ -136,7 +149,8 @@ func _run() -> void:
 	await physics_frame
 	await physics_frame
 	var nodes_after: int = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
-	print("RAGDOLL scenario=%s speed=%.1f settle_t=%.2f min_y=%.3f board_min_y=%.3f nan=%d stretch=%.3f elbow_viol=%.3f knee_viol=%.3f max_speed=%.1f final_speed=%.2f ragdoll_alive=%d node_delta=%d end=(%.2f,%.2f,%.2f) ground_y=%.3f stretch_frames=%d viol_frames=%d final_stretch=%.3f final_viol=%.3f" % [
+	print("RAGDOLL scenario=%s speed=%.1f settle_t=%.2f min_y=%.3f board_min_y=%.3f nan=%d stretch=%.3f elbow_viol=%.3f knee_viol=%.3f max_speed=%.1f final_speed=%.2f ragdoll_alive=%d node_delta=%d end=(%.2f,%.2f,%.2f) ground_y=%.3f stretch_frames=%d viol_frames=%d final_stretch=%.3f final_viol=%.3f injuries=%d injured_t=%.2f repair_t=%.2f peak_w=%.2f end_w=%.3f min_part=%s" % [
 		scenario, speed, settle_t, min_y, board_min_y, nan, stretch, elbow_viol, knee_viol, max_speed, pelvis_final_speed,
-		1 if is_instance_valid(rd) else 0, nodes_after - nodes_before, end_raw.x, end_raw.y, end_raw.z, end_t.origin.y, stretch_frames, viol_frames, final_stretch, final_viol])
+		1 if is_instance_valid(rd) else 0, nodes_after - nodes_before, end_raw.x, end_raw.y, end_raw.z, end_t.origin.y, stretch_frames, viol_frames, final_stretch, final_viol,
+		(plan.get("injuries", []) as Array).size(), injured_t[0], repair_t[0], peak_w[0], end_w, min_part])
 	quit(0)

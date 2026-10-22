@@ -157,3 +157,29 @@ func test_switch_flag_matches_heading_side_for_sketchy_band() -> void:
 		var d: Dictionary = _judge(FORWARD, UP, _heading_velocity(float(deg)))
 		assert_eq(d["result"], "sketchy", "sweep back %d" % deg)
 		assert_true(d["switch"], "sweep back %d switch" % deg)
+
+
+func test_reentry_judges_where_gravity_takes_a_sideways_carve() -> void:
+	# The practice dome case: a 78 deg wall, the skater at the top of a sideways carve (velocity along the wall) with
+	# the board pointed 81 deg from it, nearly down the fall line. Instantaneously a bail; 0.2 s later a clean re-entry.
+	var n: Vector3 = Vector3(-0.6, 0.2, 0.78).normalized()
+	var along: Vector3 = Vector3.UP.cross(n).normalized()  # horizontal, along the wall
+	var fall: Vector3 = (Vector3.DOWN - n * Vector3.DOWN.dot(n)).normalized()
+	var fwd: Vector3 = along.rotated(n, deg_to_rad(81.0))
+	if fwd.dot(fall) < 0.0:
+		fwd = along.rotated(n, deg_to_rad(-81.0))
+	var v: Vector3 = along * 5.1
+	assert_eq(Landing.judge(fwd, n, v, n)["result"], "bail", "instantaneous heading reads as across")
+	assert_eq(Landing.judge_reentry(fwd, n, v, n, 18.0, 0.2)["result"], "clean", "re-entry judged down the wall")
+
+
+func test_reentry_is_never_harsher_than_judge() -> void:
+	var n: Vector3 = Vector3(0.0, 0.3, 0.95).normalized()
+	var along: Vector3 = Vector3.UP.cross(n).normalized()
+	for deg: int in range(0, 181, 15):
+		var fwd: Vector3 = along.rotated(n, deg_to_rad(float(deg)))
+		for speed: float in [1.5, 4.0, 8.0]:
+			var rank := {"bail": 0, "sketchy": 1, "clean": 2}
+			var a: String = Landing.judge(fwd, n, along * speed, n)["result"]
+			var b: String = Landing.judge_reentry(fwd, n, along * speed, n, 18.0, 0.2)["result"]
+			assert_true(int(rank[b]) >= int(rank[a]), "heading %d speed %.1f: %s -> %s" % [deg, speed, a, b])

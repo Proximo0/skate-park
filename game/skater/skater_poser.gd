@@ -60,11 +60,12 @@ const LEAN_MAX: float = 25.0
 const MANUAL_PITCH: float = 12.0
 const LIP_PITCH: float = 70.0
 ## "drop_in" (the ramp snap): tail hooked on the coping with the nose up for RampSnap.HANG_TIME, then the front foot
-## stomps the nose down over RampSnap.STOMP_TIME and the rider leans into the ramp; the board eases back flat on
-## the wall over DROP_SETTLE_TIME while dropping.
+## stomps the nose down over RampSnap.STOMP_TIME while the rider leans into the ramp; then the board rolls over the
+## coping onto the wall (the skater tips the whole visual over, RampSnap.TIP_TIME) and the stomp pitch eases back flat
+## on the wall over DROP_SETTLE_TIME, so the board's total pitch keeps going one way, nose down, with no kick back.
 const DROP_HANG_PITCH: float = 16.0
-const DROP_STOMP_PITCH: float = -24.0
-const DROP_SETTLE_TIME: float = 0.25
+const DROP_STOMP_PITCH: float = -22.0
+const DROP_SETTLE_TIME: float = RampSnap.TIP_TIME
 
 ## Stance geometry, stance frame. Feet sit over the bolts; the back foot is a little further out, near the tail.
 const FRONT_FOOT: Vector3 = Vector3(0.0, 0.0, -0.18)
@@ -669,21 +670,23 @@ static func _pose_revert(pose: Dictionary, t: float) -> void:
 	_feet_on_board(pose)
 
 
-## Drop-in: hang on the tail (weight back, front foot hovering over the bolts, arms out), stomp the nose down
-## (front foot plants, weight forward, crouch) and ride it in.
+## Drop-in: stand on the tail with the rear wheels on the coping (weight back over the deck, front foot hovering over
+## the bolts, arms out for balance), the front foot stomps the nose down and the weight goes forward over it, then ride
+## the wall down in a forward-leaning crouch (knees bent, chest over the front foot) ready for the bottom.
 static func _pose_drop_in(pose: Dictionary, t: float) -> void:
+	var lift: float = _smooth(t / (RampSnap.HANG_TIME * 0.4))  ## the nose comes up as the weight rocks back
 	var s: float = _smooth((t - RampSnap.HANG_TIME) / RampSnap.STOMP_TIME)
 	var settle: float = _smooth((t - RampSnap.HANG_TIME - RampSnap.STOMP_TIME) / DROP_SETTLE_TIME)
-	var sway: float = 4.0 * sin(t * 9.0) * (1.0 - s)  ## a little balance wobble on the coping
-	_board_turn(pose, Vector3(lerpf(DROP_HANG_PITCH, DROP_STOMP_PITCH, s) * (1.0 - settle), 0.0, 0.0), REAR_TRUCK)
-	pose["hips_y"] = IDLE_HIPS - 0.04 - 0.14 * s
-	pose["pitch"] = lerpf(-9.0, 15.0, s) * (1.0 - 0.6 * settle)
+	var sway: float = 3.0 * sin(t * 9.0) * lift * (1.0 - s)  ## a little balance wobble on the coping
+	_board_turn(pose, Vector3(lerpf(DROP_HANG_PITCH * lift, DROP_STOMP_PITCH, s) * (1.0 - settle), 0.0, 0.0), REAR_TRUCK)
+	pose["hips_y"] = IDLE_HIPS - 0.04 * lift - 0.12 * s - 0.04 * settle
+	pose["pitch"] = lerpf(-8.0 * lift, 16.0, s) * (1.0 - 0.45 * settle)
 	pose["lean"] = sway
-	_curl(pose, 10.0 + 16.0 * s)
-	_arms(pose, Vector3(-25.0 + 35.0 * s, 0.0, -50.0 + 20.0 * s), Vector3(25.0 - 35.0 * s, 0.0, 50.0 - 20.0 * s), 25.0)
+	_curl(pose, 8.0 + 4.0 * lift + 14.0 * s + 4.0 * settle)
+	_arms(pose, Vector3(-25.0 * lift + 35.0 * s, 0.0, -50.0 * lift + 22.0 * s), Vector3(25.0 * lift - 35.0 * s, 0.0, 50.0 * lift - 22.0 * s), 25.0)
 	var ankle: Vector3 = Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)
-	pose["foot_R"] = deck_point(pose, BACK_FOOT + Vector3(0.0, 0.0, 0.06) + ankle)  ## on the tail
-	pose["foot_L"] = deck_point(pose, FRONT_FOOT + ankle) + Vector3(0.0, 0.1 * (1.0 - s), 0.0)
+	pose["foot_R"] = deck_point(pose, BACK_FOOT + Vector3(0.0, 0.0, 0.06 * (1.0 - settle)) + ankle)  ## on the tail
+	pose["foot_L"] = deck_point(pose, FRONT_FOOT + ankle) + Vector3(0.0, 0.08 * lift * (1.0 - s), 0.0)
 
 
 static func _pose_bail_fall(pose: Dictionary, t: float) -> void:

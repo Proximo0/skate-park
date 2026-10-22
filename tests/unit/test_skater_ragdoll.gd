@@ -124,3 +124,31 @@ func test_physics_bails_settle_stay_above_ground_and_stay_stable() -> void:
 		assert_true(float(r["final_viol"]) < 0.3, tag + " limits respected at rest")
 		assert_eq(int(r["ragdoll_alive"]), 0, tag + " finish() frees the ragdoll")
 		assert_eq(int(r["node_delta"]), 0, tag + " no stray nodes after finish()")
+
+
+## One bail kind per fall style, with injuries: the same physical sanity as a plain fall, plus the injury snaps in at
+## the slam, pops back once the body rests, and the ragdoll only reports settled after the repair.
+func test_styled_bails_injure_repair_and_stay_whole() -> void:
+	for kind: String in ["toe_catch", "heel_catch", "back_slam", "primo", "over_rotated", "under_rotated", "big_drop",
+			"wall_slam", "racked"]:
+		var tag: String = kind
+		var r: Dictionary = _run_harness("inj_" + kind, 16.0)
+		if r.is_empty():
+			failures.append("harness produced no result for " + tag)
+			continue
+		assert_eq(int(r["nan"]), 0, tag + " no NaN or runaway transforms")
+		assert_true(float(r["min_y"]) > -0.05, tag + " stays above the ground, min y " + str(r["min_y"]))
+		assert_true(float(r["max_speed"]) < 25.0, tag + " nothing explodes, max speed " + str(r["max_speed"]))
+		assert_true(float(r["stretch"]) < 0.6, tag + " joints never tear apart, peak " + str(r["stretch"]))
+		assert_true(float(r["final_stretch"]) < 0.05, tag + " limbs attached at rest")
+		assert_true(int(r["injuries"]) >= 2, tag + " a 16 m/s slam injures, got " + str(r["injuries"]))
+		var hit: float = float(r["injured_t"])
+		var rep: float = float(r["repair_t"])
+		var st: float = float(r["settle_t"])
+		assert_true(hit >= 0.0 and hit <= SkaterRagdoll.ONSET_FALLBACK + 0.02, tag + " injury shows at the slam, t " + str(hit))
+		assert_true(rep > hit, tag + " repair after the injury, t " + str(rep))
+		assert_true(float(r["peak_w"]) > 0.95, tag + " the injury reaches full weight")
+		assert_true(st >= rep + BailInjury.REPAIR_TIME - 0.02 and st <= 3.5, tag + " settles after the repair, t " + str(st))
+		assert_near(float(r["end_w"]), 0.0, 0.0001, tag + " repaired: no override left")
+		assert_eq(int(r["ragdoll_alive"]), 0, tag + " finish() frees the ragdoll")
+		assert_eq(int(r["node_delta"]), 0, tag + " no stray nodes after finish()")

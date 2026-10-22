@@ -24,6 +24,11 @@ const SPIN_POINTS_PER_180 := 100
 const SNAG_CHECK_DOT: float = 0.906
 ## Ground ticks on a curved or sloped face (normal y under 0.9) needed before a steep launch counts as vert air.
 const VERT_MIN_TRANSITION_TICKS: int = 3
+## Landing back on a ramp from vert air, the heading is judged against where gravity takes the skater a moment
+## later, not the instantaneous velocity: at the top of a sideways carve the velocity runs along the wall, and a board
+## pointed down the fall line (the right re-entry) read as 81 deg across it and bailed. The better reading wins.
+## On flat ground gravity is along the normal, so the lookahead changes nothing there.
+const VERT_REENTRY_LOOKAHEAD: float = 0.2
 ## Edge contacts no higher than this above the board (m) are rolled over, not grazed.
 ## A floor contact more than about 50 degrees from the current floor is never a new floor (ramp toes are gentler).
 const FLOOR_JUMP_DOT: float = 0.64
@@ -66,6 +71,32 @@ const WALL_BAIL_SQUARE: float = 0.95
 const AIR_TERMINAL_FALL: float = 30.0
 ## A revert pressed this many ticks before touchdown still counts (0.15 s), as well as within REVERT_WINDOW after it.
 const REVERT_BUFFER_TICKS: int = 9
+## Rolling over a coping into its ramp slower than this (m/s, across the coping) follows the wall down (a drop-in);
+## faster, the skater flies off the coping and lands on the transition. ROLL_IN_REACH: m from the coping it applies.
+const ROLL_IN_MAX_SPEED: float = 4.5
+## ...and heading across it within about 75 degrees: a carve along the top of a bowl wall, under its coping, is not a roll-in
+## (holding the board to the wall there snagged it).
+const ROLL_IN_HEADING_DOT: float = 0.25
+const ROLL_IN_REACH: float = 0.8
+## Landing speed loss: a clean landing keeps LAND_KEEP_MAX of the along-surface speed; past LAND_KEEP_FREE m/s of
+## impact into the surface (a drop of about 0.5 m) a harder landing scrubs LAND_KEEP_PER_MS more per m/s, down to
+## LAND_KEEP_MIN. Clean vert re-entries keep everything.
+const LAND_KEEP_MAX: float = 0.97
+const LAND_KEEP_MIN: float = 0.95
+const LAND_KEEP_FREE: float = 4.0
+const LAND_KEEP_PER_MS: float = 0.004
+## Rolling off an edge (no ollie): the board's nose follows this share of the fall's angle, at most
+## ROLL_OFF_PITCH_MAX degrees, and levels out over the last ROLL_OFF_LEVEL_TIME s; ROLL_OFF_TURN is its follow rate, 1/s.
+const ROLL_OFF_PITCH_SHARE: float = 0.4
+const ROLL_OFF_PITCH_MAX: float = 20.0
+const ROLL_OFF_LEVEL_TIME: float = 0.3
+const ROLL_OFF_TURN: float = 8.0
+## The floor snap may pull the body this far (m) below the old floor's plane in a tick before it counts as rolling off
+## a ledge (a curb's worth and less is still rolled down).
+const LEDGE_SNAP_MAX: float = 0.1
+const BOARD_TURN_MIN_DEG: float = 4.0  ## see the board_up follow in _ground_move
+const BOARD_TURN_PER_MS: float = 0.5
+const BODY_RADIUS: float = 0.3  ## the collision sphere (its centre sits this far above the origin)
 ## Time (s) the visual takes to catch up after a rail or lip snap (the body snaps at once; see _update_visual).
 const SNAP_EASE_TIME: float = 0.1
 
@@ -101,11 +132,14 @@ var facing: Vector3 = Vector3.FORWARD  ## horizontal-ish travel direction on the
 var board_up: Vector3 = Vector3.UP
 var speed: float = 0.0
 var vert_air: bool = false
+## 0..1: how hard the last landing hit (speed into the surface over 12 m/s). For the poser's knee absorb.
+var land_impact: float = 0.0
 ## Seconds the chase camera holds its place and just watches (a ramp snap's drop-in: the camera stays up over the coping
 ## while the skater drops down the wall, instead of swinging round into the ramp).
 var camera_hold: float = 0.0
 var camera_anchor: Vector3 = Vector3.ZERO  ## where the camera waits while camera_hold runs: up behind the coping
 var _ragdoll: SkaterRagdoll = null
+var _bail_ctx: Dictionary = {}  ## what caused the current bail (BailKind context), read when the ragdoll starts
 var _getup_left: float = 0.0
 
 var _t: float = 0.0
@@ -149,6 +183,7 @@ var _recent_revert_press: int = 100  ## ticks since revert was pressed (buffered
 ## The ramp snap in progress (see _tick_snap), {} when none. Plain Variants, so it snapshots.
 var _snap: Dictionary = {}
 var _snap_hold_up: Vector3 = Vector3.ZERO  ## dropping in after a snap: the wall normal the board holds until it lands
+var _roll_off: bool = false  ## airborne by rolling off an edge (no ollie): the nose follows the fall a little
 var _lone_spin: float = 0.0  ## rad the shoulder buttons spun since both were last up (undone if they make a chord)
 
 
@@ -304,6 +339,10 @@ func _tick_rolling(delta: float, requests: Array) -> void:
 	if not is_on_floor() or _left_edge:
 		_go_airborne(false)
 		return
+	if anim == "drop_in" and _floor_normal.y > 0.97:
+		# down the wall and onto the flat: the knees take the bottom of the transition
+		land_impact = clampf(speed / 14.0, 0.2, 0.8)
+		_set_anim("land")
 	# Revert: pressed just after touchdown, or a moment before it (buffered, as THUG players hit it on the way down).
 	if _recent_revert_press <= REVERT_BUFFER_TICKS and state.event("revert"):
 		_recent_revert_press = 100
@@ -465,6 +504,7 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	velocity = v if climbing_vert else v - n * 0.5
 	up_direction = n
 	floor_snap_length = 0.0 if climbing_vert else 0.6
+	var pre_pos: Vector3 = global_position
 	move_and_slide()
 	floor_snap_length = 0.6
 	_left_edge = false
@@ -479,13 +519,23 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 				_graze_edge(v, was)
 				return
 			fn = real
-		if _leaves_surface(was, fn, v, delta):
+		# How far the floor snap pulled the body below the old floor's plane this tick: off a ledge or a box at speed
+		# it would drag the skater straight down a 0.5 m drop in one frame and keep rolling, never airborne.
+		var sank: float = (pre_pos + v * delta - global_position).dot(was)
+		# Only from a surface the body was standing on: a body set down hovering (a respawn, a bot reset) just settles.
+		var off_ledge: bool = sank > LEDGE_SNAP_MAX and v.length() > 0.5 and fn.dot(was) > 0.9 \
+			and test_move(Transform3D(global_transform.basis, pre_pos), -was * LEDGE_SNAP_MAX)
+		if (off_ledge or _leaves_surface(was, fn, v, delta)) and not _rolls_in(was, fn, v):
 			# Over a lip (kicker top, ledge edge, funbox crest at speed): the surface falls away faster than
-			# gravity can hold the board to it, so carry on along the old surface into the air.
+			# gravity can hold the board to it, so carry on along the old surface into the air, from where the old
+			# surface would have put the body (not wrapped down round the edge by the snap: no pop at the lip).
 			_left_edge = true
 			_ev("leave_edge")
 			velocity = v
 			_launch_normal = was
+			var carry: Transform3D = Transform3D(global_transform.basis, pre_pos)
+			if sank > 0.005 and not test_move(carry, v * delta):
+				global_position = pre_pos + v * delta
 			return
 		var block: Array = _blocking_contact(v, fn) if fn.y > 0.7 else []
 		if not block.is_empty() and absf((block[0] as Vector3).y) < 0.3:
@@ -513,7 +563,15 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 			_launch_normal = was
 		elif fn.y >= tune.vert_normal_y:
 			_launch_normal = Vector3.UP
-		board_up = _turn_toward(board_up, fn, clampf(delta * 20.0, 0.0, 1.0))
+		# The board follows the floor quickly, but at a slow roll over a sharp bend (a coping, a roll-in's edge) no
+		# faster than BOARD_TURN_MIN_DEG + BOARD_TURN_PER_MS * speed degrees a tick: the nose drops onto the wall over a
+		# few frames instead of snapping. Fast riding round a tight curve is never limited below what it needs.
+		var w: float = clampf(delta * 20.0, 0.0, 1.0)
+		var ang: float = board_up.angle_to(fn)
+		var cap: float = deg_to_rad(BOARD_TURN_MIN_DEG + BOARD_TURN_PER_MS * velocity.length()) * delta * 60.0
+		if ang * w > cap and ang > 0.0001:
+			w = cap / ang
+		board_up = _turn_toward(board_up, fn, w)
 	else:
 		# leaving a surface: was it the top of a vert ramp?
 		_launch_normal = _floor_normal
@@ -661,7 +719,7 @@ func _wall_response(v: Vector3, wn: Vector3, n: Vector3, force: bool, p: Vector3
 	if into > WALL_BAIL_SPEED and square >= WALL_BAIL_SQUARE:
 		velocity = w * into * bounce
 		_ev("wall_slam")
-		_bail()  # the ragdoll takes the bounce; the body itself drops at the wall
+		_bail({"cause": "wall", "impact": into})  # the ragdoll takes the bounce; the body itself drops at the wall
 		velocity = Vector3.ZERO
 		return true
 	velocity = ((v - w * v.dot(w)) * 0.7 + w * into * bounce).slide(n)
@@ -689,6 +747,33 @@ func _leaves_surface(was: Vector3, fn: Vector3, v: Vector3, delta: float) -> boo
 	return spd * spd * curvature > tune.edge_grip * tune.gravity * maxf(was.y, 0.1)
 
 
+## Rolling slowly over a coping into its ramp (a natural drop-in off the deck): the front wheels drop onto the wall
+## and the board follows the transition down, instead of flying off the coping's vertical top and falling onto the
+## curve below (or off a start deck's edge onto its roll-in slope). Only next to a RampLip, crossing it inward, slower
+## than ROLL_IN_MAX_SPEED: faster than that
+## the skater really does fly out over the transition (an air drop-in), and a ledge or deck edge with no ramp under
+## it is always a real drop-off. Heading across the coping (ROLL_IN_HEADING_DOT), not carving along it.
+func _rolls_in(was: Vector3, fn: Vector3, v: Vector3) -> bool:
+	if fn.y < -0.05 or v.y > 0.5 or not is_inside_tree():
+		return false
+	var hv: Vector3 = Vector3(v.x, 0.0, v.z)
+	for seg: Dictionary in _lip_segments():
+		var c: Array = RampSnap.closest_on_segment(global_position, seg["a"], seg["b"])
+		var lip: Vector3 = c[0]
+		var off: Vector3 = global_position - lip
+		var inward: Vector3 = seg["inward"]
+		if absf(off.y) > 0.6 or Vector2(off.x, off.z).length() > ROLL_IN_REACH:
+			continue
+		var into: float = hv.dot(inward)
+		if into > 0.0 and into < ROLL_IN_MAX_SPEED and into >= hv.length() * ROLL_IN_HEADING_DOT:
+			_ev("roll_in")
+			if camera_hold <= 0.0:
+				camera_anchor = RampSnap.camera_perch(lip, inward)
+				camera_hold = RampSnap.CAMERA_HOLD
+			return true
+	return false
+
+
 ## 0..1 push strength this tick, from the push anim's time: 0 while stepping off and swinging the foot forward,
 ## a burst while the foot sweeps the ground. Averages to 1 over a cycle.
 func _push_pulse() -> float:
@@ -707,7 +792,7 @@ func _tick_manual(delta: float) -> void:
 	_ground_move(delta, false)
 	combo.add_hold_points(_hold_pps, delta)
 	if not balance.update(delta, -_stick.y):
-		_bail()
+		_bail({"cause": "manual", "lean": balance.angle})
 		return
 	if not is_on_floor() or _left_edge:
 		state.event("fall_off")
@@ -728,10 +813,12 @@ func _tick_manual(delta: float) -> void:
 func _go_airborne(_from_grind: bool) -> void:
 	if state.event("fall_off") or state.state == SkateState.State.AIR:
 		_enter_air(false)
+		_roll_off = not vert_air and state.state == SkateState.State.AIR
 
 
 func _enter_air(_from_rail: bool) -> void:
 	_ev("air")
+	_roll_off = false
 	balance_kind = ""
 	_rail = null
 	# Vert air needs a real transition behind it: a steep normal adopted in one tick off flat ground is an edge
@@ -783,7 +870,13 @@ func _tick_air(delta: float, requests: Array) -> void:
 		target_up = _launch_normal
 	if _snap_hold_up != Vector3.ZERO:
 		target_up = _snap_hold_up  # dropping in off a ramp snap: the board stays square to the wall it drops down
-	board_up = _turn_toward(board_up, target_up, clampf(delta * (12.0 if vert_air else 4.0), 0.0, 1.0))
+	var air_turn: float = 12.0 if vert_air else 4.0
+	if _roll_off:
+		# Rolled off an edge without popping: the front wheels go first, so the nose dips with the fall a little, then
+		# the rider levels it to put all four wheels down together.
+		target_up = _roll_off_up(target_up)
+		air_turn = ROLL_OFF_TURN
+	board_up = _turn_toward(board_up, target_up, clampf(delta * air_turn, 0.0, 1.0))
 	# tricks
 	for r: Dictionary in requests:
 		_air_trick(r)
@@ -824,6 +917,27 @@ func _tick_air(delta: float, requests: Array) -> void:
 			_ev("edge_graze")  # clipped a wall's top edge or corner: not a landing, keep flying
 			return
 		_land(land_n, impact)
+
+
+## Rolling off an edge: `land_up` (the predicted landing surface's up) tipped forward toward the fall line by
+## ROLL_OFF_PITCH_SHARE of the flight path's angle below horizontal, at most ROLL_OFF_PITCH_MAX, fading out over the
+## last ROLL_OFF_LEVEL_TIME s before touchdown so the board lands flat on its four wheels.
+func _roll_off_up(land_up: Vector3) -> Vector3:
+	var hv: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	if hv.length() < 0.5 or velocity.y >= 0.0:
+		return land_up
+	var fall: float = atan2(-velocity.y, hv.length())
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.3, global_position + Vector3.DOWN * 8.0, collision_mask, [get_rid()])
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
+	var t_land: float = 1.0
+	if not hit.is_empty():
+		var h: float = maxf(global_position.y - (hit["position"] as Vector3).y, 0.0)
+		var vy: float = -velocity.y
+		t_land = (-vy + sqrt(vy * vy + 2.0 * tune.gravity * h)) / tune.gravity
+	var k: float = smoothstep(ROLL_OFF_LEVEL_TIME * 0.4, ROLL_OFF_LEVEL_TIME, t_land)
+	var pitch: float = minf(fall * ROLL_OFF_PITCH_SHARE, deg_to_rad(ROLL_OFF_PITCH_MAX)) * k
+	var axis: Vector3 = Vector3.UP.cross(hv.normalized())
+	return land_up.rotated(axis.normalized(), pitch).normalized() if axis.length() > 0.001 else land_up
 
 
 ## The surface to land on from this tick's floor contacts: real faces only, plus edge or vertex blends that are
@@ -872,10 +986,13 @@ func _air_trick(r: Dictionary) -> void:
 ## impact: the velocity just before touching down (move_and_slide has already removed the part into the floor).
 func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	_floor_normal = n
+	_roll_off = false
 	_snap_hold_up = Vector3.ZERO
 	_lone_spin = 0.0
 	var hit_v: Vector3 = impact if impact != Vector3.ZERO else velocity
-	var judge: Dictionary = Landing.judge(_board_forward(), board_up, hit_v, n)
+	var judge: Dictionary = Landing.judge_reentry(_board_forward(), board_up, hit_v, n, tune.gravity,
+			VERT_REENTRY_LOOKAHEAD) if vert_air \
+		else Landing.judge(_board_forward(), board_up, hit_v, n)
 	var result: String = judge["result"]
 	var flip_left: float = _air_trick_until - _t
 	if flip_left > 0.2:
@@ -885,7 +1002,8 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	var spins: int = spin.spins180()
 	_ev("land:" + result)
 	if result == "bail":
-		_bail()
+		_bail({"cause": "flip" if flip_left > 0.2 else "land", "velocity": hit_v, "normal": n,
+				"spin_deg": spin.degrees()})
 		landed.emit(result)
 		return
 	if spins > 0:
@@ -894,7 +1012,11 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 		switch_stance = not switch_stance
 	# keep speed, now along the surface
 	var v: Vector3 = hit_v.slide(n)
-	var keep: float = 0.97 if result == "clean" else 0.8
+	var into: float = maxf(-hit_v.dot(n), 0.0)
+	land_impact = clampf(into / 12.0, 0.0, 1.0)
+	# Wheels first, knees take it: a clean landing scrubs a little speed, more the harder it hits (no bounce: the part
+	# of the velocity into the surface is absorbed, never reflected).
+	var keep: float = clampf(LAND_KEEP_MAX - LAND_KEEP_PER_MS * maxf(into - LAND_KEEP_FREE, 0.0), LAND_KEEP_MIN, LAND_KEEP_MAX) if result == "clean" else 0.8
 	if vert_air and result == "clean" and v.length() > 0.5:
 		# Clean vert re-entry: the fall turns into roll along the transition with no loss (as in THUG), so
 		# pumping on each pass builds height instead of bleeding it away.
@@ -1053,7 +1175,7 @@ func _grind_topple() -> void:
 		if not hit.is_empty():
 			drop = global_position.y - (hit["position"] as Vector3).y
 	if drop > TOPPLE_MAX_DROP or absf(_rail_speed) < TOPPLE_MIN_SPEED:
-		_bail()
+		_bail({"cause": "grind", "drop": drop, "rail_speed": _rail_speed, "lean": side})
 		return
 	_left_rail = _rail
 	_left_rail_t = _t
@@ -1094,7 +1216,7 @@ func _try_lip() -> bool:
 func _tick_lip(delta: float, _requests: Array) -> void:
 	combo.add_hold_points(_hold_pps, delta)
 	if not balance.update(delta, _stick.x):
-		_bail()
+		_bail({"cause": "lip", "lean": balance.angle})
 		return
 	if _just_pressed.has("ollie") or _just_pressed.has("grind") or balance.time_held() > tune.lip_max_time:
 		# drop back in: down the ramp, which faces along the launch normal
@@ -1205,11 +1327,11 @@ func _plan_snap_in(segs: Array, air: bool) -> Dictionary:
 			continue
 		if air and pos.y < lip.y - 0.5 and not bool(c["behind"]):
 			# already below the lip in the air: straight onto the wall, no deck to hang the tail on
-			return {"mode": "air_in", "p1": rel["pos"], "face1": inward, "rel": rel["pos"], "n": rel["n"], "lip": lip, "inward": inward}
+			return {"mode": "air_in", "p1": rel["rest"], "face1": inward, "rel": rel["pos"], "rest": rel["rest"], "n": rel["n"], "lip": lip, "inward": inward}
 		var hang: Vector3 = RampSnap.hang_spot(lip, inward, AnimeBoard.TRUCK_Z)
 		if not _clear_at(hang):
 			continue
-		return {"mode": "drop_in", "p1": hang, "face1": inward, "rel": rel["pos"], "n": rel["n"], "lip": lip, "inward": inward}
+		return {"mode": "drop_in", "p1": hang, "face1": inward, "rel": rel["pos"], "rest": rel["rest"], "n": rel["n"], "lip": lip, "inward": inward}
 	return {}
 
 
@@ -1324,7 +1446,9 @@ func _drop_release(lip: Vector3, inward: Vector3) -> Dictionary:
 		var n: Vector3 = rest["normal"]
 		if n.y < 0.05 or n.y > RampSnap.ON_TRANSITION_NY or Vector3(n.x, 0.0, n.z).normalized().dot(inward) < 0.5:
 			continue  # no wall facing down the ramp under this spot
-		return {"pos": at, "n": n}
+		# where the body comes to rest against the wall: the sphere a hair short of touching it
+		var centre: Vector3 = at + Vector3.UP * 0.3 + Vector3.DOWN * 6.0 * frac[0] + n * 0.01
+		return {"pos": at, "n": n, "rest": centre - Vector3.UP * 0.3}
 	return {}
 
 
@@ -1364,28 +1488,48 @@ func _begin_snap(plan: Dictionary) -> void:
 	_snap["p0"] = p0
 	_snap["dur"] = RampSnap.arc_time(dist)
 	_snap["apex"] = RampSnap.arc_apex(dist, p0, plan["p1"], float(plan.get("over_y", -INF)))
+	if str(plan["mode"]) == "drop_in" and RampSnap.deck_glide(p0, plan["p1"], plan["lip"], plan["inward"]):
+		# already on the deck behind the coping: walk the board up to it, no hop through the air
+		_snap["apex"] = 0.0
+		_snap["dur"] = clampf(0.25 + dist * 0.12, 0.25, 0.5)
+		_snap["glide"] = true
 	_snap["face0"] = facing
 	_snap["speed0"] = velocity.length()
 	spin.start(_yaw())
 	_ev("ramp_snap:" + str(plan["mode"]))
-	_set_anim("ollie")
+	_set_anim("idle_ride" if bool(_snap.get("glide", false)) else "ollie")
 	ramp_snapped.emit(str(plan["mode"]))
 
 
-## One tick of a ramp snap: the guided arc, then the drop-in hang and stomp. The body is placed directly (no slide):
-## every arrival spot was checked clear before the snap began.
+## One tick of a ramp snap: the guided arc, then the drop-in hang, stomp and tip over the coping. The body is placed
+## directly (no slide): every arrival spot was checked clear before the snap began.
 func _tick_snap(delta: float) -> void:
 	_snap["t"] = float(_snap["t"]) + delta
 	var t: float = _snap["t"]
-	if str(_snap["phase"]) == "hang":
-		velocity = Vector3.ZERO
-		board_up = _turn_toward(board_up, Vector3.UP, clampf(delta * 12.0, 0.0, 1.0))
-		if t >= RampSnap.HANG_TIME + RampSnap.STOMP_TIME:
-			_release_drop()
-		return
+	match str(_snap["phase"]):
+		"hang":
+			velocity = Vector3.ZERO
+			board_up = _turn_toward(board_up, Vector3.UP, clampf(delta * 12.0, 0.0, 1.0))
+			if t >= RampSnap.HANG_TIME and camera_hold <= 0.0:
+				# The stomp: the camera (which swung round behind during the hop and the hang) starts rising to a perch
+				# over the coping, to watch the drop from there (see SkateCamera); it blends in, so it starts early.
+				camera_anchor = RampSnap.camera_perch(_snap["lip"], _snap["inward"])
+				camera_hold = RampSnap.CAMERA_HOLD + RampSnap.STOMP_TIME + RampSnap.TIP_TIME
+			if t >= RampSnap.HANG_TIME + RampSnap.STOMP_TIME:
+				_snap["phase"] = "tip"
+				_snap["t"] = 0.0
+				_snap["c0"] = global_position + Vector3.UP * 0.3
+			return
+		"tip":
+			_tick_tip(delta)
+			return
 	var u: float = clampf(t / float(_snap["dur"]), 0.0, 1.0)
 	var p: Vector3 = RampSnap.arc_point(_snap["p0"], _snap["p1"], _snap["apex"], u)
-	velocity = (p - global_position) / maxf(delta, 0.0001)
+	if bool(_snap.get("glide", false)):
+		p = (_snap["p0"] as Vector3).lerp(_snap["p1"], _smooth01(u))  # rolled up to the coping, easing to a stop on it
+	# The arc is a guided hop, not a launch: report a travel speed no faster than the skater came in with (the HUD,
+	# camera FOV and speed lines read it), never the 20+ m/s the path itself covers in a few ticks.
+	velocity = ((p - global_position) / maxf(delta, 0.0001)).limit_length(maxf(float(_snap["speed0"]), 4.0))
 	global_position = p
 	var k: float = u * u * (3.0 - 2.0 * u)
 	# Face the way the arc travels through its first half, then turn to the arrival facing, by yaw: a half turn (rolling
@@ -1397,11 +1541,19 @@ func _tick_snap(delta: float) -> void:
 	fm = fm.normalized() if fm.length() > 0.5 else f1
 	var y0: float = atan2(-f0.x, -f0.z)
 	var ym: float = atan2(-fm.x, -fm.z)
-	var yaw: float = lerp_angle(y0, ym, minf(k * 2.5, 1.0))
-	if u > 0.5:
-		yaw = lerp_angle(ym, atan2(-f1.x, -f1.z), _smooth01((u - 0.5) / 0.5))
+	var y1: float = atan2(-f1.x, -f1.z)
+	var yaw: float = lerp_angle(y0, y1, k)
+	if absf(angle_difference(y0, ym)) < absf(angle_difference(ym, y1)) and absf(angle_difference(y0, y1)) > PI * 0.5:
+		# A big turn (rolling straight at a ramp, arriving facing down it): spin through the way the arc travels, the
+		# same way round the whole hop, spread over all of it so it reads as a frontside 180, not a whip at the end.
+		var d0: float = angle_difference(y0, ym)
+		yaw = y0 + (d0 + angle_difference(ym, y1)) * k
 	facing = Vector3(-sin(yaw), 0.0, -cos(yaw))
-	board_up = _turn_toward(board_up, Vector3.UP, clampf(delta * 10.0, 0.0, 1.0))
+	var up_goal: Vector3 = Vector3.UP
+	if str(_snap["mode"]) == "air_in":
+		# straight onto the wall: the board turns square to it through the second half, so the wheels meet it flat
+		up_goal = Vector3.UP.slerp(_snap["n"] as Vector3, _smooth01((u - 0.4) / 0.6))
+	board_up = _turn_toward(board_up, up_goal, clampf(delta * 10.0, 0.0, 1.0)) if up_goal == Vector3.UP else up_goal
 	if u > 0.3 and anim == "ollie":
 		_set_anim("air")
 	if u >= 1.0:
@@ -1419,7 +1571,9 @@ func _arrive_snap() -> void:
 			velocity = Vector3.ZERO
 			_set_anim("drop_in")
 		"air_in":
-			_release_drop()
+			camera_anchor = RampSnap.camera_perch(_snap["lip"], _snap["inward"])
+			camera_hold = RampSnap.CAMERA_HOLD
+			_start_wall_roll(_snap["n"], maxf(float(_snap["speed0"]) * 0.5, tune.snap_drop_speed))
 		_:
 			# roll_in, out, out_deck: set down on flat ground, rolling
 			var spd: float = RampSnap.ROLL_SPEED if mode == "roll_in" else float(_snap.get("speed", tune.snap_out_speed))
@@ -1438,31 +1592,57 @@ func _arrive_snap() -> void:
 			landed.emit("clean")
 
 
-## Off the coping: drop down the wall, square to it, at least snap_drop_speed. The landing on the wall is a normal
-## vert re-entry (_land), so a clean one keeps the whole speed.
-func _release_drop() -> void:
+## The drop-in tip: the front foot has stomped the nose down; the board rolls over the coping on its rear wheels and
+## onto the wall (the sphere swung about the coping, the board's up turned from the deck's to the wall's), picking up
+## the speed of that swing, then rides the wall as ordinary ground. No air, no hop, no snap of orientation.
+func _tick_tip(delta: float) -> void:
+	var s: float = clampf(float(_snap["t"]) / RampSnap.TIP_TIME, 0.0, 1.0)
 	var n: Vector3 = _snap["n"]
+	var c1: Vector3 = (_snap["rest"] as Vector3) + Vector3.UP * 0.3
+	# the nose turns down eased in and out; the body starts down the wall from rest, eased in (it falls into it), so
+	# the speed only ever grows and hands over to the ride down the wall without a step
+	var fall: float = clampf((s - 0.3) / 0.7, 0.0, 1.0)
+	var pose: Array = RampSnap.tip_pose(_snap["c0"], c1, _snap["lip"], n, lerpf(s, _smooth01(s), 0.5), fall * fall)
+	var origin: Vector3 = (pose[0] as Vector3) - Vector3.UP * 0.3
+	var was_speed: float = velocity.length()
+	velocity = (origin - global_position) / maxf(delta, 0.0001)
+	if s >= 1.0:
+		velocity = velocity.normalized() * maxf(velocity.length(), was_speed)  # the last step is a partial tick
+	global_position = origin
+	board_up = pose[1]
+	var down: Vector3 = Vector3.DOWN.slide(board_up)
+	if down.length() > 0.2:
+		facing = down.normalized()
+	if s >= 1.0:
+		_start_wall_roll(n, maxf(velocity.length(), tune.snap_drop_speed))
+
+
+## Wheels on the wall below the coping: ride it down as ordinary ground (ROLLING on the transition), starting at
+## `v0` m/s straight down the fall line. The landing signals fire here (the stomp's clack), with no air time.
+func _start_wall_roll(n: Vector3, v0: float) -> void:
+	var rest: Vector3 = _snap.get("rest", global_position)
+	global_position = rest
 	var down: Vector3 = Vector3.DOWN.slide(n).normalized()
-	var v0: float = maxf(float(_snap["speed0"]), tune.snap_drop_speed)
-	var from: Vector3 = global_position
-	global_position = _snap["rel"]
-	_snap_offset += from - global_position  # a few cm past the hang spot: the visual eases over
-	velocity = down * v0
+	velocity = down * maxf(v0, velocity.dot(down))
 	facing = down
 	board_up = n
-	_snap_hold_up = n
-	vert_air = true
+	_floor_normal = n
+	up_direction = n
 	_launch_normal = n
-	_transition_ticks = 0
-	up_direction = Vector3.UP
+	_transition_ticks = VERT_MIN_TRANSITION_TICKS
+	_since_bend = 1.0
+	vert_air = false
+	_snap_hold_up = Vector3.ZERO
 	_snap = {}
 	spin.start(_yaw())
+	state.event("land")
 	_ev("ramp_snap_release")
-	camera_hold = RampSnap.CAMERA_HOLD
-	camera_anchor = from - Vector3(n.x, 0.0, n.z).normalized() * RampSnap.CAMERA_BACK + Vector3.UP * RampSnap.CAMERA_UP
+	_ev("land:clean")
 	_score_trick({"id": "drop_in", "name": "Drop In", "points": 50, "kind": "snap", "anim": ""})
 	if anim != "drop_in":
-		_set_anim("air")
+		_set_anim("drop_in")
+		anim_time = RampSnap.HANG_TIME + RampSnap.STOMP_TIME  # straight into the ride-down part of the pose
+	landed.emit("clean")
 
 
 # --- walking ------------------------------------------------------------------------------------------
@@ -1530,7 +1710,9 @@ func _set_walk_physics(walking: bool) -> void:
 
 # --- bail ---------------------------------------------------------------------------------------------
 
-func _bail() -> void:
+## ctx: what caused it (BailKind context keys; the ragdoll's plan is classified from it).
+func _bail(ctx: Dictionary = {}) -> void:
+	_bail_ctx = ctx
 	balance_kind = ""
 	_snap = {}
 	_snap_hold_up = Vector3.ZERO
@@ -1556,7 +1738,9 @@ func _start_ragdoll() -> void:
 	if body == null or board == null:
 		return
 	var spin: Vector3 = facing.cross(Vector3.UP).normalized() * -3.0 if facing.length() > 0.1 else Vector3(-3.0, 0.0, 0.0)
-	_ragdoll = SkaterRagdoll.spawn(body, board, velocity, spin, get_parent())
+	var plan: Dictionary = BailKind.classify(SkaterRagdoll.bail_context(self, _bail_ctx), GameSettings.injuries_on())
+	_ragdoll = SkaterRagdoll.spawn(body, board, velocity, spin, get_parent(), plan)
+	BailFx.track(self, _ragdoll)
 	ragdoll_active = true
 	_getup_left = 0.0
 
@@ -1614,6 +1798,7 @@ func respawn() -> void:
 	_snap = {}
 	_snap_hold_up = Vector3.ZERO
 	camera_hold = 0.0
+	_roll_off = false
 	global_transform = _spawn
 	velocity = Vector3.ZERO
 	_snap_offset = Vector3.ZERO
@@ -1677,6 +1862,7 @@ func snapshot() -> Dictionary:
 		"touch_wall_n": _touch_wall_n,
 		"since_bend": _since_bend,
 		"topple_side": _topple_side,
+		"roll_off": _roll_off,
 		"carve_side": _carve_side,
 		"carve_left": _carve_left,
 		"recent_grind_press": _recent_grind_press,
@@ -1769,6 +1955,7 @@ func restore(d: Dictionary) -> void:
 	_touch_wall_n = d.get("touch_wall_n", Vector3.ZERO)
 	_since_bend = float(d.get("since_bend", 1.0))
 	_topple_side = float(d.get("topple_side", 0.0))
+	_roll_off = bool(d.get("roll_off", false))
 	_carve_side = float(d.get("carve_side", 0.0))
 	_carve_left = float(d.get("carve_left", 0.0))
 	_recent_grind_press = d["recent_grind_press"]
@@ -1965,7 +2152,10 @@ func _update_visual(delta: float) -> void:
 	# A rail or lip snap moves the body at once; the visual slides over after it, finishing a 1.3 m snap in about
 	# 0.11 s (12 m/s, 0.2 m a frame) and a short one at 8 m/s, so a magnet catch reads as a quick hop, not a teleport.
 	_snap_offset = _snap_offset.move_toward(Vector3.ZERO, delta * clampf(_snap_offset.length() / SNAP_EASE_TIME, 8.0, 12.0))
-	_visual.global_transform = Transform3D(b, global_position + _snap_offset)
+	# The body is a sphere of radius BODY_RADIUS above the origin that never turns; the board sits under its centre
+	# along the board's own up, so on a steep wall the wheels touch the wall instead of floating a sphere's width off it.
+	var lift: Vector3 = (Vector3.UP - b.y.normalized()) * BODY_RADIUS
+	_visual.global_transform = Transform3D(b, global_position + lift + _snap_offset)
 
 
 func _state_hash() -> int:

@@ -1,7 +1,8 @@
 class_name GameSettings
 extends RefCounted
 ## Player options that live outside a run (hair physics, and body physics with its strength: body_level() 0 Off,
-## 1 Subtle, 2 Normal (default), 3 Bouncy). Saved as JSON at user://settings.json.
+## 1 Subtle, 2 Normal (default), 3 Bouncy), and bail injuries (the twists and sprains of a slam, BailFx; off leaves
+## a plain ragdoll). Saved as JSON at user://settings.json.
 ## Scripted runs and tests never read or write the file.
 
 const SAVE_PATH: String = "user://settings.json"
@@ -9,6 +10,7 @@ const SAVE_PATH: String = "user://settings.json"
 static var hair_physics: bool = true
 static var body_physics: bool = true
 static var body_strength: int = 2  ## 1 Subtle, 2 Normal, 3 Bouncy (while body_physics is on)
+static var bail_injuries: bool = true
 const BODY_LEVEL_NAMES: PackedStringArray = ["Off", "Subtle", "Normal", "Bouncy"]
 static var _loaded: bool = false
 
@@ -27,6 +29,7 @@ static func ensure_loaded() -> void:
 		hair_physics = bool((data as Dictionary).get("hair_physics", true))
 		body_physics = bool((data as Dictionary).get("body_physics", true))
 		body_strength = clampi(int((data as Dictionary).get("body_level", 2)), 1, 3)
+		bail_injuries = bool((data as Dictionary).get("bail_injuries", true))
 
 
 static func hair_on() -> bool:
@@ -59,6 +62,17 @@ static func next_body_level(level: int) -> int:
 	return (clampi(level, 0, 3) + 1) % 4
 
 
+static func injuries_on() -> bool:
+	ensure_loaded()
+	return bail_injuries
+
+
+static func set_injuries(on: bool) -> void:
+	ensure_loaded()
+	bail_injuries = on
+	save()
+
+
 static func set_hair(on: bool) -> void:
 	ensure_loaded()
 	hair_physics = on
@@ -76,4 +90,5 @@ static func save() -> void:
 		return
 	var f: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f != null:
-		f.store_string(JSON.stringify({"hair_physics": hair_physics, "body_physics": body_physics, "body_level": body_strength}))
+		f.store_string(JSON.stringify({"hair_physics": hair_physics, "body_physics": body_physics, "body_level": body_strength,
+				"bail_injuries": bail_injuries}))

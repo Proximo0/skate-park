@@ -16,6 +16,9 @@ const PAUSE_BACKDROP := Color(0.02, 0.03, 0.09, 0.74)
 const PAUSE_BUTTON_MIN := Vector2(460, 84)
 const PAUSE_DROP_IN_MIN := Vector2(460, 68)
 const PAUSE_DROP_IN_FONT := 32
+## Option toggles (hair, body, bail injuries) are a step smaller so a level with four drop-ins still fits on screen.
+const PAUSE_TOGGLE_MIN := Vector2(460, 56)
+const PAUSE_TOGGLE_FONT := 28
 
 var _backdrop: ColorRect
 var _panel: PanelContainer
@@ -65,7 +68,7 @@ func _build() -> void:
 	center.add_child(_panel)
 
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 8)
+	col.add_theme_constant_override("separation", 6)
 	_panel.add_child(col)
 
 	var title := AnimeText.new("PAUSED", UiStyle.SIZE_TITLE, UiStyle.SUNSHINE)
@@ -92,15 +95,21 @@ func _build() -> void:
 		col.add_child(drop)
 		drops.append(drop)
 
-	var hair_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	var hair_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_TOGGLE_MIN, PAUSE_TOGGLE_FONT)
 	_set_toggle_text(hair_btn, "Hair physics", GameSettings.hair_on())
 	hair_btn.pressed.connect(_on_toggle.bind(hair_btn, "Hair physics", true))
 	col.add_child(hair_btn)
 
-	var body_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	var body_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_TOGGLE_MIN, PAUSE_TOGGLE_FONT)
 	body_btn.text = "Body physics: %s" % GameSettings.BODY_LEVEL_NAMES[GameSettings.body_level()]
 	body_btn.pressed.connect(_on_toggle.bind(body_btn, "Body physics", false))
 	col.add_child(body_btn)
+
+	var injury_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_TOGGLE_MIN, PAUSE_TOGGLE_FONT)
+	injury_btn.name = "BailInjuries"
+	_set_toggle_text(injury_btn, "Bail injuries", GameSettings.injuries_on())
+	injury_btn.pressed.connect(_on_injuries_toggle.bind(injury_btn))
+	col.add_child(injury_btn)
 
 	_controls_button = _pause_button("Controls", SkateThemeBuilder.BTN_TEAL)
 	_controls_button.pressed.connect(_on_controls_pressed)
@@ -113,7 +122,7 @@ func _build() -> void:
 	# Up and down wrap around the buttons.
 	var buttons: Array[Button] = [_resume_button, restart, _level_button]
 	buttons.append_array(drops)
-	buttons.append_array([hair_btn, body_btn, _controls_button, quit])
+	buttons.append_array([hair_btn, body_btn, injury_btn, _controls_button, quit])
 	var n: int = buttons.size()
 	for i: int in n:
 		var b: Button = buttons[i]
@@ -215,6 +224,13 @@ func _on_toggle(b: Button, label: String, hair: bool) -> void:
 	else:
 		GameSettings.set_body(on)
 	_set_toggle_text(b, label, on)
+
+
+## Bail injuries On / Off (Off: a plain ragdoll, no twists, slow-mo or Hall of Meat readout).
+func _on_injuries_toggle(b: Button) -> void:
+	var on: bool = not GameSettings.injuries_on()
+	GameSettings.set_injuries(on)
+	_set_toggle_text(b, "Bail injuries", on)
 
 
 func _on_change_level_pressed() -> void:

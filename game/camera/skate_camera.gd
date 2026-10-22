@@ -11,6 +11,7 @@ const HEIGHT := 1.45  ## m above the skater: a lower, flatter angle shows the gr
 const VERT_DISTANCE := 5.0  ## air above a ramp lip or on a wall: still farther and higher so the landing stays in frame
 const VERT_HEIGHT := 2.5
 const LOOK_HEIGHT := 0.9
+const BODY_CENTRE := 0.3  ## the skater's collision sphere centre above its origin
 const LOOK_AHEAD_FACTOR := 0.12  ## seconds of velocity projected ahead of the look point
 const LOOK_AHEAD_MAX := 1.5
 const MIN_GROUND_CLEARANCE := 0.5
@@ -19,6 +20,16 @@ const POS_RATE := 6.0  ## 1/s, framerate-independent damping
 const LOOK_RATE := 8.0
 const YAW_RATE := 4.0  ## 1/s: time constant 0.25 s, the yaw lag
 const SNAP_YAW_FACTOR := 3.0  ## yaw follow rate during a ramp snap (the skater often turns right round onto the coping)
+const SNAP_YAW_MAX := 4.2  ## rad/s at most the yaw swings during a ramp snap or drop-in (about 4 degrees a tick)
+const CRANE_STEPS: Array[float] = [0.75, 1.5, 2.25, 3.0, 4.0, 5.0]  ## m the arm tries rising over an obstacle
+const CRANE_KEEP := 0.8  ## share of the arm's length a craned goal must keep
+const SLOPE_LIFT_MAX := 2.0  ## the slope lift is at most this many times DISTANCE
+const LIFT_STEP := 0.04  ## m: see _lift_clear
+const LIFT_MAX := 0.12
+const PERCH_RATE: float = 3.0  ## 1/s the drop-in perch blends in and out
+const CRANE_RATE: float = 3.0  ## 1/s the crane height follows the height that clears
+const CRANE_UNBLOCK: float = 0.1  ## hysteresis: once craned, the plain arm must keep this much more to drop back
+const CRANE_LINGER := 1.0  ## s the arm keeps craning once the plain chase spot is clear again
 const WALK_YAW_FACTOR := 0.2  ## yaw follow rate on foot, as a share of YAW_RATE
 const WALK_ZOOM := 0.62  ## on foot the camera sits closer and lower: the offset is scaled by this
 const VERT_BLEND_RATE := 3.0
@@ -53,6 +64,11 @@ var _punch: float = 0.0  ## 1 at the landing, decays to 0 over PUNCH_TIME
 var _punch_target: Skater
 var _last_skater_pos: Vector3 = Vector3.ZERO
 var _have_last: bool = false
+var _slope_lift: float = 0.0  ## m the camera rises over a steep slope behind the skater, damped
+var _crane_left: float = 0.0  ## s the arm keeps craning over obstacles after a drop-in, an air or a ramp
+var _crane_blocked: bool = false  ## the plain chase spot was blocked on the last crane check
+var _crane_h: float = 0.0  ## m the chase goal is craned up, damped toward the CRANE_STEPS height that clears
+var _perch_blend: float = 0.0  ## 0 chase .. 1 drop-in perch, damped so the switch to the perch is a glide
 
 
 ## Forget the damped state: the next physics tick puts the camera straight behind the skater.
@@ -143,10 +159,12 @@ func _physics_process(delta: float) -> void:
 	# The wall ray starts at the skater's head, not at the lookahead point: the lookahead can sit inside the
 	# deck of a ramp, and a ray that starts inside solid geometry always reports a hit.
 	# On a steep surface the head is offset along the board's up so the arm starts in the air, not inside the wall.
+	# The head is taken along the board's up from the body sphere's centre (BODY_CENTRE above the origin) on every
+	# slope, not just past the steep threshold: straight up from the origin is inside the ramp on a 50 degree wall,
+	# and switching the rule at a threshold made the arm jump.
 	var eye: Vector3 = skater_pos + Vector3.UP * LOOK_HEIGHT
-	if steep or target.vert_air:
-		var up: Vector3 = target.board_up.normalized() if target.board_up.length() > 0.1 else Vector3.UP
-		eye = skater_pos + up * LOOK_HEIGHT
+	if not grinding and target.state.state != SkateState.State.WALK and target.board_up.length() > 0.1:
+		eye = skater_pos + Vector3.UP * BODY_CENTRE + target.board_up.normalized() * (LOOK_HEIGHT - BODY_CENTRE)
 	var goal_look: Vector3 = look_target(skater_pos, target.velocity) + Vector3.UP * (1.0 if vert else 0.0)
 
 	if not _primed:
@@ -157,7 +175,11 @@ func _physics_process(delta: float) -> void:
 		_fov = fov_for_speed(target.speed)
 		_push = 0.0
 		_punch = 0.0
-		_cam_pos = _constrain(skater_pos + desired_offset(facing_from_yaw(_yaw), vert), eye)
+		_slope_lift = 0.0
+		_perch_blend = 0.0
+		_crane_h = 0.0
+		_crane_blocked = false
+		_cam_pos = _crane_goal(skater_pos, desired_offset(facing_from_yaw(_yaw), vert), eye, INF)
 
 	if bailing:
 		_yaw = wrapf(_yaw + ORBIT_RATE * delta, -PI, PI)
@@ -165,7 +187,11 @@ func _physics_process(delta: float) -> void:
 		# On foot the stick is camera-relative, so a fast follow would chase its own tail: swing slowly instead.
 		var walking: bool = target.state.state == SkateState.State.WALK
 		var rate: float = YAW_RATE * (WALK_YAW_FACTOR if walking else 1.0) * (SNAP_YAW_FACTOR if target.snapping() else 1.0)
+		var was_yaw: float = _yaw
 		_yaw = damp_angle(_yaw, yaw_from_facing(target.facing), rate, delta)
+		if target.snapping() or target.camera_hold > 0.0:
+			# swinging round behind a skater who turned to face down a ramp: a steady swing, never a whip
+			_yaw = was_yaw + clampf(angle_difference(was_yaw, _yaw), -SNAP_YAW_MAX * delta, SNAP_YAW_MAX * delta)
 	# else: hold the last ground yaw so the camera does not swing under the ramp.
 
 	_vert_blend = damp(_vert_blend, 1.0 if vert else 0.0, VERT_BLEND_RATE, delta)
@@ -175,17 +201,46 @@ func _physics_process(delta: float) -> void:
 	offset *= lerpf(1.0, WALK_ZOOM, _walk_blend)
 	_push = damp(_push, speed_push(target.speed) if target.state.state != SkateState.State.WALK else 0.0, FOV_RATE, delta)
 	offset += Vector3(offset.x, 0.0, offset.z).normalized() * PUSH_DISTANCE * _push
-	var goal_pos: Vector3 = _constrain(skater_pos + offset, eye)
+	# Rolling down a steep slope (a roll-in, a drop-in's wall, a bank): the surface behind rises, so the camera rises
+	# with it instead of sitting inside it, looking down the slope the way the skater goes.
+	var fy: float = target.facing.y if target.is_on_floor() and not grinding else 0.0
+	var slope_lift: float = 0.0
+	if fy < 0.0:
+		slope_lift = DISTANCE * clampf(-fy / maxf(sqrt(maxf(1.0 - fy * fy, 0.0)), 0.3), 0.0, SLOPE_LIFT_MAX) * smoothstep(0.2, 0.4, -fy)
+	_slope_lift = damp(_slope_lift, slope_lift, VERT_BLEND_RATE, delta)
+	offset.y += _slope_lift
+	var holding: bool = target.camera_hold > 0.0
+	# Crane over obstacles (instead of pulling in through them) around ramps, in the air and just after: it lingers
+	# after the skater is back on the flat until the plain chase spot behind them is clear again.
+	var crane_now: bool = holding or target.snapping() or target.vert_air or steep or not target.is_on_floor() \
+		or target.board_up.y < 0.97
+	if crane_now:
+		_crane_left = CRANE_LINGER
+	var crane: bool = _crane_left > 0.0
+	if not crane:
+		_crane_h = damp(_crane_h, 0.0, CRANE_RATE, delta)
+	var goal_pos: Vector3 = _crane_goal(skater_pos, offset, eye, delta) if crane \
+		else _constrain(skater_pos + offset + Vector3.UP * _crane_h, eye)
+	if crane and not crane_now and not _crane_blocked:
+		_crane_left = maxf(_crane_left - delta, 0.0)
+	# A drop-in: rise to a perch over the coping and watch the skater go down the wall from there (a chase camera
+	# low behind them would sit inside the ramp's deck); the chase takes over again down on the flat. Blended in
+	# and out so neither the goal nor the look point switches in one tick.
+	_perch_blend = damp(_perch_blend, 1.0 if holding else 0.0, PERCH_RATE, delta)
+	var perched: bool = _perch_blend > 0.5
+	if _perch_blend > 0.001:
+		goal_pos = goal_pos.lerp(target.camera_anchor, _perch_blend)
 
-	if target.camera_hold > 0.0:
-		# a ramp snap's drop-in: rise up behind the coping and watch the skater drop down the wall (following it round
-		# would swing the arm into the ramp)
-		_cam_pos = damp_vec(_cam_pos, target.camera_anchor, POS_RATE, delta)
-		_look = damp_vec(_look, skater_pos + Vector3.UP * 0.6, LOOK_RATE * 1.5, delta)
+	_cam_pos = damp_vec(_cam_pos, goal_pos, POS_RATE, delta)
+	# On the way to a drop-in perch the arm is not swept: the perch is clear of the ramp, and a deck fence or rail
+	# crossing the line for a moment would yank the camera in through the coping and back.
+	if perched:
+		_cam_pos = _ground_clear(_cam_pos)
+	elif crane:
+		_cam_pos = _lift_clear(_cam_pos, eye)
 	else:
-		_cam_pos = damp_vec(_cam_pos, goal_pos, POS_RATE, delta)
 		_cam_pos = _constrain(_cam_pos, eye)
-		_look = damp_vec(_look, goal_look, LOOK_RATE, delta)
+	_look = damp_vec(_look, goal_look.lerp(skater_pos + Vector3.UP * 0.6, _perch_blend), LOOK_RATE, delta)
 	_fov = damp(_fov, fov_for_speed(target.speed), FOV_RATE, delta)
 
 	var hit: float = _punch * _punch
@@ -196,18 +251,73 @@ func _physics_process(delta: float) -> void:
 
 
 func _on_landed(result: String) -> void:
-	if result != "bail":
+	if result != "bail" and (target == null or target.camera_hold <= 0.0):  # no landing dip on a drop-in's stomp
 		_punch = 1.0 if result == "clean" else 0.7
 
 
 ## Keeps the camera above the ground under it and out of walls between it and the look point.
 func _constrain(p: Vector3, look: Vector3) -> Vector3:
-	var out: Vector3 = p
-	var down: Dictionary = _ray(out + Vector3.UP * RAY_UP, out + Vector3.DOWN * RAY_DOWN)
-	if not down.is_empty():
-		out = ground_lift(out, (down["position"] as Vector3).y, MIN_GROUND_CLEARANCE)
-	out = _arm(look, out)
-	return out
+	return _arm(look, _ground_clear(p))
+
+
+## Keeps the camera MIN_GROUND_CLEARANCE above the ground under it.
+func _ground_clear(p: Vector3) -> Vector3:
+	var down: Dictionary = _ray(p + Vector3.UP * RAY_UP, p + Vector3.DOWN * RAY_DOWN)
+	if down.is_empty():
+		return p
+	return ground_lift(p, (down["position"] as Vector3).y, MIN_GROUND_CLEARANCE)
+
+
+## The goal for `offset` from the skater, craned up over whatever is between it and the skater (a ramp's deck, the
+## ledge just rolled off) instead of pulled in through it: the arm is tried at CRANE_STEPS heights and the first that
+## keeps most of its length is the crane height, which the goal follows at CRANE_RATE (a blocked/clear flicker as the
+## skater moves would otherwise throw the goal metres up and down from one tick to the next). Moving the goal up over
+## an edge is smooth; pulling the camera in through it is a jump.
+func _crane_goal(skater_pos: Vector3, offset: Vector3, eye: Vector3, delta: float) -> Vector3:
+	var plain: Vector3 = _constrain(skater_pos + offset, eye)
+	var want: float = (skater_pos + offset).distance_to(eye)
+	var keep: float = CRANE_KEEP + (CRANE_UNBLOCK if _crane_blocked else 0.0)
+	_crane_blocked = plain.distance_to(eye) < want * keep
+	var h_goal: float = 0.0
+	if _crane_blocked:
+		for h: float in CRANE_STEPS:
+			var p: Vector3 = _constrain(skater_pos + offset + Vector3.UP * h, eye)
+			if p.distance_to(eye) >= (skater_pos + offset + Vector3.UP * h).distance_to(eye) * CRANE_KEEP:
+				h_goal = h
+				break
+	_crane_h = damp(_crane_h, h_goal, CRANE_RATE, delta) if is_finite(delta) else h_goal
+	if _crane_h < 0.01:
+		return plain
+	return _constrain(skater_pos + offset + Vector3.UP * _crane_h, eye)
+
+
+## The damped camera position `p` when an edge comes between it and the skater around a ramp or a drop (below a
+## coping, off a ledge): raised a little (at most LIFT_MAX a tick) rather than pulled in through the edge, which is a
+## jump. The goal it is damping toward is already craned clear, so a moment of a railing or a lip across the view is
+## the price; only a camera that would sit inside something is pulled in.
+func _lift_clear(p: Vector3, eye: Vector3) -> Vector3:
+	var plain: Vector3 = _constrain(p, eye)
+	if plain.distance_to(p) < 0.01:
+		return plain
+	var h: float = LIFT_STEP
+	while h <= LIFT_MAX + 0.001:
+		var q: Vector3 = _ground_clear(p + Vector3.UP * h)
+		if _arm(eye, q).distance_to(q) < 0.01:
+			return q
+		h += LIFT_STEP
+	var up: Vector3 = _ground_clear(p + Vector3.UP * LIFT_MAX)
+	return up if not _inside(up) else plain
+
+
+## True when the camera's sphere at `p` overlaps the world.
+func _inside(p: Vector3) -> bool:
+	var sphere: SphereShape3D = SphereShape3D.new()
+	sphere.radius = ARM_RADIUS * 0.5
+	var q: PhysicsShapeQueryParameters3D = PhysicsShapeQueryParameters3D.new()
+	q.shape = sphere
+	q.transform = Transform3D(Basis.IDENTITY, p)
+	q.collision_mask = WORLD_MASK
+	return not get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty()
 
 
 ## Spring arm: sweeps a small sphere from the head to the desired position and stops short of the first wall.

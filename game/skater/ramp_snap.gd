@@ -20,10 +20,13 @@ const ENCLOSE_RISE: float = 0.5  ## m a lip must be above the skater to count as
 const ENCLOSE_OPPOSED_DOT: float = -0.5  ## two walling lips facing each other at least this squarely: inside a ramp
 const ON_TRANSITION_NY: float = 0.97  ## grounded on a floor steeper than this (normal y): on a ramp
 const HANG_TIME: float = 0.3  ## tail hooked on the coping
-const STOMP_TIME: float = 0.16  ## front foot stomps the nose down
+const STOMP_TIME: float = 0.2  ## front foot stomps the nose down (the board pitches about the rear wheels on the coping)
+const TIP_TIME: float = 0.32  ## the board rolls over the coping onto the wall: wheels on it the whole way, no hop
+const DECK_GLIDE_MAX: float = 2.5  ## m: already on the deck this close behind the coping, the skater glides over, no hop
+const DECK_GLIDE_RISE: float = 0.35  ## m the deck may sit above or below the skater for a glide
 const CAMERA_HOLD: float = 1.0  ## s at most the chase camera stays up over the coping watching the drop (Skater.camera_hold)
-const CAMERA_BACK: float = 2.2  ## m behind the coping it waits, on the deck side
-const CAMERA_UP: float = 2.6  ## m above the coping
+const CAMERA_BACK: float = 0.8  ## m behind the coping it waits, on the deck side, looking down the wall
+const CAMERA_UP: float = 3.4  ## m above the coping: high enough to see past the coping down the whole wall
 const HANG_BACK: float = 0.2  ## m: the rear truck sits this far behind the coping, on the deck
 const DROP_OUT: float = 0.34  ## m past the coping the body starts its drop down the wall (its sphere is 0.3)
 const ROLL_BACK: float = 1.4  ## m behind a roll-in edge the skater is set down on the deck
@@ -142,6 +145,36 @@ static func arc_point(p0: Vector3, p1: Vector3, apex: float, u: float) -> Vector
 	var e: float = lerpf(k, k * k * (3.0 - 2.0 * k), 0.5)
 	var p: Vector3 = p0.lerp(p1, e)
 	return p + Vector3.UP * (4.0 * apex * k * (1.0 - k))
+
+
+## True when a snap in from `p0` to the hang spot `p1` behind coping `lip` (inward down the ramp) is a short glide
+## along the deck the skater is already standing on, not an arc through the air.
+static func deck_glide(p0: Vector3, p1: Vector3, lip: Vector3, inward: Vector3) -> bool:
+	var flat: float = Vector2(p1.x - p0.x, p1.z - p0.z).length()
+	return (p0 - lip).dot(inward) < 0.0 and absf(p0.y - lip.y) < DECK_GLIDE_RISE and flat < DECK_GLIDE_MAX
+
+
+## The drop-in tip over the coping: the sphere centre swung about the coping point `lip` by the angle between UP and
+## the wall normal `n` (progress `turn`, 0..1, eased), plus the slide from the end of that swing down onto `c1` (the
+## centre resting on the wall; progress `fall`, 0..1, eased in like a fall from rest). Returns [centre, board_up].
+## The swing keeps the rear wheels on the coping while the nose goes down onto the wall.
+static func tip_pose(c0: Vector3, c1: Vector3, lip: Vector3, n: Vector3, turn: float, fall: float) -> Array:
+	var k: float = clampf(turn, 0.0, 1.0)
+	var f: float = clampf(fall, 0.0, 1.0)
+	var axis: Vector3 = Vector3.UP.cross(n)
+	var ang: float = Vector3.UP.angle_to(n)
+	if axis.length() < 0.0001:
+		return [c0.lerp(c1, f), Vector3.UP]
+	axis = axis.normalized()
+	var swung: Vector3 = lip + (c0 - lip).rotated(axis, ang * k)
+	var swung_end: Vector3 = lip + (c0 - lip).rotated(axis, ang)
+	return [swung + (c1 - swung_end) * f, Vector3.UP.rotated(axis, ang * k).normalized()]
+
+
+## The camera's perch for a drop-in at coping `lip` facing down the ramp along `inward`: up over the coping, a little
+## back on the deck side, looking down the wall.
+static func camera_perch(lip: Vector3, inward: Vector3) -> Vector3:
+	return lip - inward * CAMERA_BACK + Vector3.UP * CAMERA_UP
 
 
 ## Where the drop-in hang puts the skater's origin for a coping point and inward: the board's rear truck just behind

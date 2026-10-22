@@ -6,6 +6,15 @@ extends Node3D
 ## physics and stops driving; the poser takes over again on the next frame.
 ## Parts live on collision layer 4 and only collide with the world (mask 1), never with the skater (layer 2) or
 ## each other. Total mass about 40 kg. Deterministic: the board spin comes from a seeded RNG.
+##
+## A bail plan (BailKind.classify) picks the fall: the style's spin in the rider's frame, the arm and leg fling
+## (limb spin at spawn, so the body throws itself into the pose with no popped frame), a short guiding torque so the
+## fall reads (faceplant, back slam, cartwheel...) and the board's kick. Its injuries are a visual override on the
+## driven joints (BailInjury) that snaps in at the first hard impact and, once the body comes to rest, pops back
+## before settled() reports true. Signals tell BailFx when to crunch and when to pop.
+
+signal injured(points: Array)  ## world positions of the injured joints, at the first hard impact
+signal repairing(points: Array)  ## the injured joints start snapping back (the body has settled)
 
 const WORLD_MASK: int = 1
 const RAGDOLL_LAYER: int = 4
@@ -20,6 +29,23 @@ const INERTIA_SCALE: float = 1.5
 const INERTIA_LENGTH: Dictionary = {"pelvis": 0.3, "torso": 0.4, "head": 0.3, "uarm": 0.3, "larm": 0.3, "thigh": 0.4, "shin": 0.4}
 const BOARD_MASS: float = 2.5
 const BOARD_CENTER_Y: float = 0.07
+## The followed point never drops more than this below the pelvis: a body sliding down a steep bowl wall has the
+## floor metres straight below it, and following that hit made the skater (and the camera) jump down there.
+const GROUND_BELOW_MAX: float = 0.6
+const GUIDE_TIME: float = 0.3  ## s the style's guiding torque acts
+const FLING_TIME: float = 0.2  ## s the limbs take to swing into the style's pose
+const IMPACT_DV: float = 2.2  ## m/s change in one tick of a core part: the slam
+const ONSET_FALLBACK: float = 0.4  ## s: injuries show by now even if no single tick reads as the slam
+## Limb fling per style pose, in the body frame (radians; x about the rider's right: + swings the limb forward,
+## z about the rider's back axis: + swings a limb toward the rider's right side). Mirrored for the left limbs.
+const ARM_POSES: Dictionary = {
+	"reach": Vector3(1.25, 0.0, 0.2), "up": Vector3(2.4, 0.0, 0.5), "brace": Vector3(-0.9, 0.0, 0.3),
+	"spread": Vector3(0.2, 0.0, 1.3),
+}
+const LEG_POSES: Dictionary = {
+	"tuck": Vector3(0.9, 0.0, 0.0), "kneel": Vector3(0.35, 0.0, 0.0), "spread": Vector3(0.25, 0.0, 0.45),
+}
+const SHIN_FOLD: Dictionary = {"tuck": -1.2, "kneel": -1.7}  ## extra knee flex (rad) of the leg pose
 
 ## Joint nodes driven by each body, parents before children.
 const DRIVEN: Array = [
@@ -40,19 +66,40 @@ var _active: bool = true
 var _time: float = 0.0
 var _calm: float = 0.0
 var _last_dir: Vector3 = Vector3(0.0, 0.0, -1.0)
+var plan: Dictionary = {}  ## the BailKind plan this ragdoll plays ({} for a plain fall)
+var _joints: Dictionary = {}  ## joint name -> Node3D of the body
+var _guide: Vector3 = Vector3.ZERO  ## world torque per second on the torso while _time < GUIDE_TIME
+var _prev_v: Dictionary = {}  ## core part -> last linear velocity
+var _onset_t: float = -1.0  ## seconds since the injuries hit, -1 before
+var _repair_t: float = -1.0  ## seconds since the repair began, -1 before
 
 
-static func spawn(body: Node3D, board: Node3D, velocity: Vector3, angular_hint: Vector3, world: Node) -> SkaterRagdoll:
+static func spawn(body: Node3D, board: Node3D, velocity: Vector3, angular_hint: Vector3, world: Node,
+		bail_plan: Dictionary = {}) -> SkaterRagdoll:
 	var r: SkaterRagdoll = SkaterRagdoll.new()
 	r.name = "SkaterRagdoll"
 	r.process_physics_priority = 100  # after the skater has moved, so the drive wins
+	r.plan = bail_plan
 	world.add_child(r)
 	r.global_transform = Transform3D.IDENTITY
 	var v: Vector3 = velocity.limit_length(MAX_SPEED)
 	var spin: Vector3 = angular_hint.limit_length(MAX_SPIN)
+	var style: Dictionary = BailKind.STYLES.get(str(bail_plan.get("style", "")), {})
+	if not style.is_empty():
+		# The styles are staged for a slam on open ground; on a steep wall (a vert or bowl bail) they fade out and the
+		# fall is the plain momentum one, so the body slides down the transition instead of being thrown off it.
+		var k: float = style_weight(float(bail_plan.get("ground_y", 1.0)))
+		var fr: Basis = r._body_frame(body)
+		var flat: Vector3 = Vector3(v.x, 0.0, v.z)
+		v = flat * lerpf(1.0, float(style["keep"]), k) + Vector3(0.0, v.y, 0.0) + Vector3.UP * float(style["up"]) * k
+		var styled: Vector3 = fr * ((style["spin"] as Vector3) * r._mirror())
+		spin = spin.lerp(styled, k).limit_length(MAX_SPIN)
+		r._guide = spin.normalized() * float(style["guide"]) * k if spin.length() > 0.01 else Vector3.ZERO
 	r._build_body(body, v, spin)
+	if not style.is_empty() and style_weight(float(bail_plan.get("ground_y", 1.0))) > 0.5:
+		r._fling(style)
 	if board != null:
-		r._build_board(board, v)
+		r._build_board(board, v, str(style.get("board", "forward")))
 	var flat: Vector3 = Vector3(v.x, 0.0, v.z)
 	if flat.length() > 0.1:
 		r._last_dir = flat.normalized()
@@ -60,8 +107,46 @@ static func spawn(body: Node3D, board: Node3D, velocity: Vector3, angular_hint: 
 	return r
 
 
+## 0..1: how much of the fall style plays on ground whose normal has this y (full on flat or gentle ground, none on a
+## steep wall).
+static func style_weight(ground_y: float) -> float:
+	return clampf((ground_y - 0.45) / 0.35, 0.0, 1.0)
+
+
+## The BailKind context for a skater's bail: the cause it gave, filled in from the skater's state (velocity, board
+## facing and up, the floor) and whether it came down on a stair set (the stairs' hidden slope is under it).
+static func bail_context(skater: Node3D, ctx: Dictionary) -> Dictionary:
+	var out: Dictionary = ctx.duplicate()
+	if not out.has("velocity"):
+		out["velocity"] = skater.get("velocity")
+	if not out.has("facing"):
+		out["facing"] = skater.get("facing")
+	if not out.has("board_up"):
+		out["board_up"] = skater.get("board_up")
+	if not out.has("normal"):
+		out["normal"] = skater.get("_floor_normal")
+	if not out.has("stairs") and str(out.get("cause", "")) in ["land", "flip"] and skater.is_inside_tree():
+		var p: Vector3 = skater.global_position
+		var q: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(p + Vector3.UP * 0.5, p + Vector3.DOWN * 1.5, WORLD_MASK)
+		var hit: Dictionary = skater.get_world_3d().direct_space_state.intersect_ray(q)
+		out["stairs"] = not hit.is_empty() and hit["collider"] is Node and str((hit["collider"] as Node).name) == "SlopeCollision"
+	return out
+
+
+## True once the body is at rest (or MAX_TIME ran out) and any injury has popped back.
 func settled() -> bool:
-	return _time >= MAX_TIME or _calm >= SETTLE_HOLD
+	if not (_time >= MAX_TIME or _calm >= SETTLE_HOLD):
+		return false
+	return not has_injuries() or _onset_t < 0.0 or _repair_t >= BailInjury.REPAIR_TIME
+
+
+func has_injuries() -> bool:
+	return not (plan.get("injuries", []) as Array).is_empty()
+
+
+## Current injury weight (0 when none is showing).
+func injury_weight() -> float:
+	return BailInjury.weight(_onset_t, _repair_t) if has_injuries() else 0.0
 
 
 ## Raw pelvis body transform.
@@ -86,6 +171,7 @@ func pelvis_transform() -> Transform3D:
 		var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
 		if not hit.is_empty():
 			pos = hit["position"]
+			pos.y = maxf(pos.y, raw.origin.y - GROUND_BELOW_MAX)
 		else:
 			pos.y -= 0.15
 	return Transform3D(Basis.looking_at(fwd, Vector3.UP), pos)
@@ -117,7 +203,55 @@ func _physics_process(delta: float) -> void:
 			_calm += delta
 		else:
 			_calm = 0.0
+	var torso: RigidBody3D = parts.get("torso") as RigidBody3D
+	if torso != null and _time < GUIDE_TIME and _guide != Vector3.ZERO:
+		torso.apply_torque_impulse(_guide * delta * (1.0 - _time / GUIDE_TIME))
+	_tick_injuries(delta)
 	_drive()
+
+
+func _tick_injuries(delta: float) -> void:
+	if not has_injuries():
+		return
+	if _onset_t >= 0.0:
+		_onset_t += delta
+	else:
+		var hit: bool = _time >= ONSET_FALLBACK
+		for pn: String in ["pelvis", "torso", "head"]:
+			var rb: RigidBody3D = parts.get(pn) as RigidBody3D
+			if rb == null:
+				continue
+			if _prev_v.has(pn) and _time > 0.02 and (rb.linear_velocity - (_prev_v[pn] as Vector3)).length() > IMPACT_DV:
+				hit = true
+			_prev_v[pn] = rb.linear_velocity
+		if hit:
+			_onset_t = 0.0
+			injured.emit(injury_points())
+	if _repair_t >= 0.0:
+		_repair_t += delta
+	elif _onset_t >= 0.0 and (_time >= MAX_TIME or _calm >= SETTLE_HOLD):
+		_repair_t = 0.0
+		repairing.emit(injury_points())
+
+
+## The injured joint nodes (effects attach to them so they ride along with the limb).
+func injury_nodes() -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	for inj: Dictionary in plan.get("injuries", []):
+		var n: Node3D = _joints.get(str(inj["joint"])) as Node3D
+		if n != null and is_instance_valid(n):
+			out.append(n)
+	return out
+
+
+## World positions of the injured joints.
+func injury_points() -> Array:
+	var out: Array = []
+	for inj: Dictionary in plan.get("injuries", []):
+		var n: Node3D = _joints.get(str(inj["joint"])) as Node3D
+		if n != null and n.is_inside_tree():
+			out.append(n.global_position)
+	return out
 
 
 func _process(_delta: float) -> void:
@@ -133,6 +267,67 @@ func _drive() -> void:
 			continue
 		var b: RigidBody3D = d["body"]
 		n.global_transform = b.global_transform * (d["offset"] as Transform3D)
+	var w: float = injury_weight()
+	if absf(w) < 0.0001:
+		return
+	for inj: Dictionary in plan.get("injuries", []):
+		var jn: Node3D = _joints.get(str(inj["joint"])) as Node3D
+		if jn == null or not is_instance_valid(jn):
+			continue
+		var hp: String = BailInjury.hinge_parent(str(inj["joint"]))
+		BailInjury.apply(jn, inj, w, _joints.get(hp) as Node3D if hp != "" else null)
+
+
+## The rider's frame at the bail: x right, y up, z back (the body faces -Z), from the hips, levelled.
+func _body_frame(body: Node3D) -> Basis:
+	var hips: Node3D = body.find_child("Hips", true, false) as Node3D
+	var b: Basis = (hips if hips != null else body).global_basis.orthonormalized()
+	var back: Vector3 = Vector3(b.z.x, 0.0, b.z.z)
+	if back.length() < 0.1:
+		back = Vector3.BACK
+	back = back.normalized()
+	return Basis(Vector3.UP.cross(back).normalized(), Vector3.UP, back)
+
+
+## +1 or -1: which way a sideways style rolls (the injured side goes down first).
+func _mirror() -> Vector3:
+	var inj: Array = plan.get("injuries", [])
+	var side: String = str((inj[0] as Dictionary).get("side", "L")) if not inj.is_empty() else str(plan.get("side", "R"))
+	var m: float = -1.0 if side == "L" else 1.0
+	return Vector3(1.0, m, m)
+
+
+## Throws the arms and legs into the style's pose: the limb parts spin about their root joint for FLING_TIME.
+func _fling(style: Dictionary) -> void:
+	var hips: Node3D = _joints.get("Hips") as Node3D
+	if hips == null:
+		return
+	var fr: Basis = _body_frame(hips)
+	var arm: Vector3 = ARM_POSES.get(str(style.get("arms", "")), Vector3.ZERO)
+	var leg: Vector3 = LEG_POSES.get(str(style.get("legs", "")), Vector3.ZERO)
+	var fold: float = float(SHIN_FOLD.get(str(style.get("legs", "")), 0.0))
+	for k: String in ["l", "r"]:
+		var m: float = -1.0 if k == "l" else 1.0
+		var side: String = "Left" if k == "l" else "Right"
+		_spin_limb([k + "_uarm", k + "_larm"], _joints.get(side + "UpperArm") as Node3D,
+				fr * Vector3(arm.x, arm.y * m, arm.z * m) / FLING_TIME)
+		_spin_limb([k + "_thigh", k + "_shin"], _joints.get(side + "UpperLeg") as Node3D,
+				fr * Vector3(leg.x, leg.y * m, leg.z * m) / FLING_TIME)
+		if fold != 0.0:
+			_spin_limb([k + "_shin"], _joints.get(side + "LowerLeg") as Node3D, fr * Vector3(fold, 0.0, 0.0) / FLING_TIME)
+
+
+## Adds angular velocity w (world) to the parts, turning about the root joint's position.
+func _spin_limb(names: Array, root: Node3D, w: Vector3) -> void:
+	if root == null or w.length() < 0.001:
+		return
+	var c: Vector3 = root.global_position
+	for pn: String in names:
+		var rb: RigidBody3D = parts.get(pn) as RigidBody3D
+		if rb == null:
+			continue
+		rb.angular_velocity += w
+		rb.linear_velocity += w.cross(rb.global_position - c)
 
 
 # --- building -----------------------------------------------------------------------------------------
@@ -145,6 +340,7 @@ func _build_body(body: Node3D, v: Vector3, spin: Vector3) -> void:
 			j[pair[0]] = n
 	if not j.has("Hips"):
 		return
+	_joints = j
 	var ua: float = PlaceholderSkater.UPPER_ARM
 	var la: float = PlaceholderSkater.LOWER_ARM
 	var ul: float = PlaceholderSkater.UPPER_LEG
@@ -168,7 +364,7 @@ func _build_body(body: Node3D, v: Vector3, spin: Vector3) -> void:
 		if j_ua != null and j_la != null:
 			var b_ua: RigidBody3D = _part(k + "_uarm", j_ua, Vector3(0.0, -ua * 0.5, 0.0), 1.4)
 			_capsule(b_ua, Transform3D.IDENTITY, 0.045, ua + 0.02)
-			var b_la: RigidBody3D = _part(k + "_larm", j_la, Vector3(0.0, -la * 0.5 - 0.01, 0.0), 1.0)
+			var b_la: RigidBody3D = _part(k + "_larm", j_la, Vector3(0.0, -la * 0.5 - 0.01, 0.0), 1.3)
 			_capsule(b_la, Transform3D.IDENTITY, 0.04, la + 0.08)
 			_cone(torso, b_ua, j_ua, _limb_frame(j_ua), 1.6, 0.9, false)
 			_hinge(b_ua, b_la, j_la, j_ua, ELBOW_RANGE)
@@ -201,7 +397,7 @@ func _build_body(body: Node3D, v: Vector3, spin: Vector3) -> void:
 			_driven.append({"node": n, "body": rb, "offset": rb.global_transform.affine_inverse() * n.global_transform})
 
 
-func _build_board(board: Node3D, v: Vector3) -> void:
+func _build_board(board: Node3D, v: Vector3, kick: String = "forward") -> void:
 	var gt: Transform3D = board.global_transform
 	var b: RigidBody3D = _new_body("board", BOARD_MASS)
 	b.global_transform = Transform3D(gt.basis.orthonormalized(), gt.origin + gt.basis.orthonormalized().y * BOARD_CENTER_Y)
@@ -218,6 +414,15 @@ func _build_board(board: Node3D, v: Vector3) -> void:
 	var sign_x: float = 1.0 if rng.randf() < 0.5 else -1.0
 	b.angular_velocity = side * sign_x * rng.randf_range(4.0, 8.0) \
 		+ dir * rng.randf_range(-4.0, 4.0) + Vector3.UP * rng.randf_range(-3.0, 3.0)
+	match kick:  # the style's board: shot out ahead (default), squirting back, popped up, or rolling on its rail
+		"back":
+			b.linear_velocity = v * 0.35 - dir * 1.5 + Vector3.UP * 2.5 + side * rng.randf_range(-1.0, 1.0)
+		"up":
+			b.linear_velocity = v * 0.8 + Vector3.UP * 4.5 + side * rng.randf_range(-1.0, 1.0)
+		"roll":
+			b.linear_velocity = v * 0.9 + Vector3.UP * 2.0 + side * sign_x * 1.5
+			b.angular_velocity = dir * sign_x * rng.randf_range(7.0, 10.0) + Vector3.UP * rng.randf_range(-2.0, 2.0)
+	b.linear_velocity = b.linear_velocity.limit_length(MAX_SPEED)
 	_board = board
 	_board_local = board.transform
 	_driven.append({"node": board, "body": b, "offset": b.global_transform.affine_inverse() * gt})
