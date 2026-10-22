@@ -37,6 +37,10 @@ var _started_msec: int = 0
 var _fail_reason: String = ""
 var _shard: int = 0  ## with --nshards=N, this process runs every Nth line (tools/check_all.sh runs shards in parallel)
 var _nshards: int = 1
+## --level=<id>: skate that level (main.gd loads it through LevelRegistry) along the lines of its bot_route.json
+## (LevelRoute) instead of the practice park's code-built BotLines.
+var _level: String = "practice"
+var _route: Dictionary = {}
 
 
 func _ready() -> void:
@@ -55,23 +59,38 @@ func _ready() -> void:
 			_shard = int(a.substr(8))
 		elif a.begins_with("--nshards="):
 			_nshards = maxi(1, int(a.substr(10)))
+		elif a.begins_with("--level="):
+			_level = a.substr(8)
 	if tune_path != "":
 		_tune_note = _apply_tune(tune_path)
 	DirAccess.make_dir_recursive_absolute(OUT_DIR)
-	var names: Array[String] = BotLines.names()
+	if _level != "practice":
+		var route_path: String = str(LevelRegistry.entry(_level).get("bot_route", ""))
+		_route = LevelRoute.load_file(route_path)
+		if _route.is_empty():
+			print("BOT crash level %s has no readable bot route (%s)" % [_level, route_path])
+			get_tree().quit(1)
+			return
+		print("BOTINFO level %s route %s" % [_level, route_path])
+	var names: Array[String] = _line_names()
 	for i: int in names.size():
 		var n: String = names[i]
 		if (_only == "" or n == _only or n.begins_with(_only)) and i % _nshards == _shard:
 			_queue.append(n)
 	if list_only:
-		for n: String in BotLines.names():
+		for n: String in _line_names():
 			print("BOTLINE ", n)
 		get_tree().quit(0)
 		return
 	_started_msec = Time.get_ticks_msec()
 	if _queue.is_empty():
-		print("BOT crash no line matches --only=%s (lines: %s)" % [_only, ", ".join(BotLines.names())])
+		print("BOT crash no line matches --only=%s (lines: %s)" % [_only, ", ".join(_line_names())])
 		get_tree().quit(1)
+
+
+## The lines of this run: the practice park's BotLines, or the level route's.
+func _line_names() -> Array[String]:
+	return BotLines.names() if _route.is_empty() else LevelRoute.line_names(_route)
 
 
 func _apply_tune(path: String) -> String:
@@ -130,9 +149,12 @@ func _begin_line() -> void:
 
 
 func _start_run() -> void:
-	var park: Park = _main.get("park") as Park
-	var lines: BotLines = BotLines.new(park, _sk)
-	_line = lines.build(str(_line["name"]))
+	var park: Node3D = _main.get("park") as Node3D
+	if _route.is_empty():
+		var lines: BotLines = BotLines.new(park as Park, _sk)
+		_line = lines.build(str(_line["name"]))
+	else:
+		_line = LevelRoute.line(_route, str(_line["name"]))
 	var tune: PhysicsTuning = PhysicsTuning.shared()
 	_det = BotDetectors.new(str(_line["name"]), tune, _record)
 	_driver = BotDriver.new(_sk, park, _line["wps"])

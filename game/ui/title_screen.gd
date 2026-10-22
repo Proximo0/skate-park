@@ -1,7 +1,7 @@
 extends Control
 ## Title screen. Behind the UI, a SubViewport shows a slowly orbiting camera around the placeholder skater on
 ## its board, with a quarter pipe behind on a ground plane. In front: a bobbing multicolour "SKATE PARK" title,
-## a subtitle and three buttons. Play loads the park, Controls opens ControlsScreen (if it exists), Quit quits.
+## a subtitle and the menu buttons. Play opens the level select, Controls opens ControlsScreen (if it exists), Quit quits.
 
 const GAME_SCENE: String = "res://game/main.tscn"
 const CONTROLS_SCRIPT: String = "res://game/ui/controls_screen.gd"
@@ -295,10 +295,24 @@ func _layout_title() -> void:
 	_letter_base_y = (_title_row.size.y - max_h) * 0.5
 
 
+## Play opens the level select (game/ui/level_select.gd) over the title; picking a level loads the game with it.
 func _on_play() -> void:
+	if _leaving or _overlay != null:
+		return
+	var select := LevelSelect.new()
+	select.chosen.connect(_on_level_chosen)
+	select.closed.connect(_on_screen_closed)
+	add_child(select)
+	_overlay = select
+	_overlay_button = _play
+	_menu.visible = false
+
+
+func _on_level_chosen(id: String) -> void:
 	if _leaving:
 		return
 	_leaving = true
+	LevelRegistry.selected = id
 	get_tree().change_scene_to_file(GAME_SCENE)
 
 

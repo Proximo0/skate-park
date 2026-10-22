@@ -3,10 +3,12 @@ extends CanvasLayer
 ## Pause overlay: dimmed backdrop, big buttons (Resume, Restart Run, two Drop In spots, Controls, Quit), full gamepad and keyboard use.
 ## The pause action opens it and pauses the tree. Resume, ui_cancel or the pause action closes it.
 ## Restart, Drop In and Quit close the menu first (unpausing the tree), then emit their signal.
-## drop_in_requested carries the spot id: "mega" or "loop" (see DropIn).
+## drop_in_requested carries the spot id: "mega" or "loop" (see DropIn), or one of the level's own spots.
+## "Change Level" opens the level select over the menu; picking a level closes the menu and emits level_change_requested.
 
 signal restart_requested
 signal drop_in_requested(spot: String)
+signal level_change_requested(level_id: String)
 signal quit_requested
 signal resumed
 
@@ -22,6 +24,11 @@ var _controls_button: Button
 var _controls_screen: ControlsScreen
 var _controls_open: bool = false
 var _intro: Tween
+## Drop-in buttons, spot id -> label ("Drop In: <label>"). main.gd sets the level's own before add_child.
+var drop_in_spots: Dictionary = {"mega": "Mega Ramp", "loop": "Loop"}
+var current_level: String = LevelRegistry.DEFAULT_ID
+var _level_button: Button
+var _level_select: LevelSelect = null
 
 
 func _ready() -> void:
@@ -74,13 +81,16 @@ func _build() -> void:
 	restart.pressed.connect(_on_restart_pressed)
 	col.add_child(restart)
 
-	var drop_mega := _pause_button("Drop In: Mega Ramp", SkateThemeBuilder.BTN_CORAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
-	drop_mega.pressed.connect(_on_drop_in_pressed.bind("mega"))
-	col.add_child(drop_mega)
+	_level_button = _pause_button("Change Level", SkateThemeBuilder.BTN_MINT, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+	_level_button.pressed.connect(_on_change_level_pressed)
+	col.add_child(_level_button)
 
-	var drop_loop := _pause_button("Drop In: Loop", SkateThemeBuilder.BTN_CORAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
-	drop_loop.pressed.connect(_on_drop_in_pressed.bind("loop"))
-	col.add_child(drop_loop)
+	var drops: Array[Button] = []
+	for spot: Variant in drop_in_spots:
+		var drop := _pause_button("Drop In: %s" % str(drop_in_spots[spot]), SkateThemeBuilder.BTN_CORAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+		drop.pressed.connect(_on_drop_in_pressed.bind(str(spot)))
+		col.add_child(drop)
+		drops.append(drop)
 
 	var hair_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
 	_set_toggle_text(hair_btn, "Hair physics", GameSettings.hair_on())
@@ -101,7 +111,9 @@ func _build() -> void:
 	col.add_child(quit)
 
 	# Up and down wrap around the buttons.
-	var buttons: Array[Button] = [_resume_button, restart, drop_mega, drop_loop, hair_btn, body_btn, _controls_button, quit]
+	var buttons: Array[Button] = [_resume_button, restart, _level_button]
+	buttons.append_array(drops)
+	buttons.append_array([hair_btn, body_btn, _controls_button, quit])
 	var n: int = buttons.size()
 	for i: int in n:
 		var b: Button = buttons[i]
@@ -115,8 +127,8 @@ func _build() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _controls_open:
-		return  # the controls screen handles its own close
+	if _controls_open or _level_select != null:
+		return  # the controls screen and the level select handle their own close
 	if visible:
 		if event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel") or _pause_is_circle(event):
 			get_viewport().set_input_as_handled()
@@ -165,6 +177,7 @@ func resume() -> void:
 func _hide_menu() -> void:
 	if _intro and _intro.is_valid():
 		_intro.kill()
+	_close_level_select()
 	_controls_open = false
 	_controls_screen.visible = false
 	visible = false
@@ -197,6 +210,34 @@ func _on_toggle(b: Button, label: String, hair: bool) -> void:
 	else:
 		GameSettings.set_body(on)
 	_set_toggle_text(b, label, on)
+
+
+func _on_change_level_pressed() -> void:
+	if _level_select != null:
+		return
+	_level_select = LevelSelect.new()
+	_level_select.focus_id = current_level
+	_level_select.chosen.connect(_on_level_chosen)
+	_level_select.closed.connect(_on_level_select_closed)
+	_panel.visible = false
+	add_child(_level_select)
+
+
+func _on_level_chosen(id: String) -> void:
+	_hide_menu()
+	level_change_requested.emit(id)
+
+
+func _on_level_select_closed() -> void:
+	_close_level_select()
+	_panel.visible = true
+	_level_button.grab_focus()
+
+
+func _close_level_select() -> void:
+	if _level_select != null:
+		_level_select.queue_free()
+		_level_select = null
 
 
 func _on_controls_pressed() -> void:

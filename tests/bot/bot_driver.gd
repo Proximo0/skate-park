@@ -194,7 +194,7 @@ func _consume_special(pos: Vector3) -> bool:
 			_prev_p = tp["pos"]
 			_have_prev = true
 		elif wp.has("drop"):
-			var spots: Dictionary = (park as Park).drop_ins
+			var spots: Dictionary = park.get("drop_ins") as Dictionary
 			DropIn.teleport(sk, spots[wp["drop"]] as Transform3D)
 			teleported = true
 			_act = {}

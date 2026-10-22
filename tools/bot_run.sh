@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Play bot: skates the real park headless and reports everything that feels broken.
-# Usage: tools/bot_run.sh [--only=<line>] [--tune=<preset.json>] [--record] [--list]
+# Usage: [LEVEL=<id>] tools/bot_run.sh [--only=<line>] [--tune=<preset.json>] [--record] [--list]
+# LEVEL picks a LevelRegistry level (default practice); other levels ride the lines in their bot_route.json.
 # Prints "BOT <line> DONE|FAIL ... landed_total=N", "BOTISSUE ...", "BOT score=N issues=N ... landed_total=N",
 # and a "BOTLANDED <line> landed_total=N" table (plus "BOTLANDED total landed_total=N"). Writes /tmp/bot/report.json (+ per-line recordings with --record).
 # Exit 0 even with issues; 1 only if the bot crashed or never printed its score.
@@ -9,7 +10,9 @@ cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
 (flock 9; "$GODOT" --headless --path . --import) 9>/tmp/skate_import.lock >/tmp/godot_import.log 2>&1 || { cat /tmp/godot_import.log; exit 1; }
 mkdir -p /tmp/bot
-out=$(timeout 240 "$GODOT" --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- "$@" 2>&1 \
+LEVEL_ARGS=()
+[[ -n "${LEVEL:-}" && "${LEVEL}" != "practice" ]] && LEVEL_ARGS=("--level=${LEVEL}")
+out=$(timeout 240 "$GODOT" --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- "${LEVEL_ARGS[@]}" "$@" 2>&1 \
   | grep -vE '^(Godot Engine v|$|WARNING: .*audio|   at: )')
 echo "$out"
 if [[ " $* " == *" --list "* ]]; then exit 0; fi

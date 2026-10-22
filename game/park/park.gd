@@ -1,5 +1,5 @@
 class_name Park
-extends Node3D
+extends Level
 ## The v1 skatepark: one full level assembled from the code-built pieces in game/park/pieces/.
 ## The riding area is x, z in [-75, 75] (HALF): the original 80 x 80 core (CORE_HALF = 40) in the middle, with a big
 ## outer ring around it (mega ramp west, dome bowl north-east, drop ramp + loop east, a long street run south). North is -Z. Pieces use the PieceKit convention (origin at the
@@ -26,12 +26,17 @@ const BOUNDARY_THICK := 2.0
 const BOUNDARY_HEIGHT := 40.0
 const BOUNDARY_BASE_Y := -2.0
 
-var spawn: Transform3D = Transform3D(Basis.IDENTITY, SPAWN_POS)
-var collectibles: Array[Collectible] = []
-## Every piece added with _put (not the ground, fences, decor, zones or collectibles), for layout checks.
-var placed: Array[Node3D] = []
-## Drop-in spots in park space: "mega" and "loop" -> Transform3D on the start deck, facing the roll-in.
-var drop_ins: Dictionary = {}
+## The Level contract (game/levels/level.gd) holds spawn, collectibles, placed (every piece added with _put) and
+## drop_ins ("mega" and "loop" -> Transform3D on the start deck, facing the roll-in); _init fills in the park's values.
+
+
+func _init() -> void:
+	spawn = Transform3D(Basis.IDENTITY, SPAWN_POS)
+	bounds = Rect2(-BOUNDARY_INNER, -BOUNDARY_INNER, BOUNDARY_INNER * 2.0, BOUNDARY_INNER * 2.0)
+	kill_y = Level.DEFAULT_KILL_Y
+	if level_id == "":
+		level_id = "practice"
+	mood = Mood.preset("day")
 
 
 func _ready() -> void:
@@ -81,13 +86,15 @@ func _environment() -> void:
 	var sun_dir: Vector3 = Basis.from_euler(SUN_ROTATION * (PI / 180.0)) * Vector3(0.0, 0.0, 1.0)
 	env.environment = Toon.park_sky_environment(sun_dir)
 	add_child(env)
-	var sun := DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.rotation_degrees = SUN_ROTATION
-	sun.light_color = SUN_COLOR
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 150.0
-	add_child(sun)
+	world_environment = env
+	var key := DirectionalLight3D.new()
+	key.name = "Sun"
+	key.rotation_degrees = SUN_ROTATION
+	key.light_color = SUN_COLOR
+	key.shadow_enabled = true
+	key.directional_shadow_max_distance = 150.0
+	add_child(key)
+	sun = key
 
 
 ## Darker than PieceKit.CONCRETE: a big flat slab in full sun reads as white at the lighter grey.
@@ -293,7 +300,7 @@ func _mega_coin_pos() -> Vector3:
 ## WEST edge: the mega ramp, drop-in at the north end, travelling south.
 func _outer_mega() -> void:
 	_put(MegaRamp.build(8.0, 18.0, 14.0, 8.0), MEGA_POS, 0.0, "MegaRamp")
-	drop_ins["mega"] = Transform3D(Basis.IDENTITY, MEGA_POS) * MegaRamp.drop_in_transform(8.0, 18.0)
+	add_drop_in("mega", "Mega Ramp", Transform3D(Basis.IDENTITY, MEGA_POS) * MegaRamp.drop_in_transform(8.0, 18.0))
 	# a big sign beside the tower
 	_put(Walls.billboard_sign("MEGA RAMP", 8.0), Vector3(-58.0, 0.0, -66.0), 90.0, "MegaSign")
 
@@ -315,7 +322,7 @@ func _outer_dome() -> void:
 ## EAST edge: the drop ramp feeds the loop, then a long run-out to a catch quarter pipe.
 func _outer_loop() -> void:
 	_put(DropRamp.build(DROP_WIDTH, DROP_HEIGHT, 2.0), DROP_POS, 0.0, "DropRamp")
-	drop_ins["loop"] = Transform3D(Basis.IDENTITY, DROP_POS) * DropRamp.drop_in_transform(DROP_WIDTH, DROP_HEIGHT)
+	add_drop_in("loop", "Loop", Transform3D(Basis.IDENTITY, DROP_POS) * DropRamp.drop_in_transform(DROP_WIDTH, DROP_HEIGHT))
 	var loop: Node3D = _put(LoopTrack.build(4.0, 3.0, 6.0, 6.0, 3.5), _loop_pos(), 180.0, "Loop")
 	# end-of-loop zone (local): the flat run-out, to pair with "loop_full"
 	loop.add_child(PieceKit.gap_zone("loop_out", Vector3(3.0, 0.0, -11.5), Vector3(4.0, 3.0, 2.0)))

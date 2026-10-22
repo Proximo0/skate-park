@@ -1,8 +1,12 @@
 extends Node3D
-## The game scene: the park, the skater and everything that watches the skater (camera, poser, HUD,
-## effects, audio, goals, pause menu, debug stamp). `-- --testpark` loads the small proving ground instead.
+## The game scene: the level, the skater and everything that watches the skater (camera, poser, HUD,
+## effects, audio, goals, pause menu, debug stamp). The level comes from LevelRegistry (`-- --level=<id>` or the
+## level select; the practice Park by default). `-- --testpark` loads the small proving ground instead.
 
-var park: Node3D
+const MAIN_SCENE: String = "res://game/main.tscn"
+
+var park: Node3D  ## the level node (named "Park" whatever the level, for older paths); the test park with --testpark
+var level: Level = null  ## the same node as a Level; null with --testpark
 var skater: Skater
 var hud: Hud
 var goals: Goals
@@ -24,11 +28,14 @@ func _ready() -> void:
 		skater = park.get("skater")
 		(park.get_node("ChaseCam") as Camera3D).queue_free()
 	else:
-		park = Park.new()
-		park.name = "Park"
-		add_child(park)
-		skater = _make_skater((park as Park).spawn)
+		level = LevelRegistry.create(LevelRegistry.resolve(Flags.args))
+		level.name = "Park"
+		park = level
+		add_child(level)
+		skater = _make_skater(level.spawn)
 		add_child(skater)
+		_apply_level_rules()
+	skater.add_to_group("skater")
 	_skater_only_shadows()
 	_attach_poser()
 	var cam := SkateCamera.new()
@@ -50,9 +57,13 @@ func _ready() -> void:
 	add_child(audio)
 	audio.bind(skater)
 	var pause := PauseMenu.new()
+	if level != null:
+		pause.drop_in_spots = level.drop_in_names.duplicate()
+		pause.current_level = level.level_id
 	add_child(pause)
 	pause.restart_requested.connect(_restart)
 	pause.drop_in_requested.connect(_drop_in)
+	pause.level_change_requested.connect(_change_level)
 	pause.quit_requested.connect(func() -> void: get_tree().change_scene_to_file("res://game/ui/title_screen.tscn"))
 	add_child(FrameStamp.new())
 	add_child(RenderToggles.new())
@@ -62,6 +73,27 @@ func _ready() -> void:
 	overlay.bind(skater)
 	add_child(TimeControl.new())
 	_setup_goals()
+
+
+## The level's own rules: its kill height (on a private copy of the tuning, so the shared one keeps its default),
+## its gap list, and the skater handed to the level's world nodes (traffic, pedestrians).
+func _apply_level_rules() -> void:
+	if not is_equal_approx(level.kill_y, skater.tune.kill_y):
+		var t := PhysicsTuning.new()
+		t.apply_dict(skater.tune.to_dict())
+		t.kill_y = level.kill_y
+		skater.tune = t
+	if level.gaps_path != Level.DEFAULT_GAPS and FileAccess.file_exists(level.gaps_path):
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(level.gaps_path))
+		if parsed is Dictionary:
+			skater.gaps.load_from_dict(parsed as Dictionary)
+	level.bind_skater(skater)
+
+
+## Pause menu "Change level": rebuild the game scene with the picked level.
+func _change_level(id: String) -> void:
+	LevelRegistry.selected = id
+	get_tree().change_scene_to_file(MAIN_SCENE)
 
 
 func _make_skater(at: Transform3D) -> Skater:
@@ -115,7 +147,11 @@ func _attach_poser() -> void:
 
 
 func _setup_goals() -> void:
-	goals = Goals.load_default()
+	if level != null and level.goals_path != Level.DEFAULT_GOALS:
+		goals = Goals.new()
+		goals.load_from_path(level.goals_path)
+	else:
+		goals = Goals.load_default()
 	goals.start_run(_t)
 	goals.goal_completed.connect(_on_goal)
 	skater.combo_landed.connect(func(points: int, _text: String) -> void:
@@ -125,8 +161,8 @@ func _setup_goals() -> void:
 		goals.on_trick(str(tr.get("id", "")), str(tr.get("kind", ""))))
 	skater.gap_hit.connect(func(_n: String, _p: int) -> void:
 		goals.on_gap_discovered(skater.gaps.discovered_count()))
-	if park is Park:
-		for c: Collectible in (park as Park).collectibles:
+	if level != null:
+		for c: Collectible in level.collectibles:
 			c.collected.connect(func(item: String, _group: String) -> void: goals.on_collect(item))
 	var panel := GoalsPanel.new()
 	panel.name = "GoalsPanel"
@@ -161,11 +197,11 @@ func _restart() -> void:
 	goals.start_run(_t)
 
 
-## Pause menu "Drop In": put the skater on top of the mega ramp ("mega") or the drop ramp before the loop ("loop").
+## Pause menu "Drop In": put the skater on the level's drop-in spot (practice: "mega" or "loop").
 func _drop_in(spot: String) -> void:
-	if not (park is Park):
+	if level == null:
 		return
-	var spots: Dictionary = (park as Park).drop_ins
+	var spots: Dictionary = level.drop_ins
 	if spots.has(spot):
 		DropIn.teleport(skater, spots[spot] as Transform3D)
 
