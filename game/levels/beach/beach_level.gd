@@ -276,7 +276,7 @@ func _skatepark() -> void:
 	# the west quarter pipe faces east across the park
 	put(QuarterPipe.build(12.0, 3.0, 3.2, 1.5), Vector3(-HALF_X, 0.0, -10.0), 90.0, "QuarterWest")
 	# the south-east pocket: a ledge and a flat bar along the seawall
-	put(StreetBits.ledge(9.0, 0.5, 0.8, Color("ff7a5c"), "sp_ledge"), Vector3(-66.0, 0.0, -19.0), 90.0, "ParkLedge")
+	put(StreetBits.ledge(9.0, 0.5, 0.8, Color("ff7a5c"), "sp_ledge"), Vector3(-64.5, 0.0, -19.0), 90.0, "ParkLedge")  # clear of the snake run pit wall (it was overhanging it)
 	put(StreetBits.flat_rail(8.0, 0.45, "sp_bar_a", "sp_bar_b"), Vector3(-66.0, 0.0, -15.6), 90.0, "ParkBar")
 	# banks from the deck down to the sand
 	put(Walls.bank(12.0, 4.0, -SAND_Y, "sp_bank_w"), Vector3(-104.0, SAND_Y, SEAWALL_Z), 0.0, "BankSandWest")

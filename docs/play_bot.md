@@ -58,3 +58,14 @@ Penalties per issue: nan 20, respawn 15, below_kill_plane 15, stuck 8, overspeed
 | Dome Air | yes | roll across at 18 m/s, 6-tick ollie at radius 6.5 (a wall exit alone throws the rider outward) |
 | Mega QP Air | only without Mega Gap | Mega Gap's landing closes a combo 0.35 s later and wipes the pending runout start; separate run, 20 m/s lip, pumped quarter pipe (apex 8.2 m vs 7.4 needed) |
 | Manual Bridge | no (design) | zone A is entered in the air; see the BOTINFO |
+
+## Auto lines and the per-level snag sweep
+
+`tests/bot/bot_auto.gd` (BotAuto) builds soft lines from any level's geometry (Level.bounds, drop_ins, the `ramp_lip` group), so every level
+gets the same coverage with no hand-written route: `auto_snap_a..c` (Q+E drop-in snap at a lip), `auto_roll_in_a..c` (roll-in over a lip),
+`auto_roll_off_a/b` (roll off a ledge or deck edge) and `auto_big_drop` (the biggest drop found, >= 2.5 m). A level with no candidate prints
+`BOTINFO skip`. `--noauto` turns them off. While the skater is `snapping()` the driver hands off and the detectors excuse the energy window.
+
+`LEVEL=<id> tools/snag_sweep.sh` runs the snag sweep on any level (practice, warehouse, beach, school, downtown, hills); output lands in
+`/tmp/lab/snag_<id>/`. Hotspots are classed `real` (a low lip or seam that steals speed), `ramp`, `air` and `expected_wall`; bail slides, ramp apexes,
+boundary walls and head-on hits are excluded. `tools/check_all.sh` runs every level and fails when `real` exceeds `data/snag_baseline.json`.

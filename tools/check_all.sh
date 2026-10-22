@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Every physics check at once, in parallel: unit tests, both sim scenes, the physics lab, the play-bot (sharded)
 # and the snag sweep (sharded). JOBS (default: CPU count) caps how many Godot processes run together.
-# Usage: tools/check_all.sh [--quick]   (--quick skips the snag sweep, the slowest check at ~3 min)
+# Usage: tools/check_all.sh [--quick]   (--quick skips the per-level snag sweeps, the slowest check)
 # Logs go to /tmp/check/<name>.log; the last lines print one summary row per check. Exit 1 if any check fails.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -17,7 +17,13 @@ start=$(date +%s)
 # One command per line: name|command. The snag sweep shards itself, so it counts as SHARDS jobs and goes first.
 BOT_SHARDS=3
 TASKS=()
-(( QUICK )) || TASKS+=("snags|SHARDS=2 tools/snag_sweep.sh")
+SNAG_LEVELS=(practice warehouse beach school downtown hills)
+if (( ! QUICK )); then
+  for lv in "${SNAG_LEVELS[@]}"; do
+    n=2500; [[ $lv == hills ]] && n=1500
+    TASKS+=("snags_$lv|LEVEL=$lv MAXRUNS=$n SHARDS=1 tools/snag_sweep.sh")
+  done
+fi
 for ((i = 0; i < BOT_SHARDS; i++)); do
   TASKS+=("bot$i|timeout 240 $GODOT --headless --fixed-fps 60 --path . res://tests/bot/bot.tscn -- --shard=$i --nshards=$BOT_SHARDS")
 done
@@ -30,7 +36,7 @@ TASKS+=("lint|tools/lint.sh")
 running=0
 for t in "${TASKS[@]}"; do
   name="${t%%|*}"; cmd="${t#*|}"
-  w=1; [[ $name == snags ]] && w=2
+  w=1
   while (( running + w > JOBS )); do wait -n; running=$((running - 1)); done
   ( eval "$cmd" 2>&1 | grep -vE "$FILTER" >"$OUT/$name.log" ) &
   running=$((running + w))
@@ -88,7 +94,12 @@ sys.exit(1 if crashed or fails else 0)
 PY
 lint=$(tail -1 "$OUT/lint.log"); row lint "$lint"; [[ "$lint" == *"problems=0"* ]] || rc=1
 if (( ! QUICK )); then
-  s=$(grep -E '^SNAG summary' "$OUT/snags.log" | tail -1); row snags "${s:-CRASH}"; [[ -n "$s" ]] || rc=1
-  grep -E '^SNAG excluded' "$OUT/snags.log" | tail -1 | sed 's/^/    /'
+  # per-level sweep; "real" snags are gated against data/snag_baseline.json (raise it only with a reason)
+  for lv in "${SNAG_LEVELS[@]}"; do
+    s=$(grep -E '^SNAG summary' "$OUT/snags_$lv.log" | tail -1); row "snags $lv" "${s:-CRASH}"; [[ -n "$s" ]] || { rc=1; continue; }
+    r=$(sed -n 's/.*real=\([0-9]*\) real_hotspots.*/\1/p' <<<"$s")
+    b=$(python3 -c "import json;print(json.load(open('data/snag_baseline.json')).get('$lv',0))")
+    if [[ -n "$r" ]] && (( r > b )); then echo "    FAIL $lv: real=$r exceeds baseline $b"; rc=1; fi
+  done
 fi
 exit $rc

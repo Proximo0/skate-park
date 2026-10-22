@@ -8,7 +8,7 @@ extends Pedestrians
 const VIEW_END: float = 45.0
 const VIEW_MARGIN: float = 6.0
 const SHADOW_END: float = 20.0
-const SHADOW_EVERY: int = 6  ## frames between shadow checks
+const DT_SHADOW_EVERY: int = 6
 
 var _meshes: Dictionary = {}  ## Pedestrian -> Array[GeometryInstance3D]
 var _shadowed: Dictionary = {}  ## Pedestrian -> bool
@@ -34,7 +34,7 @@ func _dress_waiting() -> void:
 func _process(delta: float) -> void:
 	super._process(delta)
 	_tick += 1
-	if _tick % SHADOW_EVERY != 0:
+	if _tick % DT_SHADOW_EVERY != 0:
 		return
 	var cam: Camera3D = get_viewport().get_camera_3d() if is_inside_tree() else null
 	if cam == null:

@@ -5,9 +5,6 @@ extends "res://tests/lab/snag_sweep.gd"
 ## Run (one process): godot --headless --fixed-fps 60 --path . res://game/levels/school/school_snag_sweep.tscn -- --keep=30
 ## Same options as the park sweep (--only=<area or shape name>, --speeds=, --fwd=0, --list, --show=N).
 
-## Shapes wider than this are floor slabs, not pieces to approach.
-const MAX_PIECE: float = 40.0
-
 
 func _main() -> void:
 	park = SchoolLevel.new()

@@ -41,6 +41,7 @@ var _nshards: int = 1
 ## (LevelRoute) instead of the practice park's code-built BotLines.
 var _level: String = "practice"
 var _route: Dictionary = {}
+var _no_auto: bool = false  ## --noauto leaves out the auto lines (drop-ins, roll-offs, big drop)
 
 
 func _ready() -> void:
@@ -55,6 +56,8 @@ func _ready() -> void:
 			_record = true
 		elif a == "--list":
 			list_only = true
+		elif a == "--noauto":
+			_no_auto = true
 		elif a.begins_with("--shard="):
 			_shard = int(a.substr(8))
 		elif a.begins_with("--nshards="):
@@ -90,7 +93,11 @@ func _ready() -> void:
 
 ## The lines of this run: the practice park's BotLines, or the level route's.
 func _line_names() -> Array[String]:
-	return BotLines.names() if _route.is_empty() else LevelRoute.line_names(_route)
+	var base: Array[String] = []
+	base.append_array(BotLines.names() if _route.is_empty() else LevelRoute.line_names(_route))
+	if not _no_auto:
+		base.append_array(BotAuto.NAMES)  ## drop-ins, roll-offs and the big drop, found from the level's own geometry (bot_auto.gd)
+	return base
 
 
 func _apply_tune(path: String) -> String:
@@ -150,7 +157,17 @@ func _begin_line() -> void:
 
 func _start_run() -> void:
 	var park: Node3D = _main.get("park") as Node3D
-	if _route.is_empty():
+	var line_name: String = str(_line["name"])
+	if BotAuto.NAMES.has(line_name):
+		_line = BotAuto.build(line_name, park as Level, _sk.get_world_3d().direct_space_state)
+		if _line.is_empty():
+			print("BOTINFO skip %s: no candidate on this level" % line_name)
+			_main.queue_free()
+			_main = null
+			_sk = null
+			_phase = "next"
+			return
+	elif _route.is_empty():
 		var lines: BotLines = BotLines.new(park as Park, _sk)
 		_line = lines.build(str(_line["name"]))
 	else:
@@ -173,6 +190,7 @@ func _on_tick(f: Dictionary) -> void:
 	if _driver.teleported:
 		_snapshots[str(int(f["tick"]))] = var_to_str(_sk.snapshot())
 	_det.wall_test = _driver.wall_test
+	_det.snapping_now = _sk.snapping()
 	_det.feed(f, _driver.moving_intent, _driver.teleported, _hit_info())
 	for e: Variant in f["events"]:
 		if str(e).begins_with("land:"):

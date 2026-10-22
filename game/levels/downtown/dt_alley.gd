@@ -155,13 +155,23 @@ func _tower_d() -> void:
 	_bt.tube(a, b, 0.045, Color("3b3f48"), 8)
 	_bt.bar(Vector3(-62.4, p + 3.35, z + 0.1), Vector3(-71.6, p + 0.45, z + 0.1), 1.0, 0.1, Color("3b3f48"))
 	# the stair run and the landings are solid (a steel slab under the rail; it lands on the alley floor)
+	# The slab runs on to the building wall (z + 1.1 = TOWER_D.position.y): it used to stop 0.5 m short and left a pinch the
+	# skater wedged into (snag sweep, Alleys/AlleyCollision at (-71, 75.5)). Its low end now sits on the floor, and the
+	# taper where it is under 0.8 m clear of the floor is filled in, so there is no gap too low to ride into.
 	var sp := PackedVector3Array()
-	for dz: float in [-0.4, 0.6]:
+	for dz: float in [-0.4, 1.1]:
 		sp.append(Vector3(-62.4, p + 3.4, z + dz))
 		sp.append(Vector3(-62.4, p + 3.2, z + dz))
 		sp.append(Vector3(-71.6, p + 0.5, z + dz))
-		sp.append(Vector3(-71.6, p + 0.3, z + dz))
+		sp.append(Vector3(-71.6, p - DtKit.SINK, z + dz))
 	DtKit.col_convex(_sb, sp)
+	var tp := PackedVector3Array()
+	for dz: float in [-0.4, 1.1]:
+		tp.append(Vector3(-71.6, p - DtKit.SINK, z + dz))
+		tp.append(Vector3(-71.6, p + 0.5, z + dz))
+		tp.append(Vector3(-68.0, p - DtKit.SINK, z + dz))
+		tp.append(Vector3(-68.0, p + 1.2, z + dz))
+	DtKit.col_convex(_sb, tp)
 	for k: int in 2:
 		DtKit.col_box(_sb, Vector3(-64.5, p + 3.4 + float(k) * 3.4, z + 0.1), Vector3(5.0, 0.1, 1.2))
 	for i: int in 4:

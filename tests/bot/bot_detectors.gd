@@ -39,6 +39,7 @@ var snaps: Array[float] = []  ## grind / lip entry jumps (by design: the visual 
 var route_faults: Array[String] = []  ## stops that look like the bot's own routing, not the physics
 var wall_hits: int = 0
 var head_on_log: Array[String] = []  ## where the bot ran square into a wall (a routing fault, listed as BOTINFO)
+var snapping_now: bool = false  ## set by the runner while the skater is inside a ramp snap (a guided arc: its speed and energy are scripted, not physics)
 var wall_test: bool = false  ## set by the driver while a deliberate head-on wall test runs: its slam is INFO, not an issue
 var wall_test_results: Array[String] = []
 var infos: Array[String] = []  ## findings that are design facts, not bot or physics faults (BOTINFO)
@@ -142,7 +143,7 @@ func feed(f: Dictionary, moving_intent: bool, bot_teleported: bool, hit: Diction
 			bails += 1
 			_issue("bail", pos, tick, why_bail)
 	# --- build this tick's lite record
-	var excuse: bool = state in ["BAIL", "GRIND", "LIP", "WALLRIDE"] or bool(f["braking"])
+	var excuse: bool = state in ["BAIL", "GRIND", "LIP", "WALLRIDE"] or bool(f["braking"]) or snapping_now
 	for e: String in evs:
 		if EXCUSE_EVENTS.has(e) or e.begins_with("land:"):
 			excuse = true

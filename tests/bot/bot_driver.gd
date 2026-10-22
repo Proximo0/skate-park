@@ -9,7 +9,7 @@ extends RefCounted
 ##   act: action started when the waypoint is reached (it runs while the bot steers on to the next waypoint):
 ##        "ollie" {h: hold ticks, flip, grab, revert}   "air" {flip, grab, revert, wait: s}  (waits for takeoff)
 ##        "grind" {exit: "ride"|"ollie", end: Vector3, hold: s}   "manual" {dur: s, exit: "ollie"|"none"}
-##        "revert"   "wait" {s}
+##        "revert"   "wait" {s}   "snap" (Q + E together: the ramp snap; the driver then lets go until it has finished)
 ##   pump: hold forward on transitions   brake: allow braking above spd   tmo: seconds before the waypoint is skipped
 ##   tp: {pos, dir, speed}: teleport there (a segment start); the waypoint is consumed at once.
 ##   drop: "mega"|"loop": the pause-menu drop-in, then the waypoint is consumed.
@@ -87,6 +87,15 @@ func step(delta: float) -> void:
 		moving_intent = false
 		_pos_ring.clear()
 		_prev_state = st
+		sk.set_input(Vector2.ZERO, [], [])
+		return
+	if sk.snapping():
+		# the ramp snap carries the skater over the coping by itself: hands off until it has landed it
+		moving_intent = false
+		_pos_ring.clear()
+		_prev_state = st
+		if str(_act.get("kind", "")) == "snap":
+			_act["started"] = true
 		sk.set_input(Vector2.ZERO, [], [])
 		return
 	if finished and st == "ROLLING":
@@ -268,6 +277,19 @@ func _ground_input(d: Dictionary, delta: float) -> void:
 				_act = {}
 		"manual":
 			_manual_sequence()
+		"snap":
+			# both buttons down on one tick (the chord window is 6 ticks), held two ticks, then released
+			var st_t: int = int(_act["t"])
+			if bool(_act.get("started", false)):
+				_act = {}  ## the snap ran and has finished
+			else:
+				if st_t < 2:
+					_pressed = ["spin_left", "spin_right"] if st_t == 0 else []
+					_held = ["spin_left", "spin_right"]
+				_act["t"] = st_t + 1
+				if st_t == 12:
+					misses.append("snap_never_started at " + _fmt(pos))
+					_act = {}
 		"revert":
 			if int(_act["t"]) == 1:
 				_pressed.append("revert")

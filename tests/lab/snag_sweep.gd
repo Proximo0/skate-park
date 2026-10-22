@@ -2,23 +2,28 @@ extends Node
 ## Headless snag sweep: runs scripted skaters at every ridable piece of the real park (side grazes, corner hits, foot-of-ramp
 ## and deck-edge approaches) and reports where mechanical energy is lost without a bail/landing, ranked into hotspots.
 ## Run via tools/snag_sweep.sh, or: godot --headless --fixed-fps 60 --path . res://tests/lab/snag_sweep.tscn -- [options]
-## Options: --only=<piece substring>  --keep=PCT (percent of approach geometries kept, default 100)  --shard=i --nshards=N (split the runs)  --merge=N (report from N shard files)  --props (also sweep benches/planters/signs)  --speeds=4,8,12  --fwd=0|1 (second pass holding forward, run at the speeds >= 8 only)
+## Options: --level=<id> (any LevelRegistry level, default practice; traffic, walkers and other moving bodies are removed)  --maxruns=N (thin the planned runs to about N, evenly)  --only=<piece substring>  --keep=PCT (percent of approach geometries kept, default 100)  --shard=i --nshards=N (split the runs)  --merge=N (report from N shard files)  --props (also sweep benches/planters/signs)  --speeds=4,8,12  --fwd=0|1 (second pass holding forward, run at the speeds >= 8 only)
 ##   --batch=N (parallel skaters)  --list (print the pieces and stop)  --replay=<rank> (re-run hotspot <rank> from snags.json alone, with a trace)
 ## Output: `SNAG <piece> <pos> count=.. worst_loss=..% kind=.. normal=.. contact_h=.. example=..` then `SNAG summary runs=N snags=M hotspots=K`.
-## Writes /tmp/lab/snags.json.
+## Writes /tmp/lab/snag_<level>/snags.json (and a copy at /tmp/lab/snags.json).
 
-const OUT_DIR: String = "/tmp/lab"
 const DT: float = 1.0 / 60.0
 const RUN_TICKS: int = 90  ## 1.5 s
 const WINDOW: int = 15  ## 0.25 s
 const LOSS_FRAC: float = 0.30
+const MIN_REF: float = 3.0  ## 0.5 v^2 + g y below this (about 2.4 m/s on the flat) is coasting to a stop on friction, not a snag
 const CELL: float = 0.5
 const SKATER_R: float = 0.3
 const BAIL_GRACE_TICKS: int = 60  ## a slide within 1 s after a bail event belongs to the bail
 const HEAD_ON: float = 0.85  ## cos of incidence above which a hit on a >0.2 m wall is a legitimate stop, not a snag
+const WALL_H: float = 0.45  ## an obstacle taller than this above the skater is a wall, not a lip
 const FWD: Vector2 = Vector2(0.0, -1.0)
 
-var park: Node3D
+var park: Node3D  ## the level under test (named "park" for history; school_snag_sweep.gd reuses it)
+var level_id: String = "practice"
+var out_dir: String = "/tmp/lab"  ## /tmp/lab/snag_<level>: one dir per level, so parallel sweeps never mix their files
+var boundary_ids: Dictionary = {}  ## instance ids of the level's Boundary* walls
+var half_scan: Rect2 = Rect2(-76.0, -76.0, 152.0, 152.0)  ## the riding area (the level's bounds)
 var batch_n: int = 48
 var skaters: Array = []
 var gravity: float = 18.0
@@ -30,6 +35,8 @@ func _ready() -> void:
 		var kv: PackedStringArray = a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	var t0: int = Time.get_ticks_msec()
+	level_id = str(args.get("level", "practice"))
+	out_dir = "/tmp/lab/snag_" + level_id
 	if args.has("merge"):
 		_merge(int(args["merge"]))
 		get_tree().quit(0)
@@ -40,9 +47,19 @@ func _ready() -> void:
 
 
 func _main() -> void:
-	park = Park.new()
-	park.name = "Park"
+	level_id = str(args.get("level", "practice"))
+	if not LevelRegistry.has(level_id):
+		print("SNAG crash unknown level %s (levels: %s)" % [level_id, ", ".join(LevelRegistry.ids())])
+		return
+	var lv: Level = LevelRegistry.create(level_id)
+	lv.name = "Park"
+	park = lv
 	add_child(park)
+	half_scan = lv.bounds
+	for bn: Node in park.find_children("Boundary*", "StaticBody3D", true, false):
+		boundary_ids[bn.get_instance_id()] = true
+	await get_tree().physics_frame
+	_strip_moving_bodies()
 	if args.has("batch"):
 		batch_n = int(args["batch"])
 	await get_tree().physics_frame
@@ -81,6 +98,16 @@ func _main() -> void:
 
 # --- pieces -----------------------------------------------------------------------------------------
 
+## Cars, walkers and anything else that moves on its own would hit the scripted skaters: take them out.
+func _strip_moving_bodies() -> void:
+	for c: Node in park.get_children():
+		if c is Traffic or c is Pedestrians or String(c.name) in ["Traffic", "Pedestrians", "CrowdShadowLod"]:
+			c.process_mode = Node.PROCESS_MODE_DISABLED  ## frozen, not freed: other nodes hold references to them
+	for n: Node in park.find_children("*", "AnimatableBody3D", true, false):
+		(n as AnimatableBody3D).collision_layer = 0
+		(n as AnimatableBody3D).collision_mask = 0
+
+
 func _top_piece(n: Node) -> Node:
 	var cur: Node = n
 	while cur != null and cur.get_parent() != park:
@@ -115,34 +142,75 @@ func _body_aabb(b: StaticBody3D) -> AABB:
 	return out if not first else AABB(Vector3.ZERO, Vector3(-1, -1, -1))
 
 
-## Every StaticBody3D under a placed piece (plus the ground slabs, for seam runs), with its global AABB.
+## Shapes (or whole bodies) wider than this are floor slabs or terrain, not pieces to approach.
+const MAX_PIECE: float = 40.0
+
+
+func _shape_aabb(cs: CollisionShape3D) -> AABB:
+	var xf: Transform3D = cs.global_transform
+	if cs.shape is ConcavePolygonShape3D:
+		var faces: PackedVector3Array = (cs.shape as ConcavePolygonShape3D).get_faces()
+		if faces.is_empty():
+			return AABB(Vector3.ZERO, Vector3(-1, -1, -1))
+		var lo: Vector3 = xf * faces[0]
+		var hi: Vector3 = lo
+		for v: Vector3 in faces:
+			var w: Vector3 = xf * v
+			lo = lo.min(w)
+			hi = hi.max(w)
+		return AABB(lo, hi - lo)
+	return xf * cs.shape.get_debug_mesh().get_aabb()
+
+
+## The ridable pieces of the level: every StaticBody3D (one piece per body, with the ground slabs for seam runs), except that a
+## body wider than MAX_PIECE (the School and Hills batch a whole area into one body) is split into one piece per box/prism/cylinder
+## shape. Each is {name, piece (top-level node), body, aabb, ground}.
 func _collect_pieces() -> Array:
 	var only: String = str(args.get("only", ""))
 	var out: Array = []
 	for b: Node in park.find_children("*", "StaticBody3D", true, false):
 		var sb: StaticBody3D = b as StaticBody3D
+		if (sb.collision_layer & 1) == 0:
+			continue
 		var top: Node = _top_piece(sb)
+		var path_low: String = str(park.get_path_to(sb)).to_lower()
+		var is_ground: bool = String(sb.name).begins_with("Ground")
 		var bb: AABB = _body_aabb(sb)
 		if bb.size.x < 0.0:
 			continue
-		var is_ground: bool = String(sb.name).begins_with("Ground") and sb.get_parent() == park
-		var low: String = (String(top.name) + "/" + String(sb.name)).to_lower()
-		if low.contains("boundary") or low.contains("fence") or low.contains("grass"):
+		if path_low.contains("boundary") or path_low.contains("fence") or path_low.contains("grass"):
 			continue
+		var low: String = (String(top.name) + "/" + String(sb.name)).to_lower()
 		if not args.has("props") and (low.begins_with("bench") or low.begins_with("planter") or low.begins_with("decor") or low.contains("sign/")):
 			continue  ## street furniture is meant to stop you; --props sweeps it too
-		if is_ground:
-			bb = bb.intersection(AABB(Vector3(-HALF_SCAN, -2, -HALF_SCAN), Vector3(2 * HALF_SCAN, 4, 2 * HALF_SCAN)))
-		if bb.size.x < 0.05 or bb.size.z < 0.05 or (bb.size.x < 0.5 and bb.size.z < 0.5 and not args.has("posts")):
-			continue  ## rail feet, legs and posts are not ridable pieces
+		var candidates: Array = []  ## [name, aabb]
 		var nm: String = String(top.name) if top == sb else String(top.name) + "/" + String(sb.name)
-		if only != "" and not nm.contains(only):
-			continue
-		out.append({"name": nm, "piece": String(top.name), "body": sb, "aabb": bb, "ground": is_ground})
+		if not is_ground and (bb.size.x > MAX_PIECE or bb.size.z > MAX_PIECE):
+			for c: Node in sb.get_children():
+				var cs: CollisionShape3D = c as CollisionShape3D
+				if cs == null or cs.shape == null or cs.disabled or cs.shape is ConcavePolygonShape3D:
+					continue
+				var sbb: AABB = _shape_aabb(cs)
+				if sbb.size.x > MAX_PIECE or sbb.size.z > MAX_PIECE:
+					continue
+				candidates.append([String(sb.name) + "/" + String(cs.name), sbb])
+		else:
+			candidates.append([nm, bb])
+		for cand: Array in candidates:
+			var cb: AABB = cand[1]
+			if is_ground:
+				var lim: Rect2 = half_scan
+				var lo := Vector2(maxf(cb.position.x, lim.position.x), maxf(cb.position.z, lim.position.y))
+				var hi := Vector2(minf(cb.end.x, lim.end.x), minf(cb.end.z, lim.end.y))
+				if hi.x <= lo.x or hi.y <= lo.y:
+					continue
+				cb = AABB(Vector3(lo.x, cb.position.y, lo.y), Vector3(hi.x - lo.x, cb.size.y, hi.y - lo.y))
+			if cb.size.x < 0.05 or cb.size.z < 0.05 or (cb.size.x < 0.5 and cb.size.z < 0.5 and not args.has("posts")):
+				continue  ## rail feet, legs and posts are not ridable pieces
+			if only != "" and not String(cand[0]).contains(only):
+				continue
+			out.append({"name": cand[0], "piece": String(top.name), "body": sb, "aabb": cb, "ground": is_ground})
 	return out
-
-
-const HALF_SCAN: float = 76.0
 
 
 # --- run generation ---------------------------------------------------------------------------------
@@ -218,6 +286,17 @@ func _v2s(v: Vector2) -> String:
 	return "%+d,%+d" % [int(v.x), int(v.y)]
 
 
+## True when a skater-sized sphere at `pos` (on the floor) touches nothing but the floor it stands on.
+func _start_clear(space: PhysicsDirectSpaceState3D, pos: Vector3) -> bool:
+	var sh := SphereShape3D.new()
+	sh.radius = SKATER_R - 0.02
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = sh
+	q.transform = Transform3D(Basis.IDENTITY, pos + Vector3(0.0, SKATER_R + 0.06, 0.0))
+	q.collision_mask = 1
+	return space.intersect_shape(q, 1).is_empty()
+
+
 func _generate(pieces: Array) -> Array:
 	var speeds: Array = []
 	for s: String in str(args.get("speeds", "4,8,12")).split(","):
@@ -225,37 +304,54 @@ func _generate(pieces: Array) -> Array:
 	var keep: int = int(args.get("keep", "100"))  ## percent of approach geometries kept (deterministic hash pick)
 	var shard: int = int(args.get("shard", "0"))
 	var nshards: int = int(args.get("nshards", "1"))
-	var ridx: int = 0
 	var fwd_pass: bool = str(args.get("fwd", "1")) != "0"
-	var runs: Array = []
+	var inner: Rect2 = half_scan.grow(-0.5)
+	var space: PhysicsDirectSpaceState3D = get_viewport().world_3d.direct_space_state
+	var all_runs: Array = []
 	var counter: int = 0
 	for p: Dictionary in pieces:
-		var space: PhysicsDirectSpaceState3D = get_viewport().world_3d.direct_space_state
+		var bb: AABB = p["aabb"]
+		var base_y: float = bb.end.y - 0.5 if p["ground"] else bb.position.y
 		for g: Dictionary in _geoms(p):
 			counter += 1
 			if keep < 100 and (counter * 7919 + 13) % 101 >= keep * 101 / 100:
 				continue
 			var st: Vector2 = g["start"]
-			var from_y: float = (p["aabb"] as AABB).end.y + 1.0 if g["top"] else 2.5
-			var q := PhysicsRayQueryParameters3D.create(Vector3(st.x, from_y, st.y), Vector3(st.x, -3.0, st.y), 1)
+			if not inner.has_point(st):
+				continue
+			## starts are found by a ray from just above the piece's own base, so raised decks, the field below and the hills all work
+			var from_y: float = bb.end.y + 1.0 if g["top"] else base_y + 2.5
+			var q := PhysicsRayQueryParameters3D.create(Vector3(st.x, from_y, st.y), Vector3(st.x, base_y - 4.0, st.y), 1)
 			var hit: Dictionary = space.intersect_ray(q)
 			if hit.is_empty():
 				continue
 			var nrm: Vector3 = hit["normal"]
 			var pos: Vector3 = (hit["position"] as Vector3) + Vector3(0.0, 0.01, 0.0)
-			if nrm.y < 0.3 or absf(st.x) > 74.5 or absf(st.y) > 74.5:
+			if nrm.y < 0.3:
 				continue
-			if g["top"] and pos.y < 0.3:
+			if g["top"] and pos.y < base_y + 0.3:
 				continue
+			if not _start_clear(space, pos):
+				continue  ## the start point is inside another piece (a wall, a prop): not a fair run
 			var hd: Vector2 = g["heading"]
 			var dir: Vector3 = Vector3(hd.x, 0.0, hd.y).slide(nrm).normalized()
 			for sp: float in speeds:
 				for fwd: bool in ([false, true] if fwd_pass and sp >= 8.0 else [false]):
-					ridx += 1
-					if ridx % nshards != shard:
-						continue
-					runs.append({"piece": p["name"], "top": p["piece"], "kind": g["kind"], "desc": g["desc"], "pos": pos, "dir": dir, "normal": nrm,
-						"speed": sp, "fwd": fwd, "aabb_top": (p["aabb"] as AABB).end.y})
+					all_runs.append({"piece": p["name"], "top": p["piece"], "kind": g["kind"], "desc": g["desc"], "pos": pos, "dir": dir, "normal": nrm,
+						"speed": sp, "fwd": fwd, "aabb_top": bb.end.y})
+	var maxruns: int = int(args.get("maxruns", "0"))
+	if maxruns > 0 and all_runs.size() > maxruns:
+		var thinned: Array = []
+		var step: float = float(all_runs.size()) / float(maxruns)
+		var acc: float = 0.0
+		while int(acc) < all_runs.size():
+			thinned.append(all_runs[int(acc)])
+			acc += step
+		all_runs = thinned
+	var runs: Array = []
+	for i: int in all_runs.size():
+		if (i + 1) % nshards == shard:
+			runs.append(all_runs[i])
 	return runs
 
 
@@ -267,6 +363,12 @@ func _make_skaters(n: int) -> void:
 		var sk: CharacterBody3D = script.new()
 		sk.name = "SweepSkater%d" % i
 		add_child(sk)
+		var lv: Level = park as Level
+		if lv != null and not is_equal_approx(lv.kill_y, sk.tune.kill_y):  ## as main.gd: the level's kill height on a private tuning copy
+			var t := PhysicsTuning.new()
+			t.apply_dict(sk.tune.to_dict())
+			t.kill_y = lv.kill_y
+			sk.tune = t
 		sk.scripted_input = true
 		sk.set_meta("rec", [])
 		sk.physics_ticked.connect(_on_tick.bind(sk))
@@ -348,7 +450,7 @@ func _analyse(rec: Array, run: Dictionary) -> Variant:
 			for k: int in range(i, j + 1):
 				if (rec[k][1] as Vector3).length() < 1.0 and rec[k][2] == "ROLLING":
 					hard = true
-		if (ref > 0.5 and loss > LOSS_FRAC * ref) or hard:
+		if (ref > MIN_REF and loss > LOSS_FRAC * ref) or hard:
 			var found: Dictionary = _describe(rec, run, i, j, loss / maxf(ref, 0.001), hard)
 			found["excl"] = _excluded_as(rec, i, j, loss, ref, hard)
 			out.append(found)
@@ -362,9 +464,18 @@ func _analyse(rec: Array, run: Dictionary) -> Variant:
 ## "bail_slide": the rider is in BAIL, or bailed within the last second (the ragdoll slides to a stop);
 ## "ramp_apex": a hard stop with the mechanical energy (kinetic + potential) intact on a slope: speed turned into height.
 func _excluded_as(rec: Array, i: int, j: int, loss: float, ref: float, hard: bool) -> String:
+	for k: int in range(maxi(0, i - 6), j + 1):  ## rubbing the level's invisible boundary wall is the edge of the map, not a snag
+		for c: Array in rec[k][7]:
+			if boundary_ids.has(c[0]):
+				return "boundary"
 	for k: int in range(maxi(0, i - BAIL_GRACE_TICKS), j + 1):
 		if rec[k][2] == "BAIL" or (rec[k][6] as Array).has("bail"):
 			return "bail_slide"
+	if str(rec[i][2]) == "AIR" and not bool(rec[i][3]):
+		## flying into the side of something (a pier's edge after a drop) is a collision, not a snag; the landing and the lip are judged elsewhere
+		for k: int in range(i, j + 1):
+			if bool(rec[k][4]) and not bool(rec[k][3]):
+				return "air_wall"
 	if hard and loss <= LOSS_FRAC * ref:
 		for k: int in range(i, j + 1):
 			if (rec[k][8] as Vector3).y < 0.97 or (rec[k][1] as Vector3).y > 0.5:
@@ -384,17 +495,33 @@ func _describe(rec: Array, run: Dictionary, i: int, j: int, frac: float, hard: b
 	var vdir: Vector3 = (rec[maxi(m - 1, 0)][1] as Vector3).normalized()
 	var best: Array = []
 	var best_score: float = 1e9
-	for k: int in range(maxi(m - 2, 0), mini(m + 2, rec.size())):
+	## the contact that took the speed: a wall-like one from the 10 ticks before the worst tick (a rub along a wall stumbles a few ticks
+	## after the first touch), else the most head-on contact right around the worst tick
+	for k: int in range(maxi(m - 10, 0), mini(m + 3, rec.size())):
 		for c: Array in rec[k][7]:
-			var score: float = (c[1] as Vector3).dot(vdir)
-			if score < best_score:
-				best_score = score
+			var cn: Vector3 = c[1]
+			if absf(cn.y) < 0.5 and cn.dot(vdir) < best_score:
+				best_score = cn.dot(vdir)
 				best = c
+	if best.is_empty():
+		for k: int in range(maxi(m - 2, 0), mini(m + 2, rec.size())):
+			for c: Array in rec[k][7]:
+				var score: float = (c[1] as Vector3).dot(vdir)
+				if score < best_score:
+					best_score = score
+					best = c
 	var d: Dictionary = {"run": run, "tick": m, "loss_frac": frac, "hard_stop": hard, "state": rec[m][2],
 		"pos": rec[m][0], "speed_before": (rec[i][1] as Vector3).length(), "speed_after": (rec[j][1] as Vector3).length(),
 		"on_wall": rec[m][4], "wall_normal": rec[m][5], "on_floor": rec[m][3],
 		"collider": "none", "collider_path": "", "normal": Vector3.ZERO, "contact": rec[m][0], "contact_h": 0.0, "horizontal": false,
-		"owner": str(run["top"]), "kind": "logic", "incidence": 0.0, "obstacle_h": 0.0, "head_on": false}
+		"owner": str(run["top"]), "kind": "logic", "incidence": 0.0, "obstacle_h": 0.0, "head_on": false, "wall_flag": false}
+	for k: int in range(maxi(m - 10, 0), mini(m + 4, rec.size())):
+		if bool(rec[k][4]):
+			d["wall_flag"] = true  ## the skater itself reported a wall touch in the window
+	if best.is_empty() or (best[1] as Vector3).y > 0.85:
+		var wc: Array = _wall_contact(rec, m, vdir)  ## the skater flagged a wall hit but the slide list only holds the floor: cast for the wall
+		if not wc.is_empty():
+			best = wc
 	if best.is_empty():
 		return d
 	var obj: Object = instance_from_id(best[0])
@@ -418,6 +545,25 @@ func _describe(rec: Array, run: Dictionary, i: int, j: int, frac: float, hard: b
 	d["head_on"] = d["horizontal"] and float(d["incidence"]) > HEAD_ON and obst_h > 0.2  ## a real wall hit square-on: stopping is correct
 	d["kind"] = _classify(rec, run, m, best, d)
 	return d
+
+
+## [collider id, normal, point] of the wall the skater reported touching (on_wall) within the ticks around m, found by a ray from the
+## body along -wall_normal; [] when there was none.
+func _wall_contact(rec: Array, m: int, vdir: Vector3) -> Array:
+	var space: PhysicsDirectSpaceState3D = get_viewport().world_3d.direct_space_state
+	for k: int in range(mini(m + 3, rec.size() - 1), maxi(m - 10, 0) - 1, -1):
+		if not bool(rec[k][4]):
+			continue
+		var wn: Vector3 = rec[k][5]
+		if wn.length() < 0.5:
+			continue
+		var from: Vector3 = (rec[k][0] as Vector3) + Vector3(0.0, 0.3, 0.0)
+		var q := PhysicsRayQueryParameters3D.create(from, from - wn * 1.4, 1)
+		var hit: Dictionary = space.intersect_ray(q)
+		if hit.is_empty():
+			continue
+		return [(hit["collider"] as Object).get_instance_id(), wn, hit["position"]]
+	return []
 
 
 func _classify(rec: Array, run: Dictionary, m: int, col: Array, d: Dictionary) -> String:
@@ -465,21 +611,26 @@ func _report(n_runs: int, all_snags: Array) -> void:
 		elif bool(s.get("head_on", false)) and not args.has("include_headon"):
 			headon += 1
 		else:
+			s["cls"] = _snag_class(s)
 			snags.append(s)
 	for s: Dictionary in snags:
 		var c: Vector3 = s["contact"]
 		var key: String = "%s@%.1f,%.1f" % [s["owner"], roundf(c.x / CELL) * CELL, roundf(c.z / CELL) * CELL]
 		if not groups.has(key):
 			groups[key] = {"key": key, "piece": s["owner"], "cell": [roundf(c.x / CELL) * CELL, roundf(c.z / CELL) * CELL], "count": 0, "loss_sum": 0.0, "worst": s,
-				"kinds": {}, "head_on": 0}
+				"kinds": {}, "head_on": 0, "real": 0}
 		var g: Dictionary = groups[key]
 		g["count"] = int(g["count"]) + 1
 		g["loss_sum"] = float(g["loss_sum"]) + float(s["loss_frac"])
+		if str(s["cls"]) == "real":
+			g["real"] = int(g["real"]) + 1
 		g["kinds"][s["kind"]] = int((g["kinds"] as Dictionary).get(s["kind"], 0)) + 1
 		if float(s["loss_frac"]) > float((g["worst"] as Dictionary)["loss_frac"]):
 			g["worst"] = s
 	var hot: Array = groups.values()
 	hot.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a["real"] != b["real"]:
+			return int(a["real"]) > int(b["real"])  ## real geometry snags first
 		if a["count"] != b["count"]:
 			return int(a["count"]) > int(b["count"])
 		return float(a["loss_sum"]) > float(b["loss_sum"]))
@@ -497,27 +648,67 @@ func _report(n_runs: int, all_snags: Array) -> void:
 		g["kind"] = kind
 		g["rank"] = rank
 		if rank < shown:
-			print("SNAG %s (%.1f,%.1f) count=%d worst_loss=%d%% kind=%s normal=%s contact_h=%.2f incidence=%.2f example=%s" % [g["piece"], (g["cell"] as Array)[0], (g["cell"] as Array)[1],
-				g["count"], roundi(float(w["loss_frac"]) * 100.0), kind, _v3s(w["normal"]), float(w["contact_h"]), float(w["incidence"]), _run_str(w["run"])])
+			print("SNAG %s (%.1f,%.1f) count=%d real=%d worst_loss=%d%% kind=%s normal=%s contact_h=%.2f incidence=%.2f example=%s" % [g["piece"], (g["cell"] as Array)[0], (g["cell"] as Array)[1],
+				g["count"], g["real"], roundi(float(w["loss_frac"]) * 100.0), kind, _v3s(w["normal"]), float(w["contact_h"]), float(w["incidence"]), _run_str(w["run"])])
 		rank += 1
 	print("SNAG note %d square-on wall hits (incidence>%.2f onto a >0.2 m obstacle) excluded as legitimate stops; --include_headon keeps them" % [headon, HEAD_ON])
-	print("SNAG excluded bail_slide=%d ramp_apex=%d head_on=%d (not counted below)" % [int(excluded.get("bail_slide", 0)), int(excluded.get("ramp_apex", 0)), headon])
-	print("SNAG summary runs=%d snags=%d hotspots=%d" % [n_runs, snags.size(), hot.size()])
-	DirAccess.make_dir_recursive_absolute(OUT_DIR)
+	print("SNAG excluded bail_slide=%d ramp_apex=%d boundary=%d air_wall=%d head_on=%d (not counted below)" % [int(excluded.get("bail_slide", 0)), int(excluded.get("ramp_apex", 0)), int(excluded.get("boundary", 0)), int(excluded.get("air_wall", 0)), headon])
+	var real_n: int = 0
+	var ramp_n: int = 0
+	var air_n: int = 0
+	var real_hot: int = 0
+	for s: Dictionary in snags:
+		if str(s["cls"]) == "real":
+			real_n += 1
+		elif str(s["cls"]) == "ramp":
+			ramp_n += 1
+		elif str(s["cls"]) == "air":
+			air_n += 1
+	for g: Dictionary in hot:
+		if int(g["real"]) > 0:
+			real_hot += 1
+	print("SNAG classes real=%d ramp=%d air=%d expected_wall=%d" % [real_n, ramp_n, air_n, snags.size() - real_n - ramp_n - air_n])
+	print("SNAG summary runs=%d snags=%d hotspots=%d real=%d real_hotspots=%d" % [n_runs, snags.size(), hot.size(), real_n, real_hot])
+	DirAccess.make_dir_recursive_absolute(out_dir)
 	var hj: Array = []
 	for g: Dictionary in hot:
 		hj.append(_jsonable(g))
 	var sj: Array = []
 	for s: Dictionary in snags:
 		sj.append(_jsonable(s))
-	var f: FileAccess = FileAccess.open(OUT_DIR + "/snags.json", FileAccess.WRITE)
-	f.store_string(JSON.stringify({"version": 1, "runs": n_runs, "snags": snags.size(), "real_snags": snags.size(), "excluded": {"bail_slide": int(excluded.get("bail_slide", 0)), "ramp_apex": int(excluded.get("ramp_apex", 0)), "head_on": headon}, "hotspots": hj, "all": sj}, "  "))
+	var f: FileAccess = FileAccess.open(out_dir + "/snags.json", FileAccess.WRITE)
+	f.store_string(JSON.stringify({"version": 1, "runs": n_runs, "snags": snags.size(), "real_snags": real_n, "ramp": ramp_n, "air": air_n, "expected_wall": snags.size() - real_n - ramp_n - air_n, "real_hotspots": real_hot, "excluded": {"bail_slide": int(excluded.get("bail_slide", 0)), "ramp_apex": int(excluded.get("ramp_apex", 0)), "boundary": int(excluded.get("boundary", 0)), "air_wall": int(excluded.get("air_wall", 0)), "head_on": headon}, "hotspots": hj, "all": sj}, "  "))
 	f.close()
+	DirAccess.copy_absolute(out_dir + "/snags.json", "/tmp/lab/snags.json")
+
+
+## Classes: "expected_wall": the skater scraped the side of something wall-like (a horizontal normal on an obstacle at least WALL_H
+## tall, or a wall touch whose cast missed): losing speed there is the wall-scrape rule (skater.gd), not a geometry fault.
+## "air": the skater was airborne when the speed went (a knock off a corner, a bounce, a landing against a side).
+## "ramp": the slowing contact is a sloped surface (a transition or bank met at an angle): reviewed by sampling, not counted as a bug.
+## "real": a flat-floor seam or facet that took speed with no wall involved, a low lip (a horizontal face under WALL_H), or an
+## underside (something overhangs the floor): these are level-geometry bugs until proven otherwise.
+func _snag_class(s: Dictionary) -> String:
+	var n: Vector3 = s["normal"]
+	var has_n: bool = n.length() > 0.5
+	if str(s["state"]) == "AIR":
+		return "air"  ## already airborne when the speed went: a knock off a corner or a landing, judged by the gap and landing tests
+	if has_n and absf(n.y) < 0.15:
+		return "expected_wall" if float(s.get("obstacle_h", 0.0)) >= WALL_H else "real"  ## a low vertical face is a lip
+	if has_n and n.y < -0.5:
+		return "real"  ## the underside of something that overhangs the floor
+	if has_n and n.y < 0.0:
+		return "expected_wall"  ## a leaning wall (a slanted face over the skater's head height)
+	if has_n and n.y <= 0.85:
+		return "ramp"
+	if bool(s.get("wall_flag", false)):
+		return "expected_wall"
+	return "real"
 
 
 func _save_raw(n_runs: int, snags: Array) -> void:
-	DirAccess.make_dir_recursive_absolute(OUT_DIR)
-	var f: FileAccess = FileAccess.open(OUT_DIR + "/snags_raw_%s.json" % str(args.get("shard", "0")), FileAccess.WRITE)
+	DirAccess.make_dir_recursive_absolute(out_dir)
+	var f: FileAccess = FileAccess.open(out_dir + "/snags_raw_%s.json" % str(args.get("shard", "0")), FileAccess.WRITE)
 	f.store_string(JSON.stringify({"runs": n_runs, "snags": _jsonable(snags)}))
 	f.close()
 	print("SNAG shard %s done runs=%d snags=%d" % [str(args.get("shard", "0")), n_runs, snags.size()])
@@ -527,7 +718,7 @@ func _merge(n: int) -> void:
 	var runs: int = 0
 	var snags: Array = []
 	for i: int in n:
-		var f: FileAccess = FileAccess.open(OUT_DIR + "/snags_raw_%d.json" % i, FileAccess.READ)
+		var f: FileAccess = FileAccess.open(out_dir + "/snags_raw_%d.json" % i, FileAccess.READ)
 		if f == null:
 			print("SNAG crash shard %d produced no output" % i)
 			continue
@@ -544,7 +735,7 @@ func _merge(n: int) -> void:
 
 func _jsonable(v: Variant) -> Variant:
 	if v is Vector3:
-		return [snappedf(v.x, 0.001), snappedf(v.y, 0.001), snappedf(v.z, 0.001)]
+		return [snappedf(v.x, 0.000001), snappedf(v.y, 0.000001), snappedf(v.z, 0.000001)]  ## fine enough to replay a corner clip exactly
 	if v is Vector2:
 		return [v.x, v.y]
 	if v is Dictionary:
@@ -573,12 +764,35 @@ func _unjson_run(d: Dictionary) -> Dictionary:
 # --- replay ----------------------------------------------------------------------------------------
 
 func _replay(rank: int) -> void:
-	var f: FileAccess = FileAccess.open(OUT_DIR + "/snags.json", FileAccess.READ)
+	var f: FileAccess = FileAccess.open(out_dir + "/snags.json", FileAccess.READ)
 	var data: Dictionary = JSON.parse_string(f.get_as_text())
 	var hot: Dictionary = data["hotspots"][rank]
 	var run: Dictionary = _unjson_run((hot["worst"] as Dictionary)["run"])
 	print("TRACE hotspot %d %s" % [rank, hot["key"]])
 	print("TRACE run %s" % _run_str(run))
+	if args.has("warm"):  ## contamination test: run every other recorded snag's run on skater 0 first, then the target run, and compare with a fresh skater
+		var allr: Array = data["all"]
+		for w: Variant in allr:
+			_place(skaters[0], _unjson_run((w as Dictionary)["run"]))
+			for t: int in RUN_TICKS:
+				await get_tree().physics_frame
+		_place(skaters[0], run)
+		_place(skaters[1], run)
+		for t: int in RUN_TICKS:
+			await get_tree().physics_frame
+		for k: int in 2:
+			var found: Array = _analyse(skaters[k].get_meta("rec"), run)
+			print("TRACE warm skater %d snags=%d" % [k, found.size()])
+		return
+	if args.has("copies"):  ## the same run on every skater at once: shows whether skaters disturb each other
+		for k: int in skaters.size():
+			_place(skaters[k], run)
+		for t: int in RUN_TICKS:
+			await get_tree().physics_frame
+		for k: int in skaters.size():
+			var found: Array = _analyse(skaters[k].get_meta("rec"), run)
+			print("TRACE copy %d snags=%d %s" % [k, found.size(), "" if found.is_empty() else str((found[0] as Dictionary)["kind"])])
+		return
 	var sk: Variant = skaters[0]
 	_place(sk, run)
 	for t: int in RUN_TICKS:
@@ -589,6 +803,9 @@ func _replay(rank: int) -> void:
 	if not snag_list.is_empty():
 		onset = int((snag_list[0] as Dictionary)["tick"])
 	print("TRACE onset tick=%d (replayed snags=%d)" % [onset, snag_list.size()])
+	if not snag_list.is_empty():
+		var sn0: Dictionary = snag_list[0]
+		print("TRACE verdict kind=%s class=%s excl='%s' owner=%s normal=%s obstacle_h=%.2f incidence=%.2f wall_flag=%s head_on=%s" % [sn0["kind"], _snag_class(sn0), sn0.get("excl", ""), sn0["owner"], _v3s(sn0["normal"]), float(sn0["obstacle_h"]), float(sn0["incidence"]), sn0["wall_flag"], sn0["head_on"]])
 	for k: int in range(maxi(onset - 6, 0), mini(onset + 8, rec.size())):
 		var r: Array = rec[k]
 		var p: Vector3 = r[0]
