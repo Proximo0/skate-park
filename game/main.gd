@@ -194,6 +194,7 @@ func _process(delta: float) -> void:
 
 func _restart() -> void:
 	skater.respawn()
+	skater.combo.landed_total = 0  ## a retry is a fresh run: run-score goals must not carry the old total
 	goals.start_run(_t)
 
 

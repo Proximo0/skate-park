@@ -41,6 +41,9 @@ const NOLLIE_IN: float = 0.18
 const NOLLIE_OUT: float = 0.14
 
 var _skater: Skater
+## First-time coach tips (game/ui/coach_tips.gd). Off in scripted runs so bots, goldens and captures stay as they were.
+var coach_tips_enabled: bool = not Flags.is_scripted_run()
+var _coach: CoachTips = null
 var _shown_score: float = 0.0
 var _time: float = 0.0
 var _vertical_balance: bool = false
@@ -183,6 +186,11 @@ func bind(skater: Skater) -> void:
 	_shown_score = float(skater.combo.landed_total)
 	if is_node_ready():
 		_connect_skater(skater)
+	if coach_tips_enabled and _coach == null:
+		_coach = CoachTips.new()
+		_coach.name = "CoachTips"
+		add_child(_coach)
+		_coach.bind(skater)
 
 
 func _connect_skater(s: Skater) -> void:

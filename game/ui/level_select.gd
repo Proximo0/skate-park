@@ -10,20 +10,29 @@ signal chosen(level_id: String)
 signal closed
 
 const LS_COLUMNS: int = 3
-const LS_CARD_SIZE := Vector2(560, 412)
-const LS_IMAGE_SIZE := Vector2(524, 228)
+const LS_CARD_SIZE := Vector2(560, 392)
+const LS_IMAGE_SIZE := Vector2(524, 172)
 const LS_NAME_FONT: int = 40
 const LS_BLURB_FONT: int = 23
 const LS_TAG_FONT: int = 22
+const LS_STAT_FONT: int = 24
 
 ## Grabs focus on this level's card when the screen opens ("" = the current selection).
 var focus_id: String = ""
 var _cards: Dictionary = {}  ## id -> Button
 var _back: Button
 var _detail: Label
+var _unlock_btn: Button
+## Career numbers (stars, goals, bests, locks). The shared store by default; tests hand in their own before add_child.
+var store: ProgressStore = null
+var _locks: Dictionary = {}  ## id -> Control (the LOCKED cover over the preview)
+var _lock_texts: Dictionary = {}  ## id -> Label
+var _stat_texts: Dictionary = {}  ## id -> Label
 
 
 func _ready() -> void:
+	if store == null:
+		store = ProgressStore.shared()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -91,6 +100,7 @@ func _build() -> void:
 		var card: Button = _card(e)
 		grid.add_child(card)
 		_cards[str(e["id"])] = card
+	_refresh_locks()
 
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 28)
@@ -105,8 +115,18 @@ func _build() -> void:
 	_back.pressed.connect(func() -> void: closed.emit())
 	_back.mouse_entered.connect(_back.grab_focus)
 	bar.add_child(_back)
+	_unlock_btn = Button.new()
+	_unlock_btn.name = "UnlockAll"
+	_unlock_btn.theme_type_variation = SkateThemeBuilder.BTN_TEAL
+	_unlock_btn.custom_minimum_size = Vector2(380, 66)
+	_unlock_btn.add_theme_font_size_override("font_size", 28)
+	_unlock_btn.pressed.connect(_on_unlock_all)
+	_unlock_btn.mouse_entered.connect(_unlock_btn.grab_focus)
+	bar.add_child(_unlock_btn)
+	_back.focus_neighbor_right = _unlock_btn.get_path()
+	_unlock_btn.focus_neighbor_left = _back.get_path()
 	_detail = Label.new()
-	_detail.text = "Arrows: pick    Cross / Enter: ride    Circle / Esc: back"
+	_detail.text = "Cross / Enter: ride    Circle / Esc: back"
 	_detail.add_theme_font_override("font", SkateThemeBuilder.heading_font())
 	_detail.add_theme_font_size_override("font_size", 28)
 	_detail.add_theme_color_override("font_color", SkateThemeBuilder.CREAM)
@@ -123,6 +143,7 @@ func _build() -> void:
 			(_cards[ids[i]] as Button).focus_neighbor_bottom = _back.get_path()
 	var mid: int = mini(last_row * LS_COLUMNS + 1, ids.size() - 1)
 	_back.focus_neighbor_top = (_cards[ids[mid]] as Button).get_path()
+	_refresh_locks()
 
 
 ## One level card: a cream sticker button holding the preview, a mood tag, the name and the blurb.
@@ -135,7 +156,7 @@ func _card(e: Dictionary) -> Button:
 	b.custom_minimum_size = LS_CARD_SIZE
 	b.focus_mode = Control.FOCUS_ALL
 	b.mouse_entered.connect(b.grab_focus)
-	b.pressed.connect(func() -> void: chosen.emit(id))
+	b.pressed.connect(func() -> void: _on_card_pressed(id, b))
 
 	var pad := MarginContainer.new()
 	pad.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -193,6 +214,11 @@ func _card(e: Dictionary) -> Button:
 	holder.add_child(tag)
 	frame.add_child(holder)
 
+	var lock := _lock_cover()
+	frame.add_child(lock)
+	_locks[id] = lock
+	_lock_texts[id] = lock.find_child("LockText", true, false)
+
 	var title_row := HBoxContainer.new()
 	title_row.add_theme_constant_override("separation", 12)
 	title_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -206,12 +232,104 @@ func _card(e: Dictionary) -> Button:
 	var name_l := MenuKit.text(str(e["name"]), LS_NAME_FONT, SkateThemeBuilder.NAVY)
 	name_l.add_theme_font_override("font", SkateThemeBuilder.heading_font())
 	title_row.add_child(name_l)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_row.add_child(spacer)
+	var stars := StarRow.new()
+	stars.name = "Stars"
+	stars.count = store.stars(id)
+	title_row.add_child(stars)
 
 	var blurb := MenuKit.text(str(e["blurb"]), LS_BLURB_FONT, SkateThemeBuilder.MUTED)
 	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	blurb.custom_minimum_size = Vector2(LS_IMAGE_SIZE.x, 0)
 	v.add_child(blurb)
+	var stat := MenuKit.text(stat_line(id), LS_STAT_FONT, accent.darkened(0.45))
+	stat.name = "Stat"
+	stat.add_theme_font_override("font", SkateThemeBuilder.heading_font())
+	v.add_child(stat)
+	_stat_texts[id] = stat
 	return b
+
+
+## "Goals 5/12   Best 12,400" (or "No runs yet").
+func stat_line(id: String) -> String:
+	var total: int = ProgressStore.goal_total(id)
+	var line: String = "Goals %d/%d" % [store.goals_done_count(id), total]
+	if store.best_score(id) > 0:
+		line += "    Best %s" % Hud.format_points(store.best_score(id))
+	return line
+
+
+func _lock_cover() -> Control:
+	var c := ColorRect.new()
+	c.color = Color(SkateThemeBuilder.NAVY, 0.82)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.add_child(box)
+	var head := AnimeText.new("LOCKED", 56, SkateThemeBuilder.CORAL)
+	head.impact_lines = false
+	head.custom_minimum_size = Vector2(0, 80)
+	head.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(head)
+	var t := MenuKit.text("", 26, SkateThemeBuilder.CREAM)
+	t.name = "LockText"
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(t)
+	return c
+
+
+## Locked cards show the cover and say how many goals open them.
+func _refresh_locks() -> void:
+	for id: String in _locks:
+		var need: int = store.goals_to_unlock(id)
+		(_locks[id] as Control).visible = need > 0
+		(_lock_texts[id] as Label).text = "Finish %d more goal%s" % [need, "" if need == 1 else "s"]
+		(_stat_texts[id] as Label).text = stat_line(id)
+	if _unlock_btn != null:
+		_unlock_btn.text = "Unlock all levels: %s" % ("On" if store.unlock_all else "Off")
+
+
+func _on_unlock_all() -> void:
+	store.unlock_all = not store.unlock_all
+	store.save()
+	_refresh_locks()
+
+
+func _on_card_pressed(id: String, card: Button) -> void:
+	if not store.is_unlocked(id):
+		var tw := card.create_tween()  # a small refusal shake
+		for dx: float in [-10.0, 10.0, -6.0, 0.0]:
+			tw.tween_property(card, "rotation_degrees", dx * 0.2, 0.05)
+		return
+	chosen.emit(id)
+
+
+## Three stars drawn as polygons (the heading font has no star glyph): filled gold up to `count`, outlined after.
+class StarRow:
+	extends Control
+	var count: int = 0
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(108, 36)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		for i: int in 3:
+			var c := Vector2(17.0 + 36.0 * i, 19.0)
+			var pts := PackedVector2Array()
+			for k: int in 10:
+				var r: float = 16.0 if k % 2 == 0 else 7.0
+				var a: float = -PI / 2.0 + TAU * float(k) / 10.0
+				pts.append(c + Vector2(cos(a), sin(a)) * r)
+			var on: bool = i < count
+			draw_colored_polygon(pts, SkateThemeBuilder.SUN if on else Color(SkateThemeBuilder.MUTED, 0.25))
+			pts.append(pts[0])
+			draw_polyline(pts, SkateThemeBuilder.NAVY, 3.0, true)
 
 
 ## The painted stand-in for a level without a rendered preview: a sky gradient in the level's accent, a sun and a

@@ -101,6 +101,14 @@ func reset() -> void:
 	_run_start = 0.0
 
 
+## Marks goals done from a saved career, without emitting goal_completed (no second reward). Unknown ids are ignored.
+func mark_done(ids: PackedStringArray) -> void:
+	for id: String in ids:
+		if _index_by_id.has(id):
+			_done[id] = true
+			_progress[id] = 1.0
+
+
 ## Every goal, in file order, as copies.
 func all_goals() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
