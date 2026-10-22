@@ -61,3 +61,19 @@ func test_trick_string_is_below_the_skater() -> void:
 	# the skater sits mid-screen; the trick string and the pop-ups must live in the lower band, never over them
 	assert_true(Hud.TRICK_Y >= 0.72, "trick string bottom-centre")
 	assert_true(Hud.FLOAT_Y >= 0.8 and Hud.FLOAT_X > 0.65, "points pop lower right")
+
+
+func test_bail_shows_the_dead_combo_struck_and_clears_the_live_one() -> void:
+	var tree: SceneTree = Engine.get_main_loop() as SceneTree
+	var hud: Hud = Hud.new()
+	tree.root.add_child(hud)
+	hud._combo_box.visible = true
+	hud._last_base = 1250
+	hud._last_total_mult = 4
+	hud._on_combo_bailed("Kickflip + Heelflip")
+	assert_false(hud._combo_box.visible, "the live combo readout is gone on a bail")
+	assert_true(hud._fail_box.visible, "the failed combo shows")
+	assert_eq(hud._fail_trick.text, "Kickflip + Heelflip", "the dead combo keeps its trick line")
+	assert_eq(hud._fail_pts.text, "1,250 x 4", "and its points")
+	assert_true(hud._fail_shown, "shown once per bail")
+	hud.queue_free()

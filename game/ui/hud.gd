@@ -28,6 +28,9 @@ const TRICK_SIZE: int = 62
 const FLOAT_X: float = 0.8  ## +points and CLEAN! pop lower right, clear of the skater and the trick string
 const FLOAT_Y: float = 0.86
 const MULT_SIZE: int = 54
+const FAIL_RED: Color = Color(1.0, 0.22, 0.25)
+const FAIL_HOLD: float = 0.55  ## s the dead combo sits on screen before it fades
+const FAIL_FADE: float = 0.7
 const BANNER_TOP: float = 215.0  ## px (1080 layout) under the score chip, away from the centre readouts
 const TRACK_COLOUR := SkateThemeBuilder.CREAM
 const SPECIAL_GLOW_WIDTH: int = 6
@@ -49,6 +52,15 @@ var _combo_trick: Label
 var _combo_pts: AnimeText
 var _combo_mult: AnimeText
 var _last_mult: int = 1
+var _fail_box: VBoxContainer  ## the dead combo: struck through in red with BAILED under it, then it fades
+var _fail_trick: Label
+var _fail_pts: Label
+var _fail_word: AnimeText
+var _fail_tween: Tween
+var _fail_shown: bool = false  ## this bail's failed combo has been shown (reset once the skater is up again)
+var _last_names: String = ""  ## the live combo as of the last frame, so a bail that clears it first can still show it
+var _last_base: int = 0
+var _last_total_mult: int = 1
 var _special_fill: Panel
 var _fill_style: StyleBoxFlat
 var _special_glow: Panel
@@ -127,6 +139,7 @@ func _ready() -> void:
 	_build_score()
 	_build_gaps()
 	_build_combo()
+	_build_fail()
 	_build_special()
 	_build_balance()
 	_build_trick_pop()
@@ -277,10 +290,20 @@ func _update_trick_hold(delta: float) -> void:
 
 
 func _update_combo(combo: Combo) -> void:
-	var active: bool = combo.is_active()
+	var bailing: bool = _skater.state.state == SkateState.State.BAIL or _skater.ragdoll_active
+	if not bailing:
+		_fail_shown = false
+	## A combo with no trick open (a bare gap) is still live when the skater bails and no combo_bailed comes: the dead
+	## combo is shown failed here and the live readout never draws during the bail.
+	if bailing and combo.is_active() and not _fail_shown:
+		_show_failed_combo(combo.display_text(), combo.base_sum(), combo.multiplier())
+	var active: bool = combo.is_active() and not bailing
 	_combo_box.visible = active
 	_pending_label.visible = active
 	if active:
+		_last_names = combo.display_text()
+		_last_base = combo.base_sum()
+		_last_total_mult = combo.multiplier()
 		var names: String = combo.display_text()
 		## The big pop already shows the newest trick: drop the small duplicate when it is the same single word.
 		_combo_trick.visible = not (_trick_shown and names.to_upper() == _pop_text)
@@ -441,6 +464,53 @@ func _build_combo() -> void:
 	_combo_mult.tilt_degrees = 6.0
 	_combo_mult.rotation_degrees = 6.0
 	row.add_child(_combo_mult)
+
+
+func _shake_fail(k: float) -> void:
+	_fail_box.pivot_offset = _fail_box.size * 0.5
+	_fail_box.rotation_degrees = 4.0 * (1.0 - k) * sin(k * TAU * 3.0)
+
+
+## A label with a red strike line across its middle (the dead combo's lines).
+func _struck_label(size: int) -> Label:
+	var lbl: Label = UiStyle.label("", size, FAIL_RED)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER  ## as wide as its text, so the strike spans just the words
+	var strike := ColorRect.new()
+	strike.color = FAIL_RED
+	strike.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	strike.anchor_left = 0.0
+	strike.anchor_right = 1.0
+	strike.anchor_top = 0.55
+	strike.anchor_bottom = 0.55
+	strike.offset_top = -3.0
+	strike.offset_bottom = 3.0
+	strike.offset_left = -8.0
+	strike.offset_right = 8.0
+	lbl.add_child(strike)
+	return lbl
+
+
+func _build_fail() -> void:
+	_fail_box = VBoxContainer.new()
+	_fail_box.add_theme_constant_override("separation", 0)
+	_fail_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_anchor_bottom_centre(_fail_box)
+	_fail_box.offset_top = -COMBO_BOTTOM
+	_fail_box.offset_bottom = -COMBO_BOTTOM
+	_fail_box.visible = false
+	_root.add_child(_fail_box)
+	_fail_trick = _struck_label(COMBO_TRICK_SIZE)
+	_fail_box.add_child(_fail_trick)
+	_fail_pts = _struck_label(COMBO_PTS_SIZE * 2 / 3)
+	_fail_box.add_child(_fail_pts)
+	var holder := CenterContainer.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fail_box.add_child(holder)
+	_fail_word = AnimeText.new("BAILED", UiStyle.SIZE_TITLE, FAIL_RED)
+	_fail_word.impact_lines = false
+	_fail_word.tilt_degrees = -5.0
+	holder.add_child(_fail_word)
 
 
 func _build_special() -> void:
@@ -608,12 +678,39 @@ func _spawn_tag(text: String, color: Color, wobble: bool) -> void:
 	move.finished.connect(lbl.queue_free)
 
 
-func _on_combo_bailed(_text: String) -> void:
+func _on_combo_bailed(text: String) -> void:
+	_show_failed_combo(text if text != "" else _last_names, _last_base, _last_total_mult)
+
+
+## The combo visibly fails: the trick line and its points go red with a strike through them, BAILED slams in under
+## them and the box shakes, holds a moment, then fades. The live readout is already gone.
+func _show_failed_combo(names: String, base: int, mult: int) -> void:
+	_fail_shown = true
 	if _trick_tween != null and _trick_tween.is_valid():
 		_trick_tween.kill()
 	_trick_shown = false
 	_trick_pop.modulate.a = 0.0
-	_spawn_float("Bail!", UiStyle.BUBBLEGUM, true, UiStyle.SIZE_TITLE)
+	_combo_box.visible = false
+	_pending_label.visible = false
+	if names == "":
+		names = "Combo"
+	_fail_trick.text = names
+	_fail_trick.label_settings.font_size = trick_size(names.to_upper()) - 14
+	_fail_pts.text = combo_line(base, mult) if base > 0 else ""
+	_fail_pts.visible = base > 0
+	_fail_word.pop("BAILED")
+	if _fail_tween != null and _fail_tween.is_valid():
+		_fail_tween.kill()
+	_fail_box.visible = true
+	_fail_box.modulate = Color(2.2, 0.5, 0.5, 1.0)  ## red flash
+	_fail_tween = create_tween()
+	_fail_tween.tween_property(_fail_box, "modulate", Color.WHITE, 0.18)
+	_fail_tween.parallel().tween_method(_shake_fail, 0.0, 1.0, 0.35)  ## a quick rocking shake that dies away
+	_fail_tween.tween_interval(FAIL_HOLD)
+	_fail_tween.tween_property(_fail_box, "modulate:a", 0.0, FAIL_FADE)
+	_fail_tween.tween_callback(func() -> void:
+		_fail_box.visible = false
+		_fail_box.rotation_degrees = 0.0)
 
 
 ## Q + E with no ramp in reach: a small hint, not a banner.

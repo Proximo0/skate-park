@@ -325,3 +325,31 @@ func test_carried_board_sways_with_the_stride_and_stays_in_hand() -> void:
 	assert_true((a["board_rot"] as Vector3).distance_to(b["board_rot"]) > 3.0, "board swings with the stride")
 	for p: Dictionary in [a, b]:
 		assert_near(float(p["grip_R"]), 1.0, 0.001, "right hand holds the board")
+
+
+func test_vrm_stall_tips_further_than_the_houdini_cap() -> void:
+	var houdini: float = (SkaterPoser.pose_for("grind_five_oh", 0.3, 0.6, 0.0)["board_rot"] as Vector3).x
+	var vrm: float = (SkaterPoser.pose_for("grind_five_oh", 0.3, 0.6, 0.0, false, 0.0, 0.0, {"vrm": true})["board_rot"] as Vector3).x
+	assert_near(houdini, SkaterPoser.GRIND_STALL, 0.01, "Houdini bodies keep the 6 degree cap")
+	assert_near(vrm, SkaterPoser.GRIND_STALL_VRM, 0.01, "the VRoid lead tips the 5-0 board 14 degrees")
+	var nose: Dictionary = SkaterPoser.pose_for("grind_nosegrind", 0.3, 0.6, 0.0, false, 0.0, 0.0, {"vrm": true})
+	assert_near((nose["board_rot"] as Vector3).x, -SkaterPoser.GRIND_STALL_VRM, 0.01, "nosegrind tips tail up")
+
+
+func test_nollie_pops_off_the_nose_with_weight_forward() -> void:
+	var load_pose: Dictionary = SkaterPoser.pose_for("nollie", 0.0, 0.0, 0.0)
+	var pop: Dictionary = SkaterPoser.pose_for("nollie", SkaterPoser.POP_TIME, 0.0, 0.0)
+	assert_true(_has_full_pose(pop), "a full pose")
+	assert_true((pop["board_rot"] as Vector3).x < -15.0, "the nose snaps down: tail up")
+	assert_true(float(load_pose["pitch"]) > 5.0, "weight forward in the load")
+	assert_true((load_pose["foot_R"] as Vector3).y < ANKLE_ON_DECK + 0.01 and (load_pose["foot_L"] as Vector3).y < ANKLE_ON_DECK + 0.01, "feet on the deck in the load")
+	var end: Dictionary = SkaterPoser.pose_for("nollie", 1.0, 0.0, 0.0)
+	assert_near((end["board_rot"] as Vector3).x, 0.0, 0.01, "board levels out")
+
+
+func test_powerslide_turns_the_board_across_and_counter_rotates_the_shoulders() -> void:
+	var p: Dictionary = SkaterPoser.pose_for("powerslide", 0.5, 0.0, 0.0)
+	assert_near((p["board_rot"] as Vector3).y, 90.0, 0.01, "board a quarter turn across the line")
+	assert_true(float(p["body_yaw"]) < float(p["feet_yaw"]), "the body turns less than the feet")
+	assert_true((p["Chest"] as Vector3).y < -10.0, "shoulders counter-rotate")
+	assert_true(float(p["hips_y"]) < SkaterPoser.IDLE_HIPS - 0.1, "low stance")

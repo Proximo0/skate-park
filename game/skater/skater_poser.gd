@@ -81,14 +81,17 @@ const IDLE_CYCLE: float = 10.0
 const GETUP_BLEND: float = 0.45
 const GETUP_BOARD_REACH: float = 1.5  ## a ragdoll board farther than this from the feet is not blended back
 ## Powerslide (anim "powerslide"): board turned across the line, rider sitting back against the slide.
-const POWERSLIDE_YAW: float = 80.0
+const POWERSLIDE_YAW: float = 90.0
 const REVERT_TIME: float = 0.3
 const SPECIAL_SPIN_TIME: float = 2.0
 const FALL_TIME: float = 0.5
 const LEAN_MAX: float = 25.0
 const MANUAL_PITCH: float = 12.0
 const LIP_PITCH: float = 70.0
-const GRIND_STALL: float = 6.0  ## 5-0 / nosegrind: board pitch about the grinding truck, the free end up
+const GRIND_STALL: float = 6.0  ## 5-0 / nosegrind: board pitch about the grinding truck, the free end up (Houdini bodies)
+## The VRoid lead (ctx "vrm"): its own leg lengths and IK keep the feet on the tilted deck and its garments are skin,
+## so the stall can tip the board a believable amount. Houdini garments (never grinding in play) keep the small cap.
+const GRIND_STALL_VRM: float = 14.0
 const GRIND_BLUNT: float = 50.0  ## blunt slide: board stood up nose high on its tail
 ## "drop_in" (the ramp snap): tail hooked on the coping with the nose up for RampSnap.HANG_TIME, then the front foot
 ## stomps the nose down over RampSnap.STOMP_TIME while the rider leans into the ramp; then the board rolls over the
@@ -111,6 +114,7 @@ const REAR_TRUCK: Vector3 = Vector3(0.0, 0.0, AnimeBoard.TRUCK_Z)
 const FRONT_TRUCK: Vector3 = Vector3(0.0, 0.0, -AnimeBoard.TRUCK_Z)
 const WHEEL_CONTACT_Z: float = AnimeBoard.TRUCK_Z + 0.03  ## manual pivot: where the wheels touch the ground
 const TAIL_TIP: Vector3 = Vector3(0.0, 0.0, 0.40)
+const NOSE_TIP: Vector3 = Vector3(0.0, 0.0, -0.40)  ## nollie pivot: the nose snaps down onto the ground
 const GRAB_RISE: float = 0.72  ## board comes up to the knees
 const GRAB_LIFT: float = 0.24  ## the body rises less, so the knees tuck
 const GRAB_CURL: float = 50.0
@@ -240,6 +244,7 @@ func _skater_ctx(delta: float) -> Dictionary:
 		_prev_facing = fh.normalized() if fh.length() > 0.01 else _prev_facing
 	_carve_s = lerpf(_carve_s, raw, 1.0 - exp(-6.0 * delta))
 	ctx["carve"] = _carve_s
+	ctx["vrm"] = body is VrmBody
 	return ctx
 
 
@@ -439,7 +444,7 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 	elif anim.begins_with("grab_"):
 		_pose_grab(pose, anim, t)
 	elif anim.begins_with("grind_"):
-		_pose_grind(pose, anim, t, maxf(c, 0.55), b)
+		_pose_grind(pose, anim, t, maxf(c, 0.55), b, GRIND_STALL_VRM if bool(ctx.get("vrm", false)) else GRIND_STALL)
 	elif anim.begins_with("manual_"):
 		_pose_manual(pose, anim, t, maxf(c, 0.2), b)
 	elif anim.begins_with("lip_"):
@@ -472,6 +477,8 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 			"idle_ride":
 				_pose_idle(pose, c)
 				_idle_life(pose, t, ride_speed)
+			"nollie":
+				_pose_nollie(pose, t, ext)
 			"powerslide":
 				_pose_powerslide(pose, t, c)
 			"revert":
@@ -736,6 +743,31 @@ static func _pose_ollie(pose: Dictionary, t: float, ext: float = 0.0) -> void:
 	var front_z: float = -0.12 * slide * (1.0 - 0.45 * tuck)
 	_feet_on_board(pose, Vector3(0.0, 0.0, front_z), Vector3(0.0, 0.0, 0.07 * (1.0 - level) * (1.0 - level)))
 	pose["fpitch_L"] = 14.0 * sin(PI * slide)
+
+
+## Nollie (anim "nollie"; the mirror of the ollie): the weight sits forward over the front foot, which snaps the nose
+## down (board pitched tail up about the nose tip) while the back foot slides back off the bolts toward the tail, then
+## the board levels and rises into the tucked feet. Hips low and shoulders over the front knee in the load.
+static func _pose_nollie(pose: Dictionary, t: float, ext: float = 0.0) -> void:
+	var pop: float = clampf(t / POP_TIME, 0.0, 1.0)
+	var level: float = _smooth(clampf((t - POP_TIME) / (LEVEL_TIME - POP_TIME), 0.0, 1.0))
+	var slide: float = _smooth((t - 0.01) / (LEVEL_TIME - 0.01))  ## back foot dragging toward the tail
+	var tuck: float = _smooth((t - POP_TIME * 0.5) / 0.2)
+	var pitch: float = -26.0 * sin(PI * 0.5 * pop) * (1.0 - level)
+	_board_turn(pose, Vector3(pitch, 0.0, 0.0), NOSE_TIP)
+	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.0, 0.2 * tuck * (1.0 - 0.85 * ext), 0.0)
+	var coil: float = 1.0 - _smooth(pop)
+	pose["hips_y"] = IDLE_HIPS - 0.17 * coil + 0.025 * sin(PI * pop) - 0.02 * tuck * (1.0 - ext)
+	pose["pitch"] = 9.0 * coil + 3.0 * (1.0 - coil) * (1.0 - tuck)  ## the body tips forward over the nose
+	pose["Hips"] = Vector3(6.0 * coil, 0.0, 0.0)
+	_curl(pose, 16.0 + 18.0 * coil + 4.0 * tuck * (1.0 - ext))
+	pose["Head"] = Vector3(6.0 * coil - 8.0 * tuck, 0.0, 0.0)  ## eyes down the line, then on the board
+	var up: float = _smooth(pop * 1.4) * (1.0 - 0.35 * ext)
+	_arms(pose, Vector3(14.0 * coil + 20.0 * up, 0.0, -18.0 - 40.0 * up),
+			Vector3(-16.0 * coil + 20.0 * up, 0.0, 18.0 + 46.0 * up), 24.0)
+	var back_z: float = 0.13 * slide * (1.0 - 0.5 * tuck)
+	_feet_on_board(pose, Vector3(0.0, 0.0, -0.04 * (1.0 - level)), Vector3(0.0, 0.0, back_z))
+	pose["fpitch_R"] = 14.0 * sin(PI * slide)
 
 
 ## In the air the board stays up under tucked feet, then the legs extend for the landing.
@@ -1016,7 +1048,7 @@ static func _pose_getup(pose: Dictionary, t: float) -> void:
 	pose["lean"] = 30.0 * rest * rest
 
 
-static func _pose_grind(pose: Dictionary, anim: String, t: float, c: float, b: float) -> void:
+static func _pose_grind(pose: Dictionary, anim: String, t: float, c: float, b: float, stall: float = GRIND_STALL) -> void:
 	# Balance: the body leans with the meter, both arms tilt against it like a balance pole and flail when it is far
 	# out, the hips shift the other way.
 	var flail: float = 35.0 * absf(b) * sin(t * 10.0)
@@ -1030,11 +1062,11 @@ static func _pose_grind(pose: Dictionary, anim: String, t: float, c: float, b: f
 	match anim:
 		"grind_five_oh":
 			# Back truck on the rail, nose held up: weight over the back foot.
-			_board_turn(pose, Vector3(GRIND_STALL, 0.0, 0.0), REAR_TRUCK)
+			_board_turn(pose, Vector3(stall, 0.0, 0.0), REAR_TRUCK)
 			pose["pitch"] = -9.0
 		"grind_nosegrind":
 			# Front truck on the rail, tail up: weight over the front foot.
-			_board_turn(pose, Vector3(-GRIND_STALL, 0.0, 0.0), FRONT_TRUCK)
+			_board_turn(pose, Vector3(-stall, 0.0, 0.0), FRONT_TRUCK)
 			pose["pitch"] = 11.0
 		"grind_crooked_grind":
 			# Front truck, nose down and the board angled across with the nose's toe-side edge on the rail.
@@ -1266,20 +1298,24 @@ static func _pose_crouch(pose: Dictionary, c: float, t: float) -> void:
 	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.8 * sin(t * 1.7), 0.0, 0.0)
 
 
-## Powerslide (not triggered by the physics yet; ready for a slide state): the board kicked round across the line,
-## the rider sitting back low against the slide with the back hand trailing toward the ground and the front arm out.
+## Powerslide (anim "powerslide"): the board kicked a quarter turn across the line, the rider low and sitting back
+## against the slide. The hips and feet stay with the board but the shoulders and head counter-rotate back down the
+## line of travel, the downhill hand trails toward the ground and the other arm balances out the front.
 static func _pose_powerslide(pose: Dictionary, t: float, c: float) -> void:
 	var k: float = _smooth(t / 0.15)
 	var turn: float = POWERSLIDE_YAW * k
-	pose["body_yaw"] = float(pose["body_yaw"]) + turn * 0.6
+	pose["body_yaw"] = float(pose["body_yaw"]) + turn * 0.78
 	pose["feet_yaw"] = float(pose["feet_yaw"]) + turn
 	_board_turn(pose, Vector3(0.0, turn, 0.0), Vector3.ZERO)
-	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * maxf(c, 0.75 * k)
-	pose["lean"] = -14.0 * k
-	_curl(pose, 18.0 * k)
-	pose["Head"] = Vector3(6.0, -20.0 * k, 0.0)
-	_arms(pose, Vector3(30.0, 0.0, -60.0 * k - 10.0), Vector3(-40.0 * k, 0.0, 25.0 + 20.0 * k), 20.0)
-	_feet_on_board(pose)
+	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * maxf(c, 0.9 * k)
+	pose["lean"] = -16.0 * k  ## sat back into the slide
+	pose["pitch"] = -6.0 * k
+	_curl(pose, 12.0 * k)
+	pose["Hips"] = Vector3(-6.0 * k, 0.0, 0.0)
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.0, -26.0 * k, 0.0)  ## shoulders back toward the travel line
+	pose["Head"] = Vector3(4.0, -34.0 * k, 0.0)  ## eyes on where the slide is going
+	_arms(pose, Vector3(30.0, 0.0, -75.0 * k - 10.0), Vector3(-50.0 * k, 0.0, 22.0 + 12.0 * k), 18.0 * k + 8.0)
+	_feet_on_board(pose, Vector3(0.0, 0.0, 0.02 * k), Vector3(0.0, 0.0, -0.02 * k))
 	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.0, 0.0, 2.0 * sin(t * 30.0) * k)  ## chatter
 
 
