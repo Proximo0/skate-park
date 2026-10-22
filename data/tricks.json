@@ -248,17 +248,17 @@
 			"points_per_sec": 50
 		},
 		{
-			"id": "double_melon",
-			"name": "Double Melon",
+			"id": "madonna",
+			"name": "Madonna",
 			"kind": "grab",
 			"button": "grab",
 			"dir": "",
 			"double_tap": true,
-			"points": 300,
-			"anim": "grab_double_melon",
+			"points": 450,
+			"anim": "grab_madonna",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 80
 		},
 		{
 			"id": "nosegrab",
@@ -274,17 +274,17 @@
 			"points_per_sec": 50
 		},
 		{
-			"id": "double_nosegrab",
-			"name": "Double Nosegrab",
+			"id": "rocket_air",
+			"name": "Rocket Air",
 			"kind": "grab",
 			"button": "grab",
 			"dir": "N",
 			"double_tap": true,
-			"points": 350,
-			"anim": "grab_double_nosegrab",
+			"points": 450,
+			"anim": "grab_rocket_air",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 80
 		},
 		{
 			"id": "method",
@@ -300,17 +300,17 @@
 			"points_per_sec": 50
 		},
 		{
-			"id": "double_method",
-			"name": "Double Method",
+			"id": "judo",
+			"name": "Judo",
 			"kind": "grab",
 			"button": "grab",
 			"dir": "NE",
 			"double_tap": true,
-			"points": 400,
-			"anim": "grab_double_method",
+			"points": 450,
+			"anim": "grab_judo",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 80
 		},
 		{
 			"id": "indy",
@@ -326,17 +326,17 @@
 			"points_per_sec": 50
 		},
 		{
-			"id": "double_indy",
-			"name": "Double Indy",
+			"id": "crossbone",
+			"name": "Crossbone",
 			"kind": "grab",
 			"button": "grab",
 			"dir": "E",
 			"double_tap": true,
-			"points": 350,
-			"anim": "grab_double_indy",
+			"points": 400,
+			"anim": "grab_crossbone",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 80
 		},
 		{
 			"id": "benihana",
@@ -352,17 +352,17 @@
 			"points_per_sec": 50
 		},
 		{
-			"id": "double_benihana",
-			"name": "Double Benihana",
+			"id": "christ_air",
+			"name": "Christ Air",
 			"kind": "grab",
 			"button": "grab",
 			"dir": "SE",
 			"double_tap": true,
-			"points": 400,
-			"anim": "grab_double_benihana",
+			"points": 600,
+			"anim": "grab_christ_air",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 80
 		},
 		{
 			"id": "tailgrab",
@@ -378,17 +378,17 @@
 			"points_per_sec": 50
 		},
 		{
-			"id": "double_tailgrab",
-			"name": "Double Tailgrab",
+			"id": "crail",
+			"name": "Crail Grab",
 			"kind": "grab",
 			"button": "grab",
 			"dir": "S",
 			"double_tap": true,
-			"points": 300,
-			"anim": "grab_double_tailgrab",
+			"points": 400,
+			"anim": "grab_crail",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 80
 		},
 		{
 			"id": "stalefish",
@@ -404,17 +404,17 @@
 			"points_per_sec": 50
 		},
 		{
-			"id": "double_stalefish",
-			"name": "Double Stalefish",
+			"id": "japan",
+			"name": "Japan Air",
 			"kind": "grab",
 			"button": "grab",
 			"dir": "SW",
 			"double_tap": true,
-			"points": 400,
-			"anim": "grab_double_stalefish",
+			"points": 450,
+			"anim": "grab_japan",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 80
 		},
 		{
 			"id": "mute",
@@ -430,17 +430,17 @@
 			"points_per_sec": 50
 		},
 		{
-			"id": "double_mute",
-			"name": "Double Mute",
+			"id": "roast_beef",
+			"name": "Roast Beef",
 			"kind": "grab",
 			"button": "grab",
 			"dir": "W",
 			"double_tap": true,
-			"points": 350,
-			"anim": "grab_double_mute",
+			"points": 400,
+			"anim": "grab_roast_beef",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 80
 		},
 		{
 			"id": "airwalk",
@@ -456,17 +456,17 @@
 			"points_per_sec": 50
 		},
 		{
-			"id": "double_airwalk",
-			"name": "Double Airwalk",
+			"id": "cannonball",
+			"name": "Cannonball",
 			"kind": "grab",
 			"button": "grab",
 			"dir": "NW",
 			"double_tap": true,
 			"points": 400,
-			"anim": "grab_double_airwalk",
+			"anim": "grab_cannonball",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 80
 		},
 		{
 			"id": "fifty_fifty",
@@ -586,6 +586,123 @@
 			"points_per_sec": 60
 		},
 		{
+			"id": "hurricane",
+			"name": "Hurricane",
+			"kind": "grind",
+			"button": "grind",
+			"dir": "",
+			"double_tap": true,
+			"points": 350,
+			"anim": "grind_hurricane",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 70
+		},
+		{
+			"id": "overcrook",
+			"name": "Overcrook",
+			"kind": "grind",
+			"button": "grind",
+			"dir": "N",
+			"double_tap": true,
+			"points": 300,
+			"anim": "grind_overcrook",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 70
+		},
+		{
+			"id": "noseslide",
+			"name": "Noseslide",
+			"kind": "grind",
+			"button": "grind",
+			"dir": "NE",
+			"double_tap": true,
+			"points": 250,
+			"anim": "grind_noseslide",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 70
+		},
+		{
+			"id": "tailslide",
+			"name": "Tailslide",
+			"kind": "grind",
+			"button": "grind",
+			"dir": "E",
+			"double_tap": true,
+			"points": 250,
+			"anim": "grind_tailslide",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 70
+		},
+		{
+			"id": "suski_grind",
+			"name": "Suski Grind",
+			"kind": "grind",
+			"button": "grind",
+			"dir": "SE",
+			"double_tap": true,
+			"points": 300,
+			"anim": "grind_suski_grind",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 70
+		},
+		{
+			"id": "salad_grind",
+			"name": "Salad Grind",
+			"kind": "grind",
+			"button": "grind",
+			"dir": "S",
+			"double_tap": true,
+			"points": 250,
+			"anim": "grind_salad_grind",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 70
+		},
+		{
+			"id": "willy_grind",
+			"name": "Willy Grind",
+			"kind": "grind",
+			"button": "grind",
+			"dir": "SW",
+			"double_tap": true,
+			"points": 300,
+			"anim": "grind_willy_grind",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 70
+		},
+		{
+			"id": "darkslide",
+			"name": "Darkslide",
+			"kind": "grind",
+			"button": "grind",
+			"dir": "W",
+			"double_tap": true,
+			"points": 450,
+			"anim": "grind_darkslide",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 70
+		},
+		{
+			"id": "nosebluntslide",
+			"name": "Nosebluntslide",
+			"kind": "grind",
+			"button": "grind",
+			"dir": "NW",
+			"double_tap": true,
+			"points": 400,
+			"anim": "grind_nosebluntslide",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 70
+		},
+		{
 			"id": "nose_stall",
 			"name": "Nose Stall",
 			"kind": "lip",
@@ -596,7 +713,8 @@
 			"anim": "lip_nose_stall",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 100,
+			"ledge": true
 		},
 		{
 			"id": "axle_stall",
@@ -609,7 +727,8 @@
 			"anim": "lip_axle_stall",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 100,
+			"ledge": true
 		},
 		{
 			"id": "rock_to_fakie",
@@ -622,7 +741,8 @@
 			"anim": "lip_rock_to_fakie",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 100,
+			"ledge": true
 		},
 		{
 			"id": "disaster",
@@ -635,7 +755,106 @@
 			"anim": "lip_disaster",
 			"hold": true,
 			"sequence": [],
-			"points_per_sec": 100
+			"points_per_sec": 100,
+			"ledge": true
+		},
+		{
+			"id": "invert",
+			"name": "Invert",
+			"kind": "lip",
+			"button": "grind",
+			"dir": "NE",
+			"double_tap": false,
+			"points": 500,
+			"anim": "lip_invert",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 100,
+			"ledge": false
+		},
+		{
+			"id": "one_foot_invert",
+			"name": "One Foot Invert",
+			"kind": "lip",
+			"button": "grind",
+			"dir": "NW",
+			"double_tap": false,
+			"points": 550,
+			"anim": "lip_one_foot_invert",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 100,
+			"ledge": false
+		},
+		{
+			"id": "eggplant",
+			"name": "Eggplant",
+			"kind": "lip",
+			"button": "grind",
+			"dir": "SE",
+			"double_tap": false,
+			"points": 500,
+			"anim": "lip_eggplant",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 100,
+			"ledge": false
+		},
+		{
+			"id": "blunt_to_fakie",
+			"name": "Blunt to Fakie",
+			"kind": "lip",
+			"button": "grind",
+			"dir": "SW",
+			"double_tap": false,
+			"points": 300,
+			"anim": "lip_blunt_to_fakie",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 100,
+			"ledge": true
+		},
+		{
+			"id": "nose_pick",
+			"name": "Nose Pick",
+			"kind": "lip",
+			"button": "grind",
+			"dir": "N",
+			"double_tap": true,
+			"points": 300,
+			"anim": "lip_nose_pick",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 100,
+			"ledge": true
+		},
+		{
+			"id": "smith_stall",
+			"name": "Smith Stall",
+			"kind": "lip",
+			"button": "grind",
+			"dir": "E",
+			"double_tap": true,
+			"points": 300,
+			"anim": "lip_smith_stall",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 100,
+			"ledge": true
+		},
+		{
+			"id": "feeble_stall",
+			"name": "Feeble Stall",
+			"kind": "lip",
+			"button": "grind",
+			"dir": "W",
+			"double_tap": true,
+			"points": 300,
+			"anim": "lip_feeble_stall",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 100,
+			"ledge": true
 		},
 		{
 			"id": "manual",

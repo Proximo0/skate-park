@@ -22,7 +22,8 @@ const LOOP_RUN_OUT: float = 6.0
 static func table() -> Array:
 	return [
 		["m_ollie_tap", ["ollie_height_tap", "ollie_airtime_tap"]],
-		["m_ollie_full", ["ollie_height_full", "ollie_airtime_full"]],
+		["m_ollie_full", ["ollie_height_full", "ollie_airtime_full", "ollie_fall_rise_ratio"]],
+		["m_sketchy", ["sketchy_stagger_s", "sketchy_steer_ratio", "sketchy_speed_keep"]],
 		["m_push", ["push_time_to_top", "push_top_speed", "push_accel_0_5"]],
 		["m_coast", ["coast_distance_8ms"]],
 		["m_brake", ["brake_distance_8ms"]],
@@ -124,17 +125,21 @@ func _ollie(hold_ticks: int, button: String = "ollie") -> Dictionary:
 		await tick(NONE, [button] if (i == 0 and button != "ollie") else [], [button])
 	var peak: float = y0
 	var air_ticks: int = 0
+	var apex_ticks: int = 0
 	var went_air: bool = false
 	for i: int in 180:
 		await tick()
-		peak = maxf(peak, sk.global_position.y)
 		if sname() == "AIR":
 			went_air = true
 			air_ticks += 1
 		elif went_air:
 			break
+		if sk.global_position.y > peak:
+			peak = sk.global_position.y
+			apex_ticks = air_ticks
 	await clear()
-	return {"height": peak - y0, "air": float(air_ticks) * DT}
+	return {"height": peak - y0, "air": float(air_ticks) * DT, "rise": float(apex_ticks) * DT,
+		"fall": float(air_ticks - apex_ticks) * DT}
 
 
 func m_ollie_tap() -> Dictionary:
@@ -144,7 +149,9 @@ func m_ollie_tap() -> Dictionary:
 
 func m_ollie_full() -> Dictionary:
 	var r: Dictionary = await _ollie(40)  ## well past crouch_full (0.4 s = 24 ticks)
-	return {"ollie_height_full": r["height"], "ollie_airtime_full": r["air"]}
+	return {"ollie_height_full": r["height"], "ollie_airtime_full": r["air"],
+		"ollie_fall_rise_ratio": float(r["fall"]) / maxf(float(r["rise"]), DT), "x_ollie_full_rise_s": r["rise"],
+		"x_ollie_full_fall_s": r["fall"]}
 
 
 func m_push() -> Dictionary:
@@ -478,9 +485,7 @@ func _ollie_run(v0: float, hook: Callable, after_ticks: int = 30) -> Dictionary:
 	for i: int in 200:
 		var ttl: int = 999
 		if landed_at < 0 and sname() == "AIR":
-			var y: float = maxf(sk.global_position.y, 0.0)
-			var vy: float = sk.velocity.y
-			ttl = maxi(1, ceili((vy + sqrt(vy * vy + 2.0 * g * y)) / g / DT))
+			ttl = _ttl_ticks(maxf(sk.global_position.y, 0.0), sk.velocity.y, g)
 			preds.append([i, ttl])
 		var inp: Array = hook.call(ttl, i - landed_at if landed_at >= 0 else -1)
 		await tick(inp[0], inp[1], inp[2])
@@ -500,6 +505,22 @@ func _ollie_run(v0: float, hook: Callable, after_ticks: int = 30) -> Dictionary:
 		"air_ticks": landed_at + 1}
 	await clear()
 	return res
+
+
+## Ticks until a street air at height y (m, over flat ground at 0) rising at vy touches down: stepped like the skater
+## (gravity first, then the move), with the heavier fall past the apex (tune fall_gravity up to fall_boost_max m/s).
+func _ttl_ticks(y: float, vy: float, g: float) -> int:
+	var fall_k: float = tv("fall_gravity", 1.0)
+	var boost_max: float = tv("fall_boost_max", 0.0)
+	var n: int = 0
+	while n < 600:
+		n += 1
+		var k: float = fall_k if vy < 0.0 and -vy < boost_max else 1.0
+		vy -= g * k * DT
+		y += vy * DT
+		if y <= 0.0:
+			break
+	return maxi(n, 1)
 
 
 func _no_input(_ttl: int, _since: int) -> Array:
@@ -1296,3 +1317,58 @@ func m_lip_out() -> Dictionary:
 	if not str(d["names"]).contains("Kickflip"):
 		return {"lip_pop_flip_margin_s": NAN}
 	return {"lip_pop_flip_margin_s": float(d["air"]) - tv("flip_time", 0.42), "x_lip_pop_landing": d["land"]}
+
+
+## Sketchy landing stagger (Skate-3 catch): a full ollie at 8 m/s spun `deg` in the air, then full right stick from the
+## touchdown. Returns the yaw turned in the first 0.25 s on the ground, the stagger seconds the skater reports, the
+## landing result and the speed 0.6 s after touchdown over the speed just before it (m_sketchy scores it against the
+## clean run's, so the carve's own scrub cancels out).
+func _stagger_run(deg: float) -> Dictionary:
+	var rate: float = tv("spin_rate", 7.5)
+	var n: int = roundi(deg_to_rad(deg) / (rate * DT))
+	await _flat_start(8.0)
+	for i: int in 10:
+		await tick()
+	for i: int in 30:
+		await tick(NONE, ["ollie"] if i == 0 else [], ["ollie"])
+	var res: String = ""
+	var k: int = 0
+	var before: float = 0.0
+	for i: int in 120:
+		var spinning: bool = sname() == "AIR" and k < n
+		await tick(Vector2(-1.0, 0.0) if spinning else NONE, ["spin_left"] if spinning and k == 0 else [],
+				["spin_left"] if spinning else [])
+		if spinning:
+			k += 1
+		for e: String in sk.events:
+			if e.begins_with("land:"):
+				res = e.substr(5)
+		if res != "":
+			break
+		before = Vector2(sk.velocity.x, sk.velocity.z).length()
+	var f0: Vector3 = sk.facing
+	var turned: float = 0.0
+	var stag: int = 0
+	var keep: float = NAN
+	for i: int in 36:
+		await tick(Vector2(1.0, 0.0))
+		if float(sk.get("stagger") if sk.get("stagger") != null else 0.0) > 0.0:
+			stag += 1
+		if i == 14:
+			turned = rad_to_deg(Vector2(f0.x, f0.z).angle_to(Vector2(sk.facing.x, sk.facing.z)))
+	keep = sk.velocity.length() / maxf(before, 0.001)
+	await clear()
+	return {"result": res, "turn": absf(turned), "stagger_s": float(stag + (1 if stag > 0 else 0)) * DT, "keep": keep}
+
+
+func m_sketchy() -> Dictionary:
+	var clean: Dictionary = await _stagger_run(0.0)
+	var sk_run: Dictionary = await _stagger_run(65.0)
+	if sk_run["result"] != "sketchy" or clean["result"] != "clean":
+		return {"sketchy_stagger_s": NAN, "sketchy_steer_ratio": NAN, "sketchy_speed_keep": NAN,
+			"x_sketchy_results": [clean["result"], sk_run["result"]]}
+	return {"sketchy_stagger_s": sk_run["stagger_s"],
+		"sketchy_steer_ratio": float(sk_run["turn"]) / maxf(float(clean["turn"]), 0.01),
+		"sketchy_speed_keep": float(sk_run["keep"]) / maxf(float(clean["keep"]), 0.001), "x_sketchy_abs_keep": sk_run["keep"],
+		"x_clean_speed_keep": clean["keep"],
+		"x_sketchy_turn_deg_025s": sk_run["turn"], "x_clean_turn_deg_025s": clean["turn"]}

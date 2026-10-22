@@ -77,6 +77,25 @@ func test_double_tap_is_per_button() -> void:
 	assert_false(r[0]["double_tap"], "different button is not a double tap")
 
 
+func test_double_tapped_within() -> void:
+	var f: TrickInput = TrickInput.new()
+	f.feed(Vector2.ZERO, ["grind"], [])
+	assert_false(f.double_tapped_within("grind", 8), "one tap is not a double tap")
+	_trick_input_idle(f, 3)
+	f.feed(Vector2.ZERO, ["grind"], [])
+	assert_true(f.double_tapped_within("grind", 8), "second tap 4 ticks later")
+	assert_false(f.double_tapped_within("flip", 8), "per button")
+	_trick_input_idle(f, 8)
+	assert_true(f.double_tapped_within("grind", 8), "8 ticks after the second tap")
+	f.feed(Vector2.ZERO, [], [])
+	assert_false(f.double_tapped_within("grind", 8), "9 ticks after: too old for a catch")
+	_trick_input_idle(f, 30)
+	f.feed(Vector2.ZERO, ["grind"], [])
+	assert_false(f.double_tapped_within("grind", 8), "a fresh single tap after a double is a single")
+	f.clear()
+	assert_false(f.double_tapped_within("grind", 100), "cleared")
+
+
 func test_sequence_two_distinct_dirs() -> void:
 	var f: TrickInput = TrickInput.new()
 	f.feed(Vector2(0, -1), [], [])  # N

@@ -6,7 +6,9 @@ extends RefCounted
 ## - find() matches flip, grab and grind tricks only (exact button, dir and double_tap).
 ##   If the exact trick is missing it falls back to the neutral ("") trick of that button
 ##   with the same double_tap, then to the neutral non-double trick. Otherwise {}.
-## - find_lip() matches lip tricks (button "grind", dir N/E/S/W) by dir.
+## - find_lip() matches lip tricks (button "grind") by dir and double_tap, falling back to the single-tap trick of that
+##   dir, then to the nose stall. on_ledge keeps to the tricks marked "ledge": true (stalls that work on a ledge's edge,
+##   not only on a coping: no inverts or plants on a ledge).
 ## - find_sequence() matches manuals and specials by sequence and button.
 ## - find_move() looks up a board move by id (kind "move": wallplant, boneless, no_comply, caveman, acid_drop). Moves are
 ##   started by the skater's own rules (a button in a situation), never matched from a button and dir.
@@ -83,12 +85,25 @@ func find(button: String, dir: String, double_tap: bool) -> Dictionary:
 	return {}
 
 
-## Lip trick on a coping for a stick dir (N, E, S or W).
-func find_lip(dir: String) -> Dictionary:
+## Lip trick for a stick dir (any of the eight) and tap: the exact one, else that dir's single-tap trick, else the nose
+## stall (or the first allowed one). on_ledge: only tricks with "ledge": true (a ledge stall).
+func find_lip(dir: String, double_tap: bool = false, on_ledge: bool = false) -> Dictionary:
+	var single: Dictionary = {}
+	var fallback: Dictionary = {}
 	for t: Dictionary in _tricks:
-		if str(t.get("kind", "")) == "lip" and str(t.get("dir", "")) == dir:
-			return t.duplicate(true)
-	return {}
+		if str(t.get("kind", "")) != "lip" or (on_ledge and not bool(t.get("ledge", false))):
+			continue
+		var tap: bool = bool(t.get("double_tap", false))
+		if str(t.get("dir", "")) == dir:
+			if tap == double_tap:
+				return t.duplicate(true)
+			if not tap:
+				single = t
+		if not tap and (fallback.is_empty() or str(t.get("dir", "")) == "N"):
+			fallback = t
+	if not single.is_empty():
+		return single.duplicate(true)
+	return fallback.duplicate(true)
 
 
 ## Manual or special whose sequence equals the given one and whose button matches.

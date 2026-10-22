@@ -15,18 +15,25 @@
 		"why": "A real high ollie is 0.9 to 1.14 m (Guinness record, Aldrin Garcia 2011). THUG lets a full crouch clear a chest-high ledge with room to flip; at gravity 18 that is a pop of 8.5 m/s and about 2 m. The levels' biggest ollie gaps need it: a 1.72 m full ollie (ollie_max 7.9) dropped four levels' bots below 100."
 	},
 	"ollie_airtime_tap": {
-		"target": 0.68,
+		"target": 0.63,
 		"min_ok": 0.5,
-		"max_ok": 0.85,
+		"max_ok": 0.67,
 		"unit": "s",
-		"why": "Follows from the tap height at gravity 18 (2*sqrt(2h/g)). Long enough for one flip (0.42 s) with a margin to catch it, short enough to stay snappy; the record ollie hangs about 0.7 s (frame count, radratvideo)."
+		"why": "Skate-3 arc (round 7): the pop keeps its height (about 1 m) but the drop past the apex runs at tune.fall_gravity (1.35x) until the fall is ollie-fast, so a tap lands in about 0.63 s instead of hanging 0.68 s. Still fits one flip (0.42 s) with about 0.2 s to catch it. The old symmetric arc (0.683 s) fails the max."
 	},
 	"ollie_airtime_full": {
-		"target": 0.93,
+		"target": 0.88,
 		"min_ok": 0.7,
-		"max_ok": 1.1,
+		"max_ok": 0.92,
 		"unit": "s",
-		"why": "Follows from the full height at gravity 18. Fits a double flip (0.68 s) plus landing prep, the THUG flip-and-catch timing."
+		"why": "Full ollie with the heavier fall (round 7): about 0.88 s, still room for a double flip (0.68 s) plus landing prep. The old symmetric arc (0.95 s) fails the max."
+	},
+	"ollie_fall_rise_ratio": {
+		"target": 0.83,
+		"min_ok": 0.75,
+		"max_ok": 0.95,
+		"unit": "ratio",
+		"why": "Full ollie: time from the apex to touchdown over the time from the pop to the apex. A symmetric parabola is 1.0 and reads floaty; Skate 3's ollie drops back faster than it rose. 1.35x gravity on the fall gives about 0.83 (0.40 s down, 0.48 s up)."
 	},
 	"push_time_to_top": {
 		"target": 2.5,
@@ -216,6 +223,27 @@
 		"max_ok": 40.0,
 		"unit": "deg",
 		"why": "Board tilt off the landing surface that still lands clean (the auto-align usually fixes tilt for you, as in THUG). Over 40 deg on four wheels is a real-world slam."
+	},
+	"sketchy_stagger_s": {
+		"target": 0.4,
+		"min_ok": 0.3,
+		"max_ok": 0.5,
+		"unit": "s",
+		"why": "A sketchy landing (judged by Landing) staggers for about 0.4 s: the rider catches the board (Skate-3 foot-plant feel) with weak steering and a speed scrub, instead of a silent flat 20 percent loss."
+	},
+	"sketchy_steer_ratio": {
+		"target": 0.4,
+		"min_ok": 0.2,
+		"max_ok": 0.6,
+		"unit": "ratio",
+		"why": "Yaw turned in the first 0.25 s after touchdown with full stick, sketchy over clean: the stagger cuts the carve to about a third (tune.stagger_steer 0.35). 1.0 means a sketchy landing steers like a clean one."
+	},
+	"sketchy_speed_keep": {
+		"target": 0.88,
+		"min_ok": 0.84,
+		"max_ok": 0.93,
+		"unit": "ratio",
+		"why": "Speed 0.6 s after a sketchy touchdown over a clean landing's (same run, same full-stick carve): the stagger's scrub (tune.stagger_scrub, 12 percent) is the whole difference. The old flat 0.8 keep reads about 0.82 here (fails); over 0.93 makes sketchy free."
 	},
 	"revert_pre_land_buffer_ms": {
 		"target": 150.0,

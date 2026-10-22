@@ -170,6 +170,16 @@ const MANUAL_SWITCH_MIN: float = 0.25  ## s into a manual before the other manua
 const WALL_REVERT_PUSH: float = 2.5  ## m/s straight out from the wall of a revert off a wallride
 const LIP_POP_OUT: float = 1.5  ## m/s out over the ramp of a flip or grab out of a lip trick
 const TRANSFER_MIN_AIR: float = 0.2  ## s in the air, at least, for a catch on another rail to count as a Rail Transfer
+## Round 7 vocabulary: a grind or lip trick double-tapped (TrickInput.DOUBLE_TAP_TICKS) within this many ticks before
+## the catch gets the double-tap trick of the table (THUG2's grind variants: Overcrook, Salad, Suski, Willy...).
+const GRIND_DOUBLE_TICKS: int = 8
+## Ledge stall: popped onto a ledge slower than this (m/s, horizontal) and square to it (the speed along the ledge at
+## most LEDGE_STALL_ALONG of it), the grind press stalls on the edge instead of grinding.
+const LEDGE_STALL_SPEED: float = 4.0
+const LEDGE_STALL_ALONG: float = 0.5
+const DECK_LEAD: float = 0.3  ## s of fall a vert air looks ahead for a flat deck to level the board onto (_deck_ahead)
+const DECK_MIN_NY: float = 0.9
+const LIP_DOUBLE_WINDOW: float = 0.25  ## s into a lip trick the second tap of a double-tapped grind still picks its trick
 
 ## Live physics tuning. Every ride number is read from here each tick.
 var tune: PhysicsTuning = PhysicsTuning.shared()
@@ -206,6 +216,10 @@ var speed: float = 0.0
 var vert_air: bool = false
 ## 0..1: how hard the last landing hit (speed into the surface over 12 m/s). For the poser's knee absorb.
 var land_impact: float = 0.0
+## Seconds left of a sketchy landing's stagger (Skate-3 catch): steering cut to tune.stagger_steer, the speed scrubbed
+## at _stagger_decel, no pushing. 0 when riding normally. The poser can read it for the wobble.
+var stagger: float = 0.0
+var _stagger_decel: float = 0.0  ## m/s² of scrub while staggering (stagger_scrub of the landing speed over stagger_time)
 ## Seconds the chase camera holds its place and just watches (a ramp snap's drop-in: the camera stays up over the coping
 ## while the skater drops down the wall, instead of swinging round into the ramp).
 var camera_hold: float = 0.0
@@ -281,6 +295,7 @@ var _revert_on_land: bool = false  ## reverted out of a lip trick: the revert fi
 var _manual_trick: Dictionary = {}  ## the manual being held (manual or nose manual): what a flatland trick returns to
 var _manual_since: float = 0.0  ## s since the manual started or last switched
 var _flatland: Dictionary = {}  ## the flatland trick held (grab held in a manual), {} when none
+var lip_on_ledge: bool = false  ## the lip trick held is a ledge stall, not a coping lip (only "ledge" lip tricks switch in; the poser can pose it lower)
 var _pivot_wait: int = -1  ## ticks until a lone spin press pivots the manual (it waits out the ramp snap's chord)
 
 
@@ -658,7 +673,7 @@ func _publish() -> void:
 		"vert_air": vert_air, "launch_normal": _launch_normal, "wall_normal": _wall_normal,
 		"pumping": _d_pumping, "pushing": _d_pushing, "push_pulse": _d_pulse, "braking": _d_braking,
 		"left_edge": _left_edge, "on_wall": is_on_wall(), "rail": rail_name, "events": events,
-		"nollie": nollie, "powerslide": powersliding,
+		"nollie": nollie, "powerslide": powersliding, "stagger": stagger,
 	}
 	physics_ticked.emit(debug)
 
@@ -692,6 +707,12 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	var steer: float = -stick_x * turn_rate * delta * clampf(v.length() / 1.5, 0.25, 1.0)
 	if powersliding:
 		steer *= POWERSLIDE_STEER
+	var staggering: bool = stagger > 0.0
+	if staggering:
+		# Caught a sketchy landing: the rider is fighting for the board, so the carve is weak and pushing waits.
+		steer *= tune.stagger_steer
+		allow_push = false
+		stagger = maxf(stagger - delta, 0.0)
 	if absf(steer) > 0.0:
 		var pre_facing: Vector3 = facing
 		var pre_v: Vector3 = v
@@ -732,6 +753,8 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		_d_braking = true
 		along = move_toward(along, 0.0, tune.brake * delta)
 	along = move_toward(along, 0.0, tune.roll_friction * delta)
+	if staggering:
+		along = move_toward(along, 0.0, _stagger_decel * delta)
 	var side: Vector3 = v - facing * v.dot(facing)
 	# Wheels resist sliding sideways, but only as hard as they are pressed on: on a steep wall the press is the
 	# centripetal pull of the curve (v^2 * curvature) plus gravity's share into the face, so a slow carve high on a bowl
@@ -1341,6 +1364,7 @@ func _go_airborne(_from_grind: bool) -> void:
 
 func _enter_air(_from_rail: bool) -> void:
 	_ev("air")
+	stagger = 0.0
 	_roll_off = false
 	balance_kind = ""
 	_rail = null
@@ -1374,7 +1398,7 @@ func _tick_air(delta: float, requests: Array) -> void:
 		return
 	if _recent_revert_press <= ACID_BUFFER_TICKS and not vert_air and _try_acid_drop():
 		return
-	velocity += Vector3.DOWN * tune.gravity * delta
+	velocity += Vector3.DOWN * tune.gravity * _air_gravity_scale() * delta
 	# spin: shoulders or stick left/right
 	var spin_in: float = 0.0
 	if _held.has("spin_left"):
@@ -1397,6 +1421,13 @@ func _tick_air(delta: float, requests: Array) -> void:
 	var target_up: Vector3 = _predict_landing_normal()
 	if vert_air and velocity.y > 0.0:
 		target_up = _launch_normal
+	elif vert_air and _snap_hold_up == Vector3.ZERO:
+		# Coming down out of vert air over a bowl's or a dome's rim: the body (a sphere) catches the flat rim the centre
+		# line of the look-ahead ray passes over (it finds the wall below), so the board stayed square to the wall and the
+		# deck landing bailed as tilted. A flat deck the body will touch first wins.
+		var deck: Vector3 = _deck_ahead()
+		if deck != Vector3.ZERO:
+			target_up = deck
 	if _snap_hold_up != Vector3.ZERO:
 		target_up = _snap_hold_up  # dropping in off a ramp snap: the board stays square to the wall it drops down
 	var air_turn: float = 12.0 if vert_air else 4.0
@@ -1455,6 +1486,15 @@ func _tick_air(delta: float, requests: Array) -> void:
 			_ev("edge_graze")  # clipped a wall's top edge or corner: not a landing, keep flying
 			return
 		_land(land_n, impact)
+
+
+## Skate-3 arc: past the top of a street air the fall pulls harder (tune.fall_gravity) until it is as fast as a big
+## ollie's (tune.fall_boost_max), so pops keep their height but drop back quicker instead of hanging. Vert air and a ramp
+## snap's guided drop keep plain gravity: the halfpipe's pump peaks and the snap timing do not change.
+func _air_gravity_scale() -> float:
+	if vert_air or velocity.y >= 0.0 or _snap_hold_up != Vector3.ZERO or -velocity.y >= tune.fall_boost_max:
+		return 1.0
+	return tune.fall_gravity
 
 
 ## Rolling off an edge: `land_up` (the predicted landing surface's up) tipped forward toward the fall line by
@@ -1567,7 +1607,9 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	land_impact = clampf(into / 12.0, 0.0, 1.0)
 	# Wheels first, knees take it: a clean landing scrubs a little speed, more the harder it hits (no bounce: the part
 	# of the velocity into the surface is absorbed, never reflected).
-	var keep: float = clampf(LAND_KEEP_MAX - LAND_KEEP_PER_MS * maxf(into - LAND_KEEP_FREE, 0.0), LAND_KEEP_MIN, LAND_KEEP_MAX) if result == "clean" else 0.8
+	# A sketchy landing is caught, not dropped: the same touchdown loss as a clean one, then a short stagger (see
+	# `stagger`) scrubs tune.stagger_scrub more off while steering is weak, instead of losing a flat fifth at once.
+	var keep: float = clampf(LAND_KEEP_MAX - LAND_KEEP_PER_MS * maxf(into - LAND_KEEP_FREE, 0.0), LAND_KEEP_MIN, LAND_KEEP_MAX)
 	if vert_air and result == "clean" and v.length() > 0.5:
 		# Clean vert re-entry: the fall turns into roll along the transition with no loss (as in THUG), so
 		# pumping on each pass builds height instead of bleeding it away.
@@ -1595,10 +1637,15 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	_link_rail = null
 	var revert_now: bool = _revert_on_land
 	_revert_on_land = false
+	stagger = 0.0
 	if not m.is_empty() and state.event("land_manual"):
 		tricks.clear()
 		_start_balance_trick(m, "manual")
 	else:
+		if result == "sketchy" and tune.stagger_time > 0.0:
+			stagger = tune.stagger_time
+			_stagger_decel = velocity.length() * tune.stagger_scrub / tune.stagger_time
+			_ev("stagger")
 		state.event("land")
 		_set_anim("land")
 		if revert_now and state.event("revert"):
@@ -1620,6 +1667,32 @@ func _predict_landing_normal() -> Vector3:
 		return Vector3.UP
 	var n: Vector3 = hit["normal"]
 	return n if n.y > 0.2 else Vector3.UP
+
+
+## The up of a flat floor (normal y over DECK_MIN_NY) the body's sphere will touch within DECK_LEAD s of its fall, or
+## ZERO: a sphere sweep along the velocity, so a rim the centre passes over still counts. Ramp faces never count, so
+## vert re-entries into a transition are untouched.
+func _deck_ahead() -> Vector3:
+	if velocity.y >= 0.0 or not is_inside_tree():
+		return Vector3.ZERO
+	var shape := SphereShape3D.new()
+	shape.radius = BODY_RADIUS
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape
+	q.transform = Transform3D(Basis.IDENTITY, global_position + Vector3.UP * BODY_RADIUS)
+	q.motion = velocity * DECK_LEAD + Vector3.DOWN * 0.1
+	q.collision_mask = collision_mask
+	q.exclude = [get_rid()]
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var frac: PackedFloat32Array = space.cast_motion(q)
+	if frac.size() < 2 or frac[1] >= 1.0:
+		return Vector3.ZERO
+	q.transform.origin += q.motion * frac[1]
+	var info: Dictionary = space.get_rest_info(q)
+	if info.is_empty():
+		return Vector3.ZERO
+	var n: Vector3 = info["normal"]
+	return n if n.y > DECK_MIN_NY else Vector3.ZERO
 
 
 # --- rails, lips, walls -------------------------------------------------------------------------------
@@ -1652,6 +1725,8 @@ func _try_grind() -> bool:
 		return false
 	if best.kind == "coping" and vert_air:
 		return false  # vert + coping = lip trick, handled by _try_lip
+	if best.kind == "ledge" and _try_ledge_stall(best_hit):
+		return true
 	var air_time: float = state.time_in_state if state.state == SkateState.State.AIR else 0.0
 	if not state.event("grind_start"):
 		return false
@@ -1683,7 +1758,7 @@ func _try_grind() -> bool:
 		_score_link("wall_to_rail")
 	_link_from = ""
 	_link_rail = null
-	var t: Dictionary = db.find("grind", TrickInput.quantize(_stick), false)
+	var t: Dictionary = db.find("grind", TrickInput.quantize(_stick), tricks.double_tapped_within("grind", GRIND_DOUBLE_TICKS))
 	if t.is_empty():
 		t = {"id": "fifty_fifty", "name": "50-50", "points": 100, "kind": "grind", "anim": "grind_fifty_fifty", "points_per_sec": 60}
 	_start_balance_trick(t, "grind")
@@ -1769,7 +1844,7 @@ func _tick_grind(delta: float, requests: Array) -> void:
 		return
 	for r: Dictionary in requests:
 		if r["button"] == "grind":
-			var t: Dictionary = db.find("grind", str(r["dir"]), false)
+			var t: Dictionary = db.find("grind", str(r["dir"]), bool(r["double_tap"]))
 			if not t.is_empty() and str(t["id"]) != str(_grind_trick.get("id", "")):
 				_ev("grind_switch")
 				_half_reset_balance()
@@ -1860,16 +1935,42 @@ func _try_lip() -> bool:
 			continue
 		if not state.event("lip_start"):
 			return false
-		var t: Dictionary = db.find_lip(TrickInput.quantize(_stick))
+		var t: Dictionary = db.find_lip(TrickInput.quantize(_stick), tricks.double_tapped_within("grind", GRIND_DOUBLE_TICKS))
 		if t.is_empty():
 			t = db.find_lip("N")
-		var lip_at: Vector3 = (hit["point"] as Vector3) + Vector3.UP * 0.1
-		_snap_offset += global_position - lip_at
-		global_position = lip_at
-		velocity = Vector3.ZERO
-		_start_balance_trick(t, "lip")
+		_hold_lip(t, hit["point"] as Vector3, false)
 		return true
 	return false
+
+
+## Ledge stall (THUG2's lip tricks on a ledge): popped onto a ledge slow and square to it (not rolling along it, which is
+## a grind), the grind press stalls on its edge with the lip trick for the stick (only those marked "ledge" in the
+## table). Every way out of it is the lip trick's (see _tick_lip): it drops back off the side it came from.
+func _try_ledge_stall(hit: Dictionary) -> bool:
+	if state.state != SkateState.State.AIR or vert_air:
+		return false
+	var hv: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	var tan: Vector3 = hit["tangent"]
+	var tan_h: Vector3 = Vector3(tan.x, 0.0, tan.z)
+	if hv.length() > LEDGE_STALL_SPEED or hv.length() < 0.3 or tan_h.length() < 0.01 \
+			or absf(hv.dot(tan_h.normalized())) > LEDGE_STALL_ALONG * hv.length():
+		return false
+	var t: Dictionary = db.find_lip(TrickInput.quantize(_stick), tricks.double_tapped_within("grind", GRIND_DOUBLE_TICKS), true)
+	if t.is_empty() or not state.event("lip_start"):
+		return false
+	_launch_normal = -hv.normalized()  # the way back off: _tick_lip drops out along it
+	_ev("ledge_stall")
+	_hold_lip(t, hit["point"] as Vector3, true)
+	return true
+
+
+func _hold_lip(t: Dictionary, at: Vector3, on_ledge: bool) -> void:
+	lip_on_ledge = on_ledge
+	var lip_at: Vector3 = at + Vector3.UP * 0.1
+	_snap_offset += global_position - lip_at
+	global_position = lip_at
+	velocity = Vector3.ZERO
+	_start_balance_trick(t, "lip")
 
 
 ## One tick of a lip trick. Out of it (THUG2): ollie or grind drops back in, revert drops in and reverts at the
@@ -1880,12 +1981,21 @@ func _tick_lip(delta: float, requests: Array) -> void:
 		_bail({"cause": "lip", "lean": balance.angle})
 		return
 	var pop: Dictionary = {}
+	var grind_out: bool = _just_pressed.has("grind")
 	for r: Dictionary in requests:
-		if r["button"] == "flip" or r["button"] == "grab":
-			pop = r
-			break
+		if r["button"] == "grind" and bool(r["double_tap"]) and state.time_in_state <= LIP_DOUBLE_WINDOW:
+			# the second tap of a double-tapped grind that already caught the lip: the double-tap lip trick, held on
+			grind_out = false
+			var t2: Dictionary = db.find_lip(str(r["dir"]), true, lip_on_ledge)
+			if not t2.is_empty() and str(t2["id"]) != str(anim_trick.get("id", "")):
+				_ev("lip_switch")
+				_hold_pps = int(t2.get("points_per_sec", 0))
+				_score_trick(t2)
+		elif r["button"] == "flip" or r["button"] == "grab":
+			if pop.is_empty():
+				pop = r
 	var revert: bool = _just_pressed.has("revert")
-	if _just_pressed.has("ollie") or _just_pressed.has("grind") or revert or not pop.is_empty() \
+	if _just_pressed.has("ollie") or grind_out or revert or not pop.is_empty() \
 			or balance.time_held() > tune.lip_max_time:
 		# drop back in: down the ramp, which faces along the launch normal
 		balance_kind = ""
@@ -2771,6 +2881,7 @@ func respawn() -> void:
 
 
 func _clear_links() -> void:
+	stagger = 0.0  # (bail and respawn both come through here)
 	_grind_charge = -1.0
 	_queued_manual = {}
 	_link_from = ""
@@ -2853,6 +2964,9 @@ func snapshot() -> Dictionary:
 		"wallplant_cool": _wallplant_cool,
 		"camera_hold": camera_hold,
 		"camera_anchor": camera_anchor,
+		"stagger": stagger,
+		"stagger_decel": _stagger_decel,
+		"lip_ledge": lip_on_ledge,
 		"links": {
 			"grind_trick": _grind_trick.duplicate(true),
 			"grind_charge": _grind_charge,
@@ -2881,6 +2995,7 @@ func snapshot() -> Dictionary:
 			"up_taps": Array(tricks._up_taps).duplicate(),
 			"was_up": tricks._was_up,
 			"up_with_ollie": tricks._up_with_ollie,
+			"last_double": tricks._last_double.duplicate(true),
 		},
 		"combo": {
 			"tricks": Array(combo._tricks).duplicate(true),
@@ -2969,6 +3084,9 @@ func restore(d: Dictionary) -> void:
 	_wallplant_n = d.get("wallplant_n", Vector3.ZERO)
 	_wallplant_cool = float(d.get("wallplant_cool", 0.0))
 	camera_hold = float(d.get("camera_hold", 0.0))
+	stagger = float(d.get("stagger", 0.0))
+	lip_on_ledge = bool(d.get("lip_ledge", false))
+	_stagger_decel = float(d.get("stagger_decel", 0.0))
 	camera_anchor = d.get("camera_anchor", Vector3.ZERO)
 	var lk: Dictionary = d.get("links", {})
 	_grind_trick = (lk.get("grind_trick", {}) as Dictionary).duplicate(true)
@@ -3003,6 +3121,7 @@ func restore(d: Dictionary) -> void:
 		tricks._up_taps.append(int(at))
 	tricks._was_up = bool(ti.get("was_up", false))
 	tricks._up_with_ollie = bool(ti.get("up_with_ollie", false))
+	tricks._last_double = (ti.get("last_double", {}) as Dictionary).duplicate(true)
 	var cb: Dictionary = d["combo"]
 	combo._tricks.clear()
 	for e: Dictionary in (cb["tricks"] as Array):

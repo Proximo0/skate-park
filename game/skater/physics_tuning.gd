@@ -28,6 +28,11 @@ const FIELDS: Array = [
 	["vert_normal_y", 0.35, 0.05, 0.8, 0.01, "Transitions", "Leaving a face steeper than this, going up, is a vert launch."],
 	["edge_grip", 2.5, 0.5, 8.0, 0.1, "Transitions", "Grip on convex bends, as a multiple of gravity's hold."],
 	["overhang_radius", 3.5, 1.0, 10.0, 0.1, "Transitions", "Assumed curve radius when judging if speed holds you upside down."],
+	["fall_gravity", 1.35, 1.0, 2.5, 0.05, "Air", "Gravity multiplier on the way down from the top of a street air (Skate-3 arc: same pop height, a quicker drop). Vert air keeps plain gravity, so pump heights are unchanged."],
+	["fall_boost_max", 10.0, 0.0, 30.0, 0.5, "Air", "The extra fall gravity only acts until the fall is this fast, m/s (about a 2 m ollie's): big drops then fall at plain gravity, so slam heights barely move."],
+	["stagger_time", 0.4, 0.0, 1.5, 0.05, "Landing", "A sketchy landing staggers for this long, s: steering cut, speed scrubbed, no pushing."],
+	["stagger_steer", 0.35, 0.0, 1.0, 0.05, "Landing", "Share of the normal steering while staggering."],
+	["stagger_scrub", 0.12, 0.0, 0.5, 0.01, "Landing", "Share of the landing speed scrubbed off over the stagger (on top of a clean landing's small loss)."],
 	["ollie_min", 6.0, 2.0, 15.0, 0.1, "Air", "Pop speed of a tap ollie, m/s."],
 	["ollie_max", 8.5, 2.0, 18.0, 0.1, "Air", "Pop speed of a fully crouched ollie, m/s."],
 	["crouch_full", 0.4, 0.05, 1.5, 0.01, "Air", "Crouch time for the full ollie, s."],
@@ -94,6 +99,11 @@ var pump_speed_ref: float
 var vert_normal_y: float
 var edge_grip: float
 var overhang_radius: float
+var fall_gravity: float
+var fall_boost_max: float
+var stagger_time: float
+var stagger_steer: float
+var stagger_scrub: float
 var ollie_min: float
 var ollie_max: float
 var crouch_full: float

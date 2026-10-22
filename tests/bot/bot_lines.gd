@@ -477,7 +477,10 @@ func _gaps_misc() -> Array:
 	# Pyramid Hop: 10.5 m of air between the zones over a 9 m base, so it is two hops (over the foot, off the flat top)
 	# at 12+ m/s: that needs a 26 m run-up.
 	out.append_array(gap_run("pyramid_n", "pyramid_s", 26.0, 2.0, 8.0, 12.5, {"h": 24}))
-	out.append_array(gap_run("bowl_rim_n", "bowl_rim_s", 26.0, 0.3, 8.0, 12.5, {"h": 30}))
+	# Bowl Hop: a full ollie at push speed (11.8 m/s) right at the north rim's lip. Since the round-7 street arc (heavier
+	# fall past the apex) it needs the pop on the lip itself, 0.2-0.6 m past the zone's centre (0.3 m before it lands on
+	# the far wall under the rim); -0.4 is the middle of that window.
+	out.append_array(gap_run("bowl_rim_n", "bowl_rim_s", 26.0, -0.4, 8.0, 12.5, {"h": 30}))
 	return out
 
 

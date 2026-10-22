@@ -40,6 +40,8 @@ var _last_dir_tick: int = NEVER
 var _history: Array[Dictionary] = []
 ## button name -> tick of its most recent press (every button, so pressed_within() can buffer any of them).
 var _last_press: Dictionary = {}
+## button name -> tick of its most recent double tap (a second press within DOUBLE_TAP_TICKS of the one before).
+var _last_double: Dictionary = {}
 ## Ticks at which the stick last entered the up sector (fresh up taps), oldest first.
 var _up_taps: Array[int] = []
 var _was_up: bool = false
@@ -94,6 +96,8 @@ func feed(stick: Vector2, just_pressed: Array, held: Array) -> Array:
 		if _last_press.has(button):
 			double_tap = _tick - int(_last_press[button]) <= DOUBLE_TAP_TICKS
 		_last_press[button] = _tick
+		if double_tap:
+			_last_double[button] = _tick
 		requests.append({
 			"button": button,
 			"dir": dir,
@@ -146,6 +150,15 @@ func pressed_within(button: String, ticks: int) -> bool:
 	return _tick - int(_last_press[button]) <= ticks
 
 
+## True when the last press of `button` was a double tap and it went down within the last `ticks` ticks. A grind
+## double-tapped on the way to a rail catches it with the double-tap grind (THUG2's grind variants), even when the
+## catch comes a few ticks after the second tap.
+func double_tapped_within(button: String, ticks: int) -> bool:
+	if not _last_double.has(button) or not _last_press.has(button):
+		return false
+	return int(_last_double[button]) == int(_last_press[button]) and _tick - int(_last_double[button]) <= ticks
+
+
 ## Forgets the last press of `button`, so a buffered press acts only once (double taps of it restart).
 func consume(button: String) -> void:
 	_last_press.erase(button)
@@ -181,6 +194,7 @@ func clear() -> void:
 	_last_dir_tick = NEVER
 	_history.clear()
 	_last_press.clear()
+	_last_double.clear()
 	_up_taps.clear()
 	_was_up = false
 	_up_with_ollie = false
