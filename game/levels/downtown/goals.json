@@ -1,0 +1,18 @@
+{
+	"run_seconds": 120,
+	"goals": [
+		{"id": "dt_high_score", "title": "High Score: 15,000", "description": "Land 15,000 points in one 2-minute run.", "type": "high_score", "target": 15000},
+		{"id": "dt_pro_score", "title": "Pro Score: 40,000", "description": "Land 40,000 points in one 2-minute run.", "type": "high_score", "target": 40000},
+		{"id": "dt_sick_score", "title": "Sick Score: 90,000", "description": "Land 90,000 points in one 2-minute run.", "type": "high_score", "target": 90000},
+		{"id": "dt_combo", "title": "Rush Hour Combo: 8,000", "description": "Land a single combo worth 8,000 points.", "type": "combo", "target": 8000},
+		{"id": "dt_skate", "title": "Collect S-K-A-T-E", "description": "The letters are on the lines: the pair ledge, the hubba, under the Line, the station rail and out on the monorail beam.", "type": "collect", "items": ["S", "K", "A", "T", "E"]},
+		{"id": "dt_pizza", "title": "Lunch Run: 6 Pizza Slices", "description": "Grab six slices from the corners of downtown.", "type": "collect", "items": ["pizza", "pizza", "pizza", "pizza", "pizza", "pizza"]},
+		{"id": "dt_ten_out", "title": "Ten Out", "description": "Ollie the City Hall ten-stair and grab the 10 coin in the air.", "type": "collect", "items": ["10"]},
+		{"id": "dt_fountain_clip", "title": "Fountain Clip", "description": "Hit the bump and clear the corner of the fountain for the F coin.", "type": "collect", "items": ["F"]},
+		{"id": "dt_station_24", "title": "Station 24", "description": "Jump the station's 24-stair from the platform and grab the 24 coin.", "type": "collect", "items": ["24"]},
+		{"id": "dt_secret_tape", "title": "The Secret Tape", "description": "Somewhere behind a fence in the alleys, someone left a tape. Find the way in.", "type": "collect", "items": ["tape"]},
+		{"id": "dt_gap_hunter", "title": "City Explorer: 12 Gaps", "description": "Discover 12 gaps around downtown.", "type": "gaps", "target": 12},
+		{"id": "dt_grind_time", "title": "Ride The Line: 5 Second Grind", "description": "Hold one grind for 5 seconds (the monorail beams go a long way).", "type": "grind_time", "target": 5},
+		{"id": "dt_manual", "title": "Crosswalk Manual: 5 Seconds", "description": "Hold one manual for 5 seconds.", "type": "manual_time", "target": 5}
+	]
+}
