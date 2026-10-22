@@ -157,3 +157,86 @@ func test_pressed_within_buffers_any_button_and_consume_forgets_it() -> void:
 	var r: Array = f.feed(Vector2.ZERO, ["revert", "flip"], [])
 	assert_eq(r.size(), 1, "only flip/grab/grind make trick requests")
 	assert_true(f.pressed_within("revert", 0) and f.pressed_within("flip", 0), "every button is stamped")
+
+
+func test_ollie_variant_from_up_taps() -> void:
+	var up: Vector2 = Vector2(0, -1)
+	var f: TrickInput = TrickInput.new()
+	f.feed(Vector2.ZERO, ["ollie"], ["ollie"])
+	assert_eq(f.ollie_variant(), "", "no stick: a plain ollie")
+	f.clear()
+	f.feed(up, ["ollie"], ["ollie"])
+	assert_eq(f.ollie_variant(), "no_comply", "up + ollie together")
+	f.clear()
+	f.feed(up, [], [])
+	f.feed(up, [], [])
+	_trick_input_idle(f, 3)
+	f.feed(up, ["ollie"], ["ollie"])
+	assert_eq(f.ollie_variant(), "boneless", "up, up + ollie")
+	f.clear()
+	f.feed(Vector2.ZERO, ["ollie"], ["ollie"])
+	f.feed(up, [], ["ollie"])
+	assert_eq(f.ollie_variant(), "no_comply", "up a tick after the press still counts")
+	f.clear()
+	for i: int in 30:
+		f.feed(up, [], [])  # holding up to push
+	f.feed(up, ["ollie"], ["ollie"])
+	assert_eq(f.ollie_variant(), "", "a push held long before the press is not a tap")
+	f.clear()
+	f.feed(up, [], [])
+	_trick_input_idle(f, TrickInput.NO_COMPLY_TICKS + 2)
+	f.feed(Vector2.ZERO, ["ollie"], ["ollie"])
+	assert_eq(f.ollie_variant(), "", "one old up tap is too early for a no-comply")
+	f.clear()
+	f.feed(up, [], [])
+	_trick_input_idle(f, TrickInput.BONELESS_TICKS + 2)
+	f.feed(up, ["ollie"], ["ollie"])
+	assert_eq(f.ollie_variant(), "no_comply", "the first of two taps out of the boneless window")
+	f.clear()
+	f.feed(up, [], [])
+	f.feed(up, [], [])
+	_trick_input_idle(f, 3)
+	f.feed(Vector2.ZERO, ["ollie"], ["ollie"])
+	assert_eq(f.ollie_variant(), "", "up, up then a plain ollie press: the second up must come with the press")
+
+
+func test_ollie_variant_ignores_pushes_and_jitter() -> void:
+	var up: Vector2 = Vector2(0, -1)
+	var f: TrickInput = TrickInput.new()
+	f.feed(up, ["ollie"], ["ollie"])
+	for i: int in TrickInput.FLICK_TICKS + 2:
+		f.feed(up, [], ["ollie"])  # up held on through a long crouch: a push
+	assert_eq(f.ollie_variant(), "", "up held past a flick is a push")
+	f.clear()
+	for i: int in 3:
+		f.feed(up, [], [])
+		f.feed(Vector2.ZERO, [], [])
+	f.feed(up, ["ollie"], ["ollie"])
+	assert_eq(f.ollie_variant(), "", "four quick taps: a jittery push, not a boneless")
+	f.clear()
+	f.feed(up, ["ollie"], ["ollie"])
+	_trick_input_idle(f, 6)
+	f.feed(up, [], ["ollie"])
+	f.feed(Vector2.ZERO, [], ["ollie"])
+	assert_eq(f.ollie_variant(), "", "up tapped again mid-crouch: pushing")
+	f.clear()
+	f.feed(up, [], [])  # a one-tick blip of push...
+	_trick_input_idle(f, 3)
+	f.feed(Vector2.ZERO, ["ollie"], ["ollie"])  # ...then the press with the stick neutral
+	assert_eq(f.ollie_variant(), "", "up must be held with the press")
+
+
+func test_push_with_up_pulses_then_ollie_is_a_plain_ollie() -> void:
+	var up: Vector2 = Vector2(0, -1)
+	var f: TrickInput = TrickInput.new()
+	for i: int in 30:
+		f.feed(up if i % 3 == 0 else Vector2.ZERO, [], [])  # the bot's push: up pulsed every 3 ticks
+	f.feed(up, ["ollie"], ["ollie"])
+	for i: int in 6:
+		f.feed(up if i % 3 == 2 else Vector2.ZERO, [], ["ollie"])
+	assert_eq(f.ollie_variant(), "", "pulsed pushing into an ollie never makes a boneless or no-comply")
+	f.clear()
+	for i: int in 12:
+		f.feed(up if i % 3 == 0 else Vector2.ZERO, [], [])
+	f.feed(up, ["ollie"], ["ollie"])
+	assert_eq(f.ollie_variant(), "", "pulses right up to an up + ollie press: still a push")

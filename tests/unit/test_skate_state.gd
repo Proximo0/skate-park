@@ -499,3 +499,14 @@ func test_combo_lands_while_walking() -> void:
 	assert_eq(landed.size(), 0)
 	k.tick(0.2)
 	assert_eq(landed.size(), 1, "an open combo lands after the window even on foot")
+
+
+func test_caveman_only_from_walk_and_lands_rolling() -> void:
+	var k: SkateState = _with_state(SkateState.State.WALK)
+	assert_true(k.event("caveman"), "caveman from walking")
+	assert_eq(k.state, SkateState.State.AIR)
+	assert_true(k.event("land"))
+	assert_eq(k.state, SkateState.State.ROLLING)
+	for s: int in [SkateState.State.ROLLING, SkateState.State.AIR, SkateState.State.GRIND, SkateState.State.BAIL]:
+		var o: SkateState = _with_state(s as SkateState.State)
+		assert_false(o.event("caveman"), "no caveman from %d" % s)

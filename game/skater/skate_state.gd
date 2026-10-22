@@ -6,6 +6,7 @@ extends RefCounted
 ## passed since the last landing or revert. Bailing with an open combo emits combo_bailed.
 ## Manual linking: ROLLING -> MANUAL -> ROLLING keeps the combo open, because the landing timer only runs in ROLLING.
 ## Revert: a ROLLING state reached by "land" can be reverted within REVERT_WINDOW. The window restarts.
+## Caveman: WALK -> AIR (board thrown under the feet in a jump on foot), then "land" -> ROLLING as usual.
 
 enum State { ROLLING, AIR, GRIND, MANUAL, LIP, WALLRIDE, BAIL, WALK }
 
@@ -109,6 +110,9 @@ func _target(event_name: String) -> int:
 		"mount":
 			if state == State.WALK:
 				return State.ROLLING
+		"caveman":
+			if state == State.WALK:
+				return State.AIR  # jumped on foot, threw the board under: airborne on it, lands rolling
 		"recover":
 			if state == State.BAIL and time_in_state >= BAIL_TIME:
 				return State.ROLLING

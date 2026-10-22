@@ -136,6 +136,34 @@ const POWERSLIDE_MIN_NY: float = 0.8  ## flat-ish ground only (normal y): not on
 const CONVEX_MIN_DEG: float = 3.0
 const FLAT_NY: float = 0.99  ## floors flatter than this (normal y) count as flat for _limit_flat_step
 const FLAT_SLACK: float = 0.01  ## m a flat ground tick may move sideways past speed * dt
+## THUG2 board moves (round 4). Mappings (docs/agent_brief.md):
+##  boneless   up, up + ollie (TrickInput.ollie_variant): the front foot plants for tune.boneless_plant s, then a pop
+##             tune.boneless_pop times a full ollie's (anim "boneless", anim_time 0 at the plant, the pop at the plant time)
+##  no_comply  up + ollie: a shorter plant (tune.no_comply_plant) and a pop a touch under the ollie's (anim "no_comply")
+##  wallplant  ollie in the air close to an upright wall the board faces and travels into: the foot plants on the wall
+##             for tune.wallplant_hold s (the speed into the wall is killed, most of the speed along it too), then
+##             pushes off back out with a small pop; the board keeps facing the wall, so it rides away fakie (anim
+##             "wallplant", anim_time 0 at the plant)
+##  caveman    on foot, jump (ollie) and press ollie again in the air: the board is thrown under the feet and caught,
+##             rolling at least tune.caveman_speed (anim "caveman")
+##  acid_drop  revert in the air (not vert air) over a bank or quarter whose face falls away the way you travel, at least
+##             tune.acid_min_drop below: a quick guided drop onto the face that keeps the energy (speed in plus the drop),
+##             then rolling down it (anim "acid_drop" during the drop, "land" on the face)
+const WALLPLANT_BUFFER_TICKS: int = 6  ## an ollie pressed this many ticks before the wall comes in reach still plants
+const WALLPLANT_MIN_INTO: float = 1.5  ## m/s the skater must be travelling into the wall
+const WALLPLANT_FACING_DOT: float = 0.34  ## the board's nose must point at the wall within about 70 degrees
+const WALLPLANT_MAX_NY: float = 0.35  ## faces with a normal y beyond this are floors or ramps, not walls
+const WALLPLANT_FOOT_UP: float = 0.5  ## m above the body's centre the wall must also be there (a wall, not a curb)
+const WALLPLANT_STAND_OFF: float = 0.25  ## m the body closes to from the wall during the plant (sphere surface to wall)
+const WALLPLANT_CLOSE_MAX: float = 0.8  ## m/s at most it closes at (the leg reaches the rest: the speed into the wall dies)
+const WALLPLANT_COOL: float = 0.3  ## s after a push-off before the next wallplant
+const CAVEMAN_HOP: float = 1.5  ## m/s up, at least, as the board is caught (the jump's last kick)
+const ACID_BUFFER_TICKS: int = 6  ## a revert pressed this many ticks before the face comes under the board still drops
+const ACID_MIN_NY: float = 0.35  ## faces between these normal y are banks and transitions an acid drop can drop onto
+const ACID_MAX_NY: float = 0.97
+const ACID_ALONG_DOT: float = 0.2  ## the face must fall away along the travel (its outward normal along the motion)
+const ACID_ANIM_TIME: float = 0.55  ## s the "acid_drop" pose runs (the drop, the catch and the roll-away) before idle
+const ACID_LEAD: float = 0.15  ## s of horizontal travel the drop's path leads by (it carries on, it does not stop dead)
 
 ## Live physics tuning. Every ride number is read from here each tick.
 var tune: PhysicsTuning = PhysicsTuning.shared()
@@ -143,7 +171,8 @@ var tune: PhysicsTuning = PhysicsTuning.shared()
 var debug: Dictionary = {}
 ## Events raised this tick: "ollie", "air", "land:<result>", "bail", "grind", "grind_end", "manual", "lip",
 ## "wallride", "leave_edge", "overhang_drop", "speed_restore", "respawn", "dismount", "mount", "ramp_snap:<mode>",
-## "ramp_snap_release", "ramp_snap_miss".
+## "ramp_snap_release", "ramp_snap_miss", "boneless_plant", "boneless", "no_comply_plant", "no_comply", "wallplant",
+## "wallplant_push", "caveman", "acid_drop_land".
 var events: Array[String] = []
 
 var db: TrickDB
@@ -231,6 +260,11 @@ var nollie: bool = false
 var _nollie_air: bool = false  ## this air came from a nollie
 var powersliding: bool = false  ## skidding sideways in a powerslide (anim "powerslide")
 var _slide_time: float = 0.0  ## s into the current powerslide
+## A boneless or no-comply foot plant before its pop: {kind, left (s), power (m/s)}; {} when none. Still ROLLING.
+var _plant: Dictionary = {}
+var _wallplant_left: float = 0.0  ## s the foot stays planted on a wall (a wallplant in progress), 0 when not
+var _wallplant_n: Vector3 = Vector3.ZERO  ## the planted wall's outward normal (horizontal)
+var _wallplant_cool: float = 0.0  ## s left before another wallplant
 
 
 func _ready() -> void:
@@ -357,7 +391,7 @@ func _step(delta: float) -> void:
 		if _try_ramp_snap():
 			_finish_step(delta)
 			return
-	if _just_pressed.has("dismount") and state.state == SkateState.State.ROLLING:
+	if _just_pressed.has("dismount") and state.state == SkateState.State.ROLLING and _plant.is_empty():
 		_try_dismount()
 	match state.state:
 		SkateState.State.WALK:
@@ -388,10 +422,15 @@ func _finish_step(delta: float) -> void:
 # --- ground -------------------------------------------------------------------------------------------
 
 func _tick_rolling(delta: float, requests: Array) -> void:
+	if not _plant.is_empty():
+		_tick_plant(delta, requests)
+		return
 	_ground_move(delta, true)
 	if not is_on_floor() or _left_edge:
 		_go_airborne(false)
 		return
+	if anim == "acid_drop" and anim_time >= ACID_ANIM_TIME:
+		_set_anim("idle_ride")
 	if anim == "drop_in" and _floor_normal.y > 0.97:
 		# down the wall and onto the flat: the knees take the bottom of the transition
 		land_impact = clampf(speed / 14.0, 0.2, 0.8)
@@ -443,16 +482,64 @@ func _handle_ollie(delta: float) -> void:
 		var power: float = lerpf(tune.ollie_min, tune.ollie_max, crouch)
 		_crouch_time = 0.0
 		crouch = 0.0
-		_ollie(power)
+		var move: String = tricks.ollie_variant()
+		if move != "":
+			_begin_plant(move, power)
+		else:
+			_ollie(power)
 
 
-func _ollie(power: float) -> void:
+## Boneless / no-comply: the foot goes down (still rolling) before the pop. `power` is the ollie this release would give.
+func _begin_plant(move: String, power: float) -> void:
+	tricks.consume("ollie")
+	var boneless: bool = move == "boneless"
+	var pop: float = maxf(power, tune.ollie_max) * tune.boneless_pop if boneless else power * tune.no_comply_pop
+	var hold: float = tune.boneless_plant if boneless else tune.no_comply_plant
+	_ev(move + "_plant")
+	if hold <= 0.0:
+		_ollie(pop, move)
+		return
+	_plant = {"kind": move, "left": hold, "power": pop}
+	_set_anim(move)
+
+
+## One tick of a boneless / no-comply plant: rolling with a foot dragging, no push, no other input; then the pop. Flip
+## and grab presses wait for the air (as with an ollie). Rolling off an edge mid-plant drops into the air unpopped.
+func _tick_plant(delta: float, requests: Array) -> void:
+	_ground_move(delta, false)
+	if not is_on_floor() or _left_edge:
+		_plant = {}
+		_go_airborne(false)
+		return
+	velocity = velocity.move_toward(Vector3.ZERO, tune.plant_drag * delta)
+	for r: Dictionary in requests:
+		if r["button"] != "grind":
+			_pending_air.append({"req": r, "t": _t})
+	_plant["left"] = float(_plant["left"]) - delta
+	if float(_plant["left"]) <= 0.0:
+		var move: String = _plant["kind"]
+		var power: float = _plant["power"]
+		_plant = {}
+		_ollie(power, move)
+
+
+## The board move's scoring entry from the trick table (kind "move"), with a stand-in when the table lacks it.
+func _move_trick(id: String) -> Dictionary:
+	var t: Dictionary = db.find_move(id) if db != null else {}
+	if t.is_empty():
+		t = {"id": id, "name": id.capitalize(), "points": 100, "kind": "move", "anim": id}
+	return t
+
+
+## `move`: "" for an ollie (or a nollie in nollie stance), else the board move that pops ("boneless", "no_comply").
+func _ollie(power: float, move: String = "") -> void:
 	# Pop straight up off anything you can stand on: popping along a kicker's normal would brake you.
 	var up: Vector3 = Vector3.UP
 	if state.state != SkateState.State.GRIND and _floor_normal.y < 0.8:
 		up = (_floor_normal + Vector3.UP).normalized()  # on a steep transition, pop out of the ramp too
 	var from_ground: bool = state.state in [SkateState.State.ROLLING, SkateState.State.MANUAL]
-	var is_nollie: bool = nollie and from_ground
+	var is_nollie: bool = nollie and from_ground and move == ""
+	tricks.consume("ollie")  # this press has popped: it must not also wallplant or buffer a pop on the next landing
 	if is_nollie:
 		power *= tune.nollie_pop  # popped off the nose: a touch lower
 	velocity += up * power
@@ -463,8 +550,14 @@ func _ollie(power: float) -> void:
 		_ev("ollie")
 		if is_nollie:
 			_ev("nollie")
-		_set_anim("nollie" if is_nollie else "ollie")
+		if move != "":
+			_ev(move)
+			_set_anim(move)
+		else:
+			_set_anim("nollie" if is_nollie else "ollie")
 		_enter_air(false)
+		if move != "":
+			_score_trick(_move_trick(move))
 
 
 ## Buried in solid geometry (spawned or put back inside a closed mesh, whose faces only collide from outside, so the
@@ -1160,6 +1253,12 @@ func _enter_air(_from_rail: bool) -> void:
 
 
 func _tick_air(delta: float, requests: Array) -> void:
+	_wallplant_cool = maxf(_wallplant_cool - delta, 0.0)
+	if _wallplant_left > 0.0:
+		_tick_wallplant(delta, requests)
+		return
+	if _recent_revert_press <= ACID_BUFFER_TICKS and not vert_air and _try_acid_drop():
+		return
 	velocity += Vector3.DOWN * tune.gravity * delta
 	# spin: shoulders or stick left/right
 	var spin_in: float = 0.0
@@ -1204,6 +1303,9 @@ func _tick_air(delta: float, requests: Array) -> void:
 	if _recent_grind_press < 8 and _try_grind():
 		return
 	if vert_air and _recent_grind_press < 8 and _try_lip():
+		return
+	if _wallplant_cool <= 0.0 and not vert_air and tricks.pressed_within("ollie", WALLPLANT_BUFFER_TICKS) \
+			and _try_wallplant():
 		return
 	if _air_trick_until > 0.0 and _t >= _air_trick_until:
 		_air_trick_until = 0.0
@@ -1589,6 +1691,193 @@ func _tick_wallride(delta: float) -> void:
 			_land(get_floor_normal())
 
 
+# --- board moves: wallplant, acid drop, caveman ---------------------------------------------------------
+
+## Wallplant: an upright wall straight ahead along the travel, within reach, that the board faces and moves into. Plants
+## the foot (see _tick_wallplant). Returns true when it planted.
+func _try_wallplant() -> bool:
+	if not is_inside_tree() or _air_trick_until > _t:
+		return false  # mid-flip: the feet are off the board
+	var hv: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	if hv.length() < WALLPLANT_MIN_INTO:
+		return false
+	var dir: Vector3 = hv.normalized()
+	var c: Vector3 = global_position + Vector3.UP * BODY_RADIUS
+	var reach: float = BODY_RADIUS + tune.wallplant_reach
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(c, c + dir * reach, collision_mask, [get_rid()])
+	var hit: Dictionary = space.intersect_ray(q)
+	if hit.is_empty():
+		return false
+	var n: Vector3 = hit["normal"]
+	if absf(n.y) > WALLPLANT_MAX_NY:
+		return false
+	var nh: Vector3 = Vector3(n.x, 0.0, n.z).normalized()
+	if -hv.dot(nh) < WALLPLANT_MIN_INTO or Vector3(facing.x, 0.0, facing.z).normalized().dot(-nh) < WALLPLANT_FACING_DOT:
+		return false
+	var top: Vector3 = c + Vector3.UP * WALLPLANT_FOOT_UP
+	var q2 := PhysicsRayQueryParameters3D.create(top, top - nh * (reach + 0.3), collision_mask, [get_rid()])
+	var hit2: Dictionary = space.intersect_ray(q2)
+	if hit2.is_empty() or absf((hit2["normal"] as Vector3).y) > WALLPLANT_MAX_NY:
+		return false  # a curb or a ledge's side: nothing up at foot height to plant on
+	var gap: float = c.distance_to(hit["position"] as Vector3) - BODY_RADIUS
+	_wallplant_n = nh
+	_wallplant_left = tune.wallplant_hold
+	facing = -nh  # square to the wall, nose first (the plant pose has the wall ahead of the nose)
+	var along: Vector3 = hv - nh * hv.dot(nh)
+	# the speed into the wall dies on the foot; the body closes to the wall over the plant, and slides on along it a bit
+	var close: float = minf(maxf(gap - WALLPLANT_STAND_OFF, 0.0) / maxf(tune.wallplant_hold, 0.01), WALLPLANT_CLOSE_MAX)
+	velocity = along * tune.wallplant_keep - nh * close
+	tricks.consume("ollie")
+	_grab_trick = {}
+	_ev("wallplant")
+	_score_trick(_move_trick("wallplant"))
+	return true
+
+
+## One tick of a wallplant: the foot on the wall holds the body up (no fall), then the push-off back out with a pop.
+func _tick_wallplant(delta: float, requests: Array) -> void:
+	_wallplant_left -= delta
+	velocity.y = 0.0
+	up_direction = Vector3.UP
+	floor_snap_length = 0.0
+	move_and_slide()
+	floor_snap_length = 0.6
+	board_up = _turn_toward(board_up, Vector3.UP, clampf(delta * 10.0, 0.0, 1.0))
+	if is_on_floor() and get_floor_normal().y > LAND_EDGE_MIN_NY:
+		_wallplant_left = 0.0
+		_land(get_floor_normal())
+		return
+	if _wallplant_left > 0.0:
+		return
+	_wallplant_left = 0.0
+	var hv: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	var along: Vector3 = hv - _wallplant_n * hv.dot(_wallplant_n)
+	velocity = along + _wallplant_n * tune.wallplant_push + Vector3.UP * tune.wallplant_pop
+	_wallplant_cool = WALLPLANT_COOL
+	_launch_normal = Vector3.UP
+	_ev("wallplant_push")
+	for r: Dictionary in requests:
+		_air_trick(r)
+
+
+## Acid drop: a bank or quarter face below the board (along a short lead of the travel) that falls away the way the
+## skater moves, at least tune.acid_min_drop and at most tune.acid_reach below. Starts a guided drop onto it (an "acid"
+## ramp snap). Returns true when it started.
+func _try_acid_drop() -> bool:
+	if not is_inside_tree() or _air_trick_until > _t or not _snap.is_empty():
+		return false
+	var hv: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	var c0: Vector3 = global_position + Vector3.UP * BODY_RADIUS
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var sphere := SphereShape3D.new()
+	sphere.radius = BODY_RADIUS
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = sphere
+	q.collision_mask = collision_mask
+	q.exclude = [get_rid()]
+	# The drop carries on along the travel for as long as it takes (it does not stop dead and fall straight down): a
+	# first cast leads by ACID_LEAD to find the face and the drop's time, a second leads by that time. Straight down last.
+	var leads: Array[float] = [ACID_LEAD, ACID_LEAD, 0.0]
+	for li: int in leads.size():
+		var lead: float = leads[li]
+		q.transform = Transform3D(Basis.IDENTITY, c0)
+		q.motion = hv * lead + Vector3.DOWN * tune.acid_reach
+		var frac: PackedFloat32Array = space.cast_motion(q)
+		if frac.size() < 2 or frac[1] >= 1.0:
+			continue
+		var c1: Vector3 = c0 + q.motion * frac[0]
+		q.transform = Transform3D(Basis.IDENTITY, c0 + q.motion * frac[1])
+		q.motion = Vector3.ZERO
+		var rest: Dictionary = space.get_rest_info(q)
+		if rest.is_empty():
+			continue
+		var n: Vector3 = rest["normal"]
+		var nh: Vector3 = Vector3(n.x, 0.0, n.z)
+		if n.y < ACID_MIN_NY or n.y > ACID_MAX_NY or nh.length() < 0.01:
+			continue
+		if hv.length() > 1.0 and hv.normalized().dot(nh.normalized()) < ACID_ALONG_DOT:
+			continue  # the face rises toward the skater: that is a landing on a ramp, not a drop into one
+		var drop: float = c0.y - c1.y
+		if drop < tune.acid_min_drop:
+			continue
+		if li == 0:
+			leads[1] = _acid_time(drop)  # found the face: aim where the drop's own time carries the skater
+			continue
+		var p1: Vector3 = c1 + n * 0.01 - Vector3.UP * BODY_RADIUS
+		var down: Vector3 = Vector3.DOWN.slide(n).normalized()
+		var face1: Vector3 = Vector3(down.x, 0.0, down.z).normalized()
+		if facing.dot(face1) < 0.0:
+			face1 = -face1  # riding backward (spun round in the air): it drops in fakie
+		_recent_revert_press = 100  # the press is spent on the drop, not on a revert at the landing
+		_begin_snap({"mode": "acid", "p1": p1, "face1": face1, "n": n, "rest": p1, "v0": velocity, "drop": drop})
+		_score_trick(_move_trick("acid_drop"))
+		return true
+	return false
+
+
+## Seconds an acid drop of `drop` metres takes: a little quicker than falling it.
+func _acid_time(drop: float) -> float:
+	return clampf(0.6 * sqrt(2.0 * maxf(drop, 0.0) / tune.gravity), 0.1, 0.3)
+
+
+## The acid drop reaches the face: rolling down it with the energy kept (the speed in, plus what the drop adds),
+## along the travel turned onto the face and the fall line's pull.
+func _arrive_acid() -> void:
+	var n: Vector3 = _snap["n"]
+	var v0: Vector3 = _snap["v0"]
+	var drop: float = maxf(float(_snap["drop"]), 0.0)
+	var spd: float = minf(sqrt(v0.length_squared() + 2.0 * tune.gravity * drop), tune.max_speed)
+	var down: Vector3 = Vector3.DOWN.slide(n).normalized()
+	var dir: Vector3 = v0.slide(n) + down * sqrt(2.0 * tune.gravity * drop)
+	if dir.length() < 0.1:
+		dir = down
+	dir = dir.normalized()
+	if facing.dot(dir) < 0.0:
+		switch_stance = not switch_stance  # dropped in backward: rolling fakie
+	velocity = dir * spd
+	facing = dir
+	board_up = n
+	_floor_normal = n
+	up_direction = n
+	_launch_normal = n
+	_transition_ticks = VERT_MIN_TRANSITION_TICKS if n.y < 0.9 else 0
+	_since_bend = 1.0
+	_curv = WALL_ROLL_CURV if n.y < 0.8 else 0.0
+	vert_air = false
+	_snap = {}
+	state.event("land")
+	land_impact = clampf(drop / 6.0, 0.2, 0.6)
+	_ev("acid_drop_land")
+	_ev("land:clean")
+	_set_anim("acid_drop")  # (already on: its pose runs on into the roll-away, see ACID_ANIM_TIME)
+	landed.emit("clean")
+
+
+## Caveman: in a jump on foot, the board goes down under the feet and the skater lands on it rolling. Returns true when
+## it started.
+func _caveman() -> bool:
+	if not state.event("caveman"):
+		return false
+	var h: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	var dir: Vector3 = h.normalized() if h.length() > 0.5 else walker.facing
+	velocity = dir * maxf(h.length(), tune.caveman_speed) + Vector3.UP * maxf(velocity.y, CAVEMAN_HOP)
+	facing = dir
+	board_up = Vector3.UP
+	_floor_normal = Vector3.UP
+	up_direction = Vector3.UP
+	_launch_normal = Vector3.UP
+	_transition_ticks = 0
+	crouch = 0.0
+	_crouch_time = 0.0
+	_left_edge = false
+	tricks.consume("ollie")
+	_enter_air(false)
+	_ev("caveman")
+	_score_trick(_move_trick("caveman"))
+	return true
+
+
 # --- ramp snap ----------------------------------------------------------------------------------------
 
 ## Q + E / L1 + R1 together. Inside a ramp (on a transition, in vert air, on a lip, down in a half pipe or bowl) it
@@ -1866,6 +2155,8 @@ func _begin_snap(plan: Dictionary) -> void:
 	_carve_left = 0.0
 	_left_edge = false
 	_snap_hold_up = Vector3.ZERO
+	_plant = {}
+	_wallplant_left = 0.0
 	var p0: Vector3 = global_position
 	var dist: float = p0.distance_to(plan["p1"] as Vector3)
 	_snap = plan.duplicate()
@@ -1879,9 +2170,15 @@ func _begin_snap(plan: Dictionary) -> void:
 		_snap["apex"] = 0.0
 		_snap["dur"] = clampf(0.25 + dist * 0.12, 0.25, 0.5)
 		_snap["glide"] = true
+	if str(plan["mode"]) == "acid":
+		# an acid drop is a quick guided fall onto the face, not a hop: a little faster than falling the same height
+		_snap["apex"] = 0.0
+		_snap["dur"] = _acid_time(float(plan["drop"]))
 	_snap["face0"] = facing
 	_snap["speed0"] = velocity.length()
 	_plan_snap_yaw()
+	if str(plan["mode"]) == "acid":
+		return  # the trick (scored by the caller) sets the anim; it is not a ramp snap for the HUD or the camera
 	spin.start(_yaw())
 	_ev("ramp_snap:" + str(plan["mode"]))
 	_set_anim("idle_ride" if bool(_snap.get("glide", false)) else "ollie")
@@ -1921,7 +2218,7 @@ func _tick_snap(delta: float) -> void:
 	global_position = p
 	_turn_snap_yaw(delta)
 	var up_goal: Vector3 = Vector3.UP
-	if str(_snap["mode"]) == "air_in":
+	if str(_snap["mode"]) in ["air_in", "acid"]:
 		# straight onto the wall: the board turns square to it through the second half, so the wheels meet it flat
 		up_goal = Vector3.UP.slerp(_snap["n"] as Vector3, _smooth01((u - 0.4) / 0.6))
 	board_up = _turn_toward(board_up, up_goal, clampf(delta * 10.0, 0.0, 1.0)) if up_goal == Vector3.UP else up_goal
@@ -1937,6 +2234,8 @@ func _arrive_snap() -> void:
 	if mode != "drop_in" or float(_snap.get("yt", 0.0)) >= float(_snap.get("yaw_dur", 0.0)):
 		facing = _snap["face1"]  # (a drop-in finishes its turn on the coping, during the hang)
 	match mode:
+		"acid":
+			_arrive_acid()
 		"drop_in":
 			_snap["phase"] = "hang"
 			_snap["t"] = 0.0
@@ -2056,6 +2355,8 @@ func _try_mount() -> bool:
 func _tick_walk(delta: float) -> void:
 	if _just_pressed.has("dismount") and _try_mount():
 		return
+	if _just_pressed.has("ollie") and not walker.grounded and not is_on_floor() and _caveman():
+		return
 	var cam_fwd: Vector3 = Vector3.ZERO
 	if is_inside_tree() and get_viewport() != null:
 		var cam: Camera3D = get_viewport().get_camera_3d()
@@ -2087,6 +2388,8 @@ func _set_walk_physics(walking: bool) -> void:
 ## ctx: what caused it (BailKind context keys; the ragdoll's plan is classified from it).
 func _bail(ctx: Dictionary = {}) -> void:
 	_bail_ctx = ctx
+	_plant = {}
+	_wallplant_left = 0.0
 	_end_powerslide()
 	_set_nollie(false)
 	_nollie_air = false
@@ -2178,6 +2481,9 @@ func respawn() -> void:
 	_getup_left = 0.0
 	_snap = {}
 	_snap_hold_up = Vector3.ZERO
+	_plant = {}
+	_wallplant_left = 0.0
+	_wallplant_cool = 0.0
 	camera_hold = 0.0
 	_roll_off = false
 	global_transform = _spawn
@@ -2268,6 +2574,10 @@ func snapshot() -> Dictionary:
 		"nollie_air": _nollie_air,
 		"powersliding": powersliding,
 		"slide_time": _slide_time,
+		"plant": _plant.duplicate(true),
+		"wallplant_left": _wallplant_left,
+		"wallplant_n": _wallplant_n,
+		"wallplant_cool": _wallplant_cool,
 		"camera_hold": camera_hold,
 		"camera_anchor": camera_anchor,
 		"chord": chord.to_dict(),
@@ -2283,6 +2593,9 @@ func snapshot() -> Dictionary:
 			"last_dir_tick": tricks._last_dir_tick,
 			"history": Array(tricks._history).duplicate(true),
 			"last_press": tricks._last_press.duplicate(true),
+			"up_taps": Array(tricks._up_taps).duplicate(),
+			"was_up": tricks._was_up,
+			"up_with_ollie": tricks._up_with_ollie,
 		},
 		"combo": {
 			"tricks": Array(combo._tricks).duplicate(true),
@@ -2366,6 +2679,10 @@ func restore(d: Dictionary) -> void:
 	_nollie_air = bool(d.get("nollie_air", false))
 	powersliding = bool(d.get("powersliding", false))
 	_slide_time = float(d.get("slide_time", 0.0))
+	_plant = (d.get("plant", {}) as Dictionary).duplicate(true)
+	_wallplant_left = float(d.get("wallplant_left", 0.0))
+	_wallplant_n = d.get("wallplant_n", Vector3.ZERO)
+	_wallplant_cool = float(d.get("wallplant_cool", 0.0))
 	camera_hold = float(d.get("camera_hold", 0.0))
 	camera_anchor = d.get("camera_anchor", Vector3.ZERO)
 	chord.from_dict(d.get("chord", {}))
@@ -2385,6 +2702,11 @@ func restore(d: Dictionary) -> void:
 	for h: Dictionary in (ti["history"] as Array):
 		tricks._history.append(h.duplicate(true))
 	tricks._last_press = (ti["last_press"] as Dictionary).duplicate(true)
+	tricks._up_taps.clear()
+	for at: Variant in (ti.get("up_taps", []) as Array):
+		tricks._up_taps.append(int(at))
+	tricks._was_up = bool(ti.get("was_up", false))
+	tricks._up_with_ollie = bool(ti.get("up_with_ollie", false))
 	var cb: Dictionary = d["combo"]
 	combo._tricks.clear()
 	for e: Dictionary in (cb["tricks"] as Array):

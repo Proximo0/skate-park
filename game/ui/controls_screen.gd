@@ -29,9 +29,9 @@ const CTRL_TIPS := [
 	"Hold Cross to crouch, let go to ollie.",
 	"Up then Down for a manual. Balance on the back wheels.",
 	"Get close to a rail or ledge and press Triangle to grind.",
-	"Square flips, Circle grabs. Do them in the air for points.",
-	"Land clean to keep your combo going.",
-	"Fill the special meter, then Down-Up + Square for a special.",
+	"Square flips, Circle grabs. Full special meter: Down-Up + Square.",
+	"Up, Up + Ollie: boneless. Up + Ollie: no comply. Ollie at a wall: wallplant.",
+	"Revert while rolling to powerslide, or in the air over a bank to acid drop.",
 ]
 
 var _back: Button

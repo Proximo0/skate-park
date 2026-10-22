@@ -122,3 +122,15 @@ func test_copies_are_safe_to_mutate() -> void:
 	var t: Dictionary = db.get_trick("kickflip")
 	t["points"] = 999999
 	assert_true(int(db.get_trick("kickflip").get("points")) != 999999, "table not mutated")
+
+
+func test_board_moves_score_from_the_table() -> void:
+	var db: TrickDB = _db()
+	for id: String in TrickDB.MOVE_IDS:
+		var t: Dictionary = db.find_move(id)
+		assert_eq(str(t.get("kind", "")), "move", "%s is a move" % id)
+		assert_eq(str(t.get("anim", "")), id, "%s anim is its id (the poser keys off it)" % id)
+		assert_true(int(t.get("points", 0)) > 0, "%s scores" % id)
+	assert_eq(db.find_move("kickflip").size(), 0, "a flip is not a move")
+	assert_eq(db.by_kind("move").size(), TrickDB.MOVE_IDS.size(), "moves")
+	assert_eq(db.find("", "", false).size(), 0, "moves never match a button")

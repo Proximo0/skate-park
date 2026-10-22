@@ -60,6 +60,10 @@ static func table() -> Array:
 		["m_manual_drift", ["manual_drift_1s", "manual_recover_half_s"]],
 		["m_revert_fakie", ["revert_speed_keep", "fakie_landing_retention"]],
 		["m_big_air", ["big_air_clean_drop_m", "big_air_landing_keep"]],
+		["m_boneless", ["boneless_height_ratio", "boneless_plant_ms", "no_comply_height_ratio"]],
+		["m_wallplant", ["wallplant_push_out_ms", "wallplant_into_left_ms"]],
+		["m_caveman", ["caveman_roll_speed_ms"]],
+		["m_acid_drop", ["acid_drop_energy_keep"]],
 	]
 
 
@@ -1200,3 +1204,61 @@ func m_big_air() -> Dictionary:
 			first_bail = float(h)
 	return {"big_air_clean_drop_m": best, "big_air_landing_keep": keep8, "x_big_air_clean_impact_ms": impact,
 		"x_big_air_first_fail_drop_m": first_bail}
+
+
+# --- THUG2 board moves (round 4): the scenarios live in tests/sim/sim_board_moves.gd ---------------------------
+
+const BoardMoves := preload("res://tests/sim/sim_board_moves.gd")
+
+
+func _moves() -> Variant:
+	var m: Variant = BoardMoves.new()
+	m.host = host
+	m.SkaterScript = SkaterScript
+	return m
+
+
+## Boneless (up, up + ollie) height over a full-crouch ollie's, its foot-plant wait from the release to the pop, and the
+## no-comply (up + ollie) height over a tap ollie's.
+func m_boneless() -> Dictionary:
+	var m: Variant = _moves()
+	var full: Dictionary = await m.full_ollie()
+	var tap: Dictionary = await m.tap_ollie()
+	var b: Dictionary = await m.boneless()
+	var nc: Dictionary = await m.no_comply()
+	var out: Dictionary = {"boneless_height_ratio": NAN, "boneless_plant_ms": NAN, "no_comply_height_ratio": NAN,
+		"x_boneless_height_m": b["h"], "x_no_comply_height_m": nc["h"]}
+	if (b["anims"] as Dictionary).has("boneless"):
+		out["boneless_height_ratio"] = float(b["h"]) / maxf(float(full["h"]), 0.01)
+		out["boneless_plant_ms"] = float(b["wait"]) * DT * 1000.0
+	if (nc["anims"] as Dictionary).has("no_comply"):
+		out["no_comply_height_ratio"] = float(nc["h"]) / maxf(float(tap["h"]), 0.01)
+	return out
+
+
+## Wallplant from a full ollie at 7 m/s into an upright wall: the push-off speed back out, and the speed still going into
+## the wall at the push (what the planted foot did not kill).
+func m_wallplant() -> Dictionary:
+	var w: Dictionary = await _moves().wallplant()
+	if not (w["anims"] as Dictionary).has("wallplant"):
+		return {"wallplant_push_out_ms": NAN, "wallplant_into_left_ms": NAN}
+	return {"wallplant_push_out_ms": w["out"], "wallplant_into_left_ms": w["into"], "x_wallplant_rise_m": w["rise"],
+		"x_wallplant_landing": w["result"]}
+
+
+## Caveman: rolling speed 6 ticks after the board is caught from a running jump on foot.
+func m_caveman() -> Dictionary:
+	var c: Dictionary = await _moves().caveman()
+	if int(c["rolled_at"]) < 0:
+		return {"caveman_roll_speed_ms": NAN}
+	return {"caveman_roll_speed_ms": c["speed"], "x_caveman_catch_ticks": c["rolled_at"]}
+
+
+## Acid drop off a 3 m quarter's deck over its face: speed on touching the face over the energy speed
+## sqrt(v^2 + 2 g drop) from the press.
+func m_acid_drop() -> Dictionary:
+	var a: Dictionary = await _moves().acid(true)
+	if not (a["anims"] as Dictionary).has("acid_drop"):
+		return {"acid_drop_energy_keep": NAN}
+	return {"acid_drop_energy_keep": float(a["spd"]) / maxf(float(a["ideal"]), 0.01), "x_acid_drop_face_ny": a["ny"],
+		"x_acid_drop_speed_ms": a["spd"]}

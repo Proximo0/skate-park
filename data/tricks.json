@@ -732,6 +732,71 @@
 				"NW"
 			],
 			"points_per_sec": 0
+		},
+		{
+			"id": "wallplant",
+			"name": "Wallplant",
+			"kind": "move",
+			"button": "",
+			"dir": "",
+			"double_tap": false,
+			"points": 250,
+			"anim": "wallplant",
+			"hold": false,
+			"sequence": [],
+			"points_per_sec": 0
+		},
+		{
+			"id": "boneless",
+			"name": "Boneless",
+			"kind": "move",
+			"button": "",
+			"dir": "",
+			"double_tap": false,
+			"points": 150,
+			"anim": "boneless",
+			"hold": false,
+			"sequence": [],
+			"points_per_sec": 0
+		},
+		{
+			"id": "no_comply",
+			"name": "No Comply",
+			"kind": "move",
+			"button": "",
+			"dir": "",
+			"double_tap": false,
+			"points": 100,
+			"anim": "no_comply",
+			"hold": false,
+			"sequence": [],
+			"points_per_sec": 0
+		},
+		{
+			"id": "caveman",
+			"name": "Caveman",
+			"kind": "move",
+			"button": "",
+			"dir": "",
+			"double_tap": false,
+			"points": 100,
+			"anim": "caveman",
+			"hold": false,
+			"sequence": [],
+			"points_per_sec": 0
+		},
+		{
+			"id": "acid_drop",
+			"name": "Acid Drop",
+			"kind": "move",
+			"button": "",
+			"dir": "",
+			"double_tap": false,
+			"points": 200,
+			"anim": "acid_drop",
+			"hold": false,
+			"sequence": [],
+			"points_per_sec": 0
 		}
 	]
 }

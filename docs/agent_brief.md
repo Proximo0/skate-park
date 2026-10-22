@@ -36,6 +36,7 @@ Visual's basis: -Z = travel direction, +Y = board up.
 `anim` values: `idle_ride`, `push`, `crouch`, `ollie`, `air`, `land`, `revert`, `bail_fall`, `bail_getup`, `wallride`,
 plus the trick's `anim` from `data/tricks.json`: `flip_<id>`, `grab_<id>`, `grind_<id>`, `lip_<id>`,
 `manual_manual`, `manual_nose_manual`, `special_<id>`. Match on the prefix (`flip_`, `grab_`, ...).
+Board moves use their id as the anim: `boneless`, `no_comply`, `wallplant`, `caveman`, `acid_drop`.
 
 ## Park pieces (`game/park/piece_kit.gd`, class `PieceKit`)
 Every piece is a `class_name <Name> extends RefCounted` with `static func build(...) -> Node3D` in
@@ -67,3 +68,8 @@ Chord `ramp_snap` = `spin_left` + `spin_right` together (Q + E / L1 + R1, within
 the nearest ramp lip in reach (`RampLip` nodes in group `ramp_lip`, picked by `RampSnap`): a drop-in on coping (tail
 hooked, stomp, drop down the wall) or a roll-in on a start deck; riding a transition, in vert air or down in a half pipe
 or bowl it takes you out onto the flat (or the deck). New ramp pieces add a `RampLip` on their coping or roll-in edge.
+THUG2 board moves (`skater.gd`, scored from `data/tricks.json` kind `move`, anim = the id): **boneless** = up, up +
+`ollie` (foot plant, then a higher pop); **no_comply** = up + `ollie`; **wallplant** = `ollie` in the air close to a wall
+the board faces (plant, push back out with a pop, rides away fakie); **caveman** = on foot, jump (`ollie`) then `ollie`
+again in the air (board caught, rolling); **acid_drop** = `revert` in the air over a bank or quarter face that falls away
+the way you travel (drops onto it keeping the energy). A held push is not an up tap (see `TrickInput.ollie_variant`).

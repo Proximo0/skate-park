@@ -54,6 +54,19 @@ const FIELDS: Array = [
 	["powerslide_min_speed", 3.0, 0.5, 10.0, 0.25, "Powerslide", "Slowest roll a powerslide starts from, m/s; it ends below a third of this."],
 	["nollie_pop", 0.95, 0.5, 1.2, 0.01, "Air", "Nollie pop speed as a share of the ollie's (a real nollie is a touch lower)."],
 	["slam_impact", 24.0, 10.0, 60.0, 0.5, "Air", "Landing square into the surface faster than this (m/s) slams even upright (about a 16 m flat drop at gravity 18)."],
+	["boneless_pop", 1.08, 0.8, 1.5, 0.01, "Moves", "Boneless (up, up + ollie) pop speed over a full-crouch ollie's: the planted foot jumps the board higher."],
+	["boneless_plant", 0.12, 0.03, 0.4, 0.01, "Moves", "Boneless foot-plant time before the pop, s (front foot down, board in hand)."],
+	["no_comply_pop", 0.95, 0.6, 1.2, 0.01, "Moves", "No-comply (up + ollie) pop speed as a share of the ollie's that release would give."],
+	["no_comply_plant", 0.07, 0.0, 0.3, 0.01, "Moves", "No-comply foot-plant time before the pop, s."],
+	["plant_drag", 2.0, 0.0, 10.0, 0.25, "Moves", "Deceleration while a foot is planted on the ground for a boneless or no-comply, m/s²."],
+	["wallplant_reach", 0.7, 0.3, 2.5, 0.05, "Moves", "Wallplant (ollie in the air facing a wall): farthest the wall may be from the body, m."],
+	["wallplant_hold", 0.12, 0.03, 0.4, 0.01, "Moves", "Wallplant: time the foot stays planted on the wall, s."],
+	["wallplant_keep", 0.35, 0.0, 1.0, 0.05, "Moves", "Wallplant: share of the speed along the wall kept through the plant."],
+	["wallplant_push", 4.0, 1.0, 10.0, 0.25, "Moves", "Wallplant: push-off speed straight back out from the wall, m/s."],
+	["wallplant_pop", 6.5, 2.0, 12.0, 0.25, "Moves", "Wallplant: upward pop of the push-off, m/s."],
+	["caveman_speed", 5.0, 1.0, 10.0, 0.25, "Moves", "Caveman (ollie again in a jump on foot): rolling speed the board is caught at, at least, m/s."],
+	["acid_reach", 5.0, 1.0, 12.0, 0.25, "Moves", "Acid drop (revert in the air over a bank or quarter): farthest the transition may be below the board, m."],
+	["acid_min_drop", 0.8, 0.0, 3.0, 0.05, "Moves", "Acid drop: the transition must be at least this far below (closer, a revert press is the landing's revert), m."],
 ]
 
 static var _shared: PhysicsTuning = null
@@ -104,6 +117,19 @@ var powerslide_decel: float
 var powerslide_min_speed: float
 var nollie_pop: float
 var slam_impact: float
+var boneless_pop: float
+var boneless_plant: float
+var no_comply_pop: float
+var no_comply_plant: float
+var plant_drag: float
+var wallplant_reach: float
+var wallplant_hold: float
+var wallplant_keep: float
+var wallplant_push: float
+var wallplant_pop: float
+var caveman_speed: float
+var acid_reach: float
+var acid_min_drop: float
 
 
 func _init() -> void:

@@ -27,7 +27,7 @@ const SCENARIOS: Array = [
 ]
 
 ## Ride-feel sims in the sim_base.gd style run after the scenarios (sim_suite.tscn is near its 600 s limit).
-const SIM_FILES: Array = ["sim_nollie_powerslide"]
+const SIM_FILES: Array = ["sim_nollie_powerslide", "sim_board_moves"]
 
 var _park: Node
 var _sk: Skater
