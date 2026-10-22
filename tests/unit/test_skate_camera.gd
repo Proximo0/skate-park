@@ -111,3 +111,78 @@ func test_look_target_leads_velocity_clamped() -> void:
 
 func test_look_target_ignores_vertical_velocity() -> void:
 	_cam_vec_near(SkateCamera.look_target(Vector3.ZERO, Vector3(0, 9, 0)), Vector3(0, 0.9, 0))
+
+
+func test_yaw_velocity_never_whips_on_a_half_turn() -> void:
+	# A 140 degree swing (the camera after a vert re-entry): the yaw velocity stays under the cap and the turn takes
+	# about a second, where the plain exponential follow peaked at 9.8 rad/s in 0.45 s.
+	var yaw_left: float = deg_to_rad(140.0)
+	var vel: float = 0.0
+	var peak: float = 0.0
+	var t: float = 0.0
+	var t90: float = -1.0
+	while t < 3.0:
+		vel = SkateCamera.yaw_velocity_step(vel, yaw_left, SkateCamera.YAW_RATE, 1.0 / 60.0)
+		yaw_left -= vel / 60.0
+		peak = maxf(peak, absf(vel))
+		t += 1.0 / 60.0
+		if t90 < 0.0 and yaw_left < deg_to_rad(14.0):
+			t90 = t
+	assert_true(peak <= SkateCamera.YAW_MAX_RATE, "yaw velocity peak %.2f rad/s should stay under the %.1f cap" % [peak, SkateCamera.YAW_MAX_RATE])
+	assert_true(t90 >= 0.75 and t90 <= 1.3, "a half turn should take about a second to 90%%, took %.2f s" % t90)
+	assert_true(absf(yaw_left) < 0.02, "and settle on the heading, %.3f rad left" % yaw_left)
+
+
+func test_yaw_velocity_small_turn_stays_responsive() -> void:
+	var yaw_left: float = 0.3
+	var vel: float = 0.0
+	for i: int in 30:  # half a second
+		vel = SkateCamera.yaw_velocity_step(vel, yaw_left, SkateCamera.YAW_RATE, 1.0 / 60.0)
+		yaw_left -= vel / 60.0
+	assert_true(yaw_left < 0.3 * 0.2, "a 17 degree correction is 80%% done in half a second, %.3f rad left" % yaw_left)
+
+
+func test_yaw_velocity_does_not_overshoot() -> void:
+	var yaw_left: float = 1.0
+	var vel: float = 0.0
+	for i: int in 240:
+		vel = SkateCamera.yaw_velocity_step(vel, yaw_left, SkateCamera.YAW_RATE, 1.0 / 60.0)
+		yaw_left -= vel / 60.0
+		assert_true(yaw_left > -0.01, "critically damped: no overshoot (%.3f)" % yaw_left)
+
+
+func test_arm_step_shortens_in_steps_and_eases_out() -> void:
+	# A 2.2 m graze on a 5 m arm: the shown arm gives up at most ARM_SHRINK_MAX m a tick, not all of it at once.
+	var shown: float = SkateCamera.arm_step(1.0, 0.56, 5.0, 1.0 / 60.0)
+	assert_true((1.0 - shown) * 5.0 <= SkateCamera.ARM_SHRINK_MAX + 0.001, "shrank %.2f m in one tick" % ((1.0 - shown) * 5.0))
+	assert_true(shown < 1.0, "but it does shorten")
+	var s: float = 1.0
+	for i: int in 30:
+		s = SkateCamera.arm_step(s, 0.56, 5.0, 1.0 / 60.0)
+	assert_near(s, 0.56, 0.01)
+	var out: float = SkateCamera.arm_step(0.56, 1.0, 5.0, 1.0 / 60.0)
+	assert_true(out > 0.56 and out < 0.6, "lengthening is eased, not instant (%.3f)" % out)
+
+
+func test_impact_strength_none_for_small_landings() -> void:
+	assert_eq(SkateCamera.impact_strength(0.0), 0.0)
+	assert_eq(SkateCamera.impact_strength(3.0), 0.0)
+	assert_true(SkateCamera.impact_strength(9.0) > 0.0 and SkateCamera.impact_strength(9.0) < 1.0)
+	assert_eq(SkateCamera.impact_strength(20.0), 1.0)
+	assert_true(SkateCamera.impact_strength(8.0) < SkateCamera.impact_strength(12.0), "monotonic")
+
+
+func test_rider_fills_a_quarter_of_the_frame_at_speed() -> void:
+	# THUG2 / Skate 3 framing: a 1.75 m rider is 25-30% of the frame height at a 12 m/s cruise.
+	var lag: float = 12.0 / SkateCamera.POS_RATE * (1.0 - SkateCamera.POS_LEAD)  # the damped position trails the goal
+	var dist: float = Vector3(0.0, SkateCamera.HEIGHT, SkateCamera.DISTANCE).length() + SkateCamera.PUSH_DISTANCE * SkateCamera.speed_push(12.0) + lag
+	var frame_h: float = 2.0 * dist * tan(deg_to_rad(SkateCamera.fov_for_speed(12.0)) * 0.5)
+	var share: float = 1.75 / frame_h
+	assert_true(share >= 0.25 and share <= 0.34, "rider is %.0f%% of the frame height at 12 m/s" % (share * 100.0))
+
+
+func test_camera_settings_scales() -> void:
+	assert_eq(GameSettings.CAM_DISTANCE_SCALE[1], 1.0)
+	assert_eq(GameSettings.CAM_FOV_OFFSET[1], 0.0)
+	assert_true(GameSettings.CAM_DISTANCE_SCALE[0] < 1.0 and GameSettings.CAM_DISTANCE_SCALE[2] > 1.0)
+	assert_true(GameSettings.CAM_FOV_OFFSET[0] < 0.0 and GameSettings.CAM_FOV_OFFSET[2] > 0.0)

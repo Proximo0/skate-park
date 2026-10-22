@@ -111,6 +111,25 @@ func _build() -> void:
 	injury_btn.pressed.connect(_on_injuries_toggle.bind(injury_btn))
 	col.add_child(injury_btn)
 
+	# The three camera options share one row of small buttons: the menu already fills a 720p screen.
+	var cam_row := HBoxContainer.new()
+	cam_row.name = "CameraRow"
+	cam_row.add_theme_constant_override("separation", 6)
+	col.add_child(cam_row)
+	var cam_min := Vector2(PAUSE_TOGGLE_MIN.x / 3.0 - 4.0, PAUSE_TOGGLE_MIN.y)
+	var cam_dist_btn := _pause_button("Cam: %s" % GameSettings.CAM_DISTANCE_NAMES[GameSettings.cam_distance], SkateThemeBuilder.BTN_TEAL, cam_min, 20)
+	cam_dist_btn.name = "CameraDistance"
+	cam_dist_btn.pressed.connect(_on_cam_distance.bind(cam_dist_btn))
+	cam_row.add_child(cam_dist_btn)
+	var cam_fov_btn := _pause_button("FOV: %s" % GameSettings.CAM_FOV_NAMES[GameSettings.cam_fov], SkateThemeBuilder.BTN_TEAL, cam_min, 20)
+	cam_fov_btn.name = "CameraFov"
+	cam_fov_btn.pressed.connect(_on_cam_fov.bind(cam_fov_btn))
+	cam_row.add_child(cam_fov_btn)
+	var cam_shake_btn := _pause_button("Shake: %s" % ("On" if GameSettings.cam_shake_on() else "Off"), SkateThemeBuilder.BTN_TEAL, cam_min, 20)
+	cam_shake_btn.name = "CameraShake"
+	cam_shake_btn.pressed.connect(_on_cam_shake.bind(cam_shake_btn))
+	cam_row.add_child(cam_shake_btn)
+
 	_controls_button = _pause_button("Controls", SkateThemeBuilder.BTN_TEAL)
 	_controls_button.pressed.connect(_on_controls_pressed)
 	col.add_child(_controls_button)
@@ -122,7 +141,7 @@ func _build() -> void:
 	# Up and down wrap around the buttons.
 	var buttons: Array[Button] = [_resume_button, restart, _level_button]
 	buttons.append_array(drops)
-	buttons.append_array([hair_btn, body_btn, injury_btn, _controls_button, quit])
+	buttons.append_array([hair_btn, body_btn, injury_btn, cam_dist_btn, cam_fov_btn, cam_shake_btn, _controls_button, quit])
 	var n: int = buttons.size()
 	for i: int in n:
 		var b: Button = buttons[i]
@@ -231,6 +250,22 @@ func _on_injuries_toggle(b: Button) -> void:
 	var on: bool = not GameSettings.injuries_on()
 	GameSettings.set_injuries(on)
 	_set_toggle_text(b, "Bail injuries", on)
+
+
+func _on_cam_distance(b: Button) -> void:
+	GameSettings.set_cam_distance(GameSettings.cam_distance + 1)
+	b.text = "Cam: %s" % GameSettings.CAM_DISTANCE_NAMES[GameSettings.cam_distance]
+
+
+func _on_cam_fov(b: Button) -> void:
+	GameSettings.set_cam_fov(GameSettings.cam_fov + 1)
+	b.text = "FOV: %s" % GameSettings.CAM_FOV_NAMES[GameSettings.cam_fov]
+
+
+func _on_cam_shake(b: Button) -> void:
+	var on: bool = not GameSettings.cam_shake_on()
+	GameSettings.set_cam_shake(on)
+	_set_toggle_text(b, "Shake", on)
 
 
 func _on_change_level_pressed() -> void:

@@ -11,6 +11,13 @@ static var hair_physics: bool = true
 static var body_physics: bool = true
 static var body_strength: int = 2  ## 1 Subtle, 2 Normal, 3 Bouncy (while body_physics is on)
 static var bail_injuries: bool = true
+static var cam_distance: int = 1  ## 0 Near, 1 Normal, 2 Far (SkateCamera arm length)
+static var cam_fov: int = 1  ## 0 Narrow, 1 Normal, 2 Wide
+static var cam_shake: bool = true  ## landing weight: the dip and FOV punch
+const CAM_DISTANCE_NAMES: PackedStringArray = ["Near", "Normal", "Far"]
+const CAM_DISTANCE_SCALE: Array[float] = [0.85, 1.0, 1.25]
+const CAM_FOV_NAMES: PackedStringArray = ["Narrow", "Normal", "Wide"]
+const CAM_FOV_OFFSET: Array[float] = [-7.0, 0.0, 8.0]  ## degrees added to the camera FOV
 const BODY_LEVEL_NAMES: PackedStringArray = ["Off", "Subtle", "Normal", "Bouncy"]
 static var _loaded: bool = false
 
@@ -30,6 +37,9 @@ static func ensure_loaded() -> void:
 		body_physics = bool((data as Dictionary).get("body_physics", true))
 		body_strength = clampi(int((data as Dictionary).get("body_level", 2)), 1, 3)
 		bail_injuries = bool((data as Dictionary).get("bail_injuries", true))
+		cam_distance = clampi(int((data as Dictionary).get("cam_distance", 1)), 0, 2)
+		cam_fov = clampi(int((data as Dictionary).get("cam_fov", 1)), 0, 2)
+		cam_shake = bool((data as Dictionary).get("cam_shake", true))
 
 
 static func hair_on() -> bool:
@@ -91,4 +101,39 @@ static func save() -> void:
 	var f: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify({"hair_physics": hair_physics, "body_physics": body_physics, "body_level": body_strength,
-				"bail_injuries": bail_injuries}))
+				"bail_injuries": bail_injuries, "cam_distance": cam_distance, "cam_fov": cam_fov, "cam_shake": cam_shake}))
+
+
+static func cam_distance_scale() -> float:
+	ensure_loaded()
+	return CAM_DISTANCE_SCALE[clampi(cam_distance, 0, 2)]
+
+
+static func cam_fov_offset() -> float:
+	ensure_loaded()
+	return CAM_FOV_OFFSET[clampi(cam_fov, 0, 2)]
+
+
+static func cam_shake_on() -> bool:
+	ensure_loaded()
+	return cam_shake
+
+
+## Sets the camera distance (0 Near, 1 Normal, 2 Far).
+static func set_cam_distance(level: int) -> void:
+	ensure_loaded()
+	cam_distance = posmod(level, 3)
+	save()
+
+
+## Sets the camera FOV (0 Narrow, 1 Normal, 2 Wide).
+static func set_cam_fov(level: int) -> void:
+	ensure_loaded()
+	cam_fov = posmod(level, 3)
+	save()
+
+
+static func set_cam_shake(on: bool) -> void:
+	ensure_loaded()
+	cam_shake = on
+	save()
