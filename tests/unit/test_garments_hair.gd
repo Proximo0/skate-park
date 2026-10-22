@@ -4,6 +4,17 @@ extends TestCase
 ## keeps clear of the shoulders, chest and arms in the riding poses and with the head turned hard either way (the
 ## sway pivots settled under gravity, as the hair hangs in game).
 
+
+## These tests check the lofted garments and code parts on the Houdini body (the VRM body wears none of them), so
+## bodies built without a "skin" option use it while a test of this file runs.
+func _init() -> void:
+	PlaceholderSkater.houdini_scopes += 1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		PlaceholderSkater.houdini_scopes -= 1
+
 const BUDGET: int = 25000
 ## Extra allowed for head accessories on top (the cap hides the hair it covers, so it mostly pays for itself).
 const ACC_BUDGET: int = 2500

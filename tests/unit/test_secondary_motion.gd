@@ -83,8 +83,9 @@ func test_sudden_acceleration_is_bounded() -> void:
 			var delta: Basis = rest.basis.inverse() * n.transform.basis
 			var ang: float = rad_to_deg(Quaternion(delta).get_angle())
 			if String(n.name).begins_with("BodySway_"):
-				assert_true(ang <= 3.01, "bust tilt %f" % ang)
-				assert_true(n.transform.origin.distance_to(rest.origin) <= 0.0121, "bust travel")
+				var prm: Dictionary = SecondaryMotion.bust_params(sm.body_level)
+				assert_true(ang <= float(prm["tilt"]) + 0.01, "bust tilt %f" % ang)
+				assert_true(n.transform.origin.distance_to(rest.origin) <= float(prm["max"]) + 0.0001, "bust travel")
 			else:
 				assert_true(ang <= 61.0, "%s swing %f" % [n.name, ang])
 				var e: Vector3 = delta.get_euler()
@@ -152,3 +153,47 @@ func test_teleport_resets_state() -> void:
 			assert_true(n.transform.basis.is_equal_approx(Basis.IDENTITY), "%s settled after teleport" % n.name)
 	root.free()
 	sm.free()
+
+
+func test_bust_levels_bounce_more_as_they_rise() -> void:
+	# A landing: the chest drops and stops dead. Count how far and how long the bust keeps moving after the stop.
+	var travel: Array[float] = []
+	var settle: Array[int] = []
+	for level: int in SecondaryMotion.BUST_LEVELS.size():
+		var rig: Dictionary = _rig()
+		var root: Node3D = rig["root"]
+		var sm: SecondaryMotion = _make(rig)
+		sm.hair_enabled = false
+		sm.body_level = level
+		var bust: Node3D = null
+		for n: Node3D in sm.pivot_nodes():
+			if String(n.name).begins_with("BodySway_"):
+				bust = n
+		var rest: Vector3 = bust.position
+		var y: float = 0.5
+		var most: float = 0.0
+		var last_move: int = 0
+		for i: int in 150:
+			y = maxf(0.0, 0.5 - 0.5 * 9.8 * pow(float(i) / 60.0, 2.0)) if i < 20 else 0.0
+			root.position = Vector3(0.0, y, 0.0)
+			sm.tick()
+			var d: float = bust.position.distance_to(rest)
+			if i >= 20:
+				most = maxf(most, d)
+				if d > 0.0015:
+					last_move = i
+		travel.append(most)
+		settle.append(last_move)
+		assert_true(most <= float(SecondaryMotion.bust_params(level)["max"]) + 0.0001, "level %d stays within its limit" % level)
+		root.free()
+		sm.free()
+	assert_near(travel[0], 0.0, 0.00001, "Off does not move")
+	assert_true(travel[1] < travel[2] and travel[2] < travel[3], "stronger levels travel further %s" % str(travel))
+	assert_true(travel[2] > 0.008, "Normal visibly bounces on a landing (%f m)" % travel[2])
+	assert_true(settle[2] < 140, "Normal settles within about two seconds")
+
+
+func test_body_level_cycle() -> void:
+	assert_eq(GameSettings.next_body_level(0), 1)
+	assert_eq(GameSettings.next_body_level(3), 0)
+	assert_eq(GameSettings.BODY_LEVEL_NAMES[SecondaryMotion.BUST_DEFAULT_LEVEL], "Normal")

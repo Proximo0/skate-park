@@ -4,6 +4,17 @@ extends TestCase
 ## marker) with its soles on the ground, the triangle budget holds, and region masking drops triangles.
 
 
+## These tests check the Houdini body itself, so bodies built without a "skin" option use it while a test of this
+## file runs (the default skin is the VRM body).
+func _init() -> void:
+	PlaceholderSkater.houdini_scopes += 1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		PlaceholderSkater.houdini_scopes -= 1
+
+
 func _skeleton(body_type: String) -> Array:
 	var scene: PackedScene = load(str(SkinnedBody.PATHS[body_type])) as PackedScene
 	assert_true(scene != null, "%s glb loads" % body_type)

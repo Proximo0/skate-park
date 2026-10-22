@@ -2,6 +2,17 @@ extends TestCase
 ## Crop tank, hoodie and open flannel: built (not stubs) on both bodies, the covered skin stays inside the garment in
 ## every pose of the wardrobe pose grid, the palette keys are used, no pure green, and each garment has its parts.
 
+
+## These tests check the lofted garments and code parts on the Houdini body (the VRM body wears none of them), so
+## bodies built without a "skin" option use it while a test of this file runs.
+func _init() -> void:
+	PlaceholderSkater.houdini_scopes += 1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		PlaceholderSkater.houdini_scopes -= 1
+
 const TOPS: Array = ["top_crop_tank", "top_hoodie", "top_flannel"]
 
 

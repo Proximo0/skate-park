@@ -6,12 +6,15 @@ extends RefCounted
 ## SkaterPoser.JOINTS; same skeleton constants for both bodies, so the poser, ragdoll and physics are shared). Faces
 ## -Z, feet at y = 0. The caller stands it on the deck with body.position.y = DECK_TOP_Y. Regular stance: left foot
 ## forward (-Z). Leg poses come from a small two-bone solve so the shoes stay flat on the ground.
-## The body is a smooth featureless base body (AnimeHead face and code-built hands, and the skin: by default the
-## seamless Houdini skinned body, HoudiniBody via SkinnedBody, driven by the joints; options "skin": "code" builds the
-## older AnimeOutfit lofts instead). Either skin is split into regions; hair and every garment are separate layers
-## chosen by `options` and built through the Wardrobe registry, which also hides the skin regions a garment fully
-## covers. See Wardrobe for the garment contract.
-## options: {"body": "female"|"male", "skin": "houdini"|"code", "hair": id, "top": id, "bottom": id, "socks": id,
+## The skin: by default ("skin": "vrm") the finished VRoid anime model (VrmBody: lead_female.vrm / lead_male.vrm with
+## its own face, hair and hands, retargeted onto the joints; docs/vrm_pipeline.md). It wears only the skate shoes from
+## the Wardrobe (and the bikini skin texture, or its own clothes); no code head, hands or lofted garments are built.
+## "skin": "houdini" is the older smooth featureless base body (AnimeHead face and code-built hands, and the seamless
+## Houdini skinned body, HoudiniBody via SkinnedBody, driven by the joints); "skin": "code" builds the AnimeOutfit
+## lofts instead. Either of those is split into regions; hair and every garment are separate layers chosen by
+## `options` and built through the Wardrobe registry, which also hides the skin regions a garment fully covers. See
+## Wardrobe for the garment contract.
+## options: {"body": "female"|"male", "skin": "vrm"|"houdini"|"code", "hair": id, "top": id, "bottom": id, "socks": id,
 ## "shoes": id, "accessories": [ids]} using catalog mesh_builder ids; "" or "none" leaves a slot empty; missing keys come from
 ## Wardrobe.DEFAULTS (female: ponytail, bikini top and bottoms, striped crew socks, low vulc shoes, wristbands;
 ## male: messy hair, surf tee, board shorts, striped crew socks, low vulc shoes).
@@ -41,8 +44,12 @@ const NECK_UP: float = 0.255  ## Chest to Neck (base of the neck)
 const HEAD_UP: float = 0.065  ## Neck to Head (top of the slender neck, under the jaw)
 const SHOULDER: Vector2 = Vector2(0.14, 0.195)  ## Chest to UpperArm: x out, y up
 const HAND_SCALE: float = 1.18
-## Default skin: "houdini" (one seamless skinned mesh, docs/houdini_pipeline.md) or "code" (AnimeOutfit lofts).
-const SKIN: String = "houdini"
+## Default skin: "vrm" (the VRoid model, docs/vrm_pipeline.md), "houdini" (one seamless skinned mesh,
+## docs/houdini_pipeline.md) or "code" (AnimeOutfit lofts).
+const SKIN: String = "vrm"
+## Live test cases of the lofted garments (they need the Houdini body); while any is alive, bodies built without a
+## "skin" option get "houdini" instead of SKIN.
+static var houdini_scopes: int = 0
 
 
 static func build_body(palette: Dictionary = {}, options: Dictionary = {}) -> Node3D:
@@ -52,8 +59,12 @@ static func build_body(palette: Dictionary = {}, options: Dictionary = {}) -> No
 	var root: Node3D = Node3D.new()
 	root.name = "SkaterBody"
 	root.set_meta("body_type", body_type)
-	var code_skin: bool = str(opts.get("skin", SKIN)) == "code"
-	var rig: Dictionary = {"body_type": body_type, "code_skin": code_skin}
+	var skin: String = str(opts.get("skin", "houdini" if houdini_scopes > 0 else SKIN))
+	if skin == "vrm" and not ResourceLoader.exists(str(VrmBody.PATHS.get(body_type, ""))):
+		skin = "houdini"
+	var code_skin: bool = skin == "code"
+	var rig: Dictionary = {"body_type": body_type, "code_skin": code_skin, "skin": skin}
+	root.set_meta("skin", skin)
 
 	var hips: Node3D = SkaterParts.joint(root, "Hips", Vector3(0.0, HIP_HEIGHT, 0.0))
 	var spine: Node3D = SkaterParts.joint(hips, "Spine", Vector3(0.0, SPINE_UP, 0.0))
@@ -80,11 +91,24 @@ static func build_body(palette: Dictionary = {}, options: Dictionary = {}) -> No
 	rig["lengths"] = {"upper_leg": UPPER_LEG, "lower_leg": LOWER_LEG, "upper_arm": UPPER_ARM, "lower_arm": LOWER_ARM,
 			"ankle": ANKLE_HEIGHT}
 	rig["sections"] = AnimeOutfit.joint_sections(body_type, rig["rest_y"], rig["lengths"])
-	AnimeHead.build(head, mats, str(opts.get("hair", "")), body_type, rig)
-	if not code_skin:
-		_attach_skinned(root, body_type, mats)
+	if skin == "vrm":
+		_attach_vrm(root, body_type, mats)
+	else:
+		AnimeHead.build(head, mats, str(opts.get("hair", "")), body_type, rig)
+		if not code_skin:
+			_attach_skinned(root, body_type, mats)
 	Wardrobe.dress(rig, opts, mats)
 	return root
+
+
+## The VRoid model under the body root, driven by the joints (VrmBody). The code hands are hidden (the model has its
+## own); its face, hair and clothes or bikini are the model's.
+static func _attach_vrm(root: Node3D, body_type: String, mats: Dictionary) -> void:
+	for n: Node in root.find_children("*HandMesh", "MeshInstance3D", true, false):
+		(n as MeshInstance3D).visible = false
+	var vb: VrmBody = VrmBody.attach(root, body_type, mats)
+	if vb == null:
+		push_warning("PlaceholderSkater: the VRM model is missing (no body drawn); pass \"skin\": \"houdini\"")
 
 
 ## The Houdini skinned body under the body root, driven by the joints, drawn with the "skin" material.

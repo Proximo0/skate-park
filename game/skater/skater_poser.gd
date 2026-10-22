@@ -17,7 +17,7 @@ extends Node
 ## "body_yaw" degrees (torso turn about Y, 0 = facing +X); "feet_yaw" degrees (stance frame turn);
 ## "board_rot" Vector3 degrees (YXZ Euler); "board_pos" metres; "foot_L"/"foot_R" ankle targets in visual space;
 ## "toe_L"/"toe_R" shoe yaw in degrees relative to the stance frame (0 = toes to the toe side, + turns toward the
-## front); "feet_on_board" 0..1 (1 = shoes lie flat on the deck, 0 = level); "feet_free" 0..1 (1 = feet hang
+## front); "fpitch_L"/"fpitch_R" shoe pitch in degrees (+ toe up, heel-to-toe walking); "feet_on_board" 0..1 (1 = shoes lie flat on the deck, 0 = level); "feet_free" 0..1 (1 = feet hang
 ## from the hips instead of their targets, for bails); "hand_L"/"hand_R" hand targets in visual space with
 ## "grip_L"/"grip_R" 0..1 IK weights. pose_for() is pure and unit tested.
 
@@ -89,7 +89,12 @@ const EDGE: float = 0.12  ## deck half width plus a little, where a hand wraps t
 ## board is carried on edge under the right arm (wheels out, grip against the hip) and that hand holds the deck's top edge.
 const STEP_OFF_TIME: float = 0.25  ## "dismount": ride pose to carry pose
 const HOP_ON_TIME: float = 0.3  ## "mount": board drops in front, the rider steps onto it
-const WALK_LEG: float = 0.71  ## working leg length for the stride maths (the bones allow 0.73)
+const WALK_LEG: float = 0.722  ## working leg length for the stride maths (the bones allow 0.73): legs nearly straight
+## Heel-to-toe: shoe contact points in foot space (sole at -ANKLE_HEIGHT): heel behind the ankle, ball of the foot ahead.
+const WALK_HEEL_Z: float = 0.08
+const WALK_BALL_Z: float = -0.13
+const WALK_HEEL_STRIKE: float = 14.0  ## degrees toe up as the front foot lands
+const WALK_TOE_OFF: float = 24.0  ## degrees heel up as the back foot leaves
 const CARRY_ROLL: float = 90.0  ## deck on edge: grip side toward the body
 const CARRY_PITCH: float = 12.0  ## nose up
 const CARRY_CENTER: Vector3 = Vector3(0.3, 0.72, -0.02)  ## where the deck's middle hangs, visual space
@@ -212,7 +217,8 @@ func _apply(pose: Dictionary) -> void:
 					PlaceholderSkater.HIP_HEIGHT + float(pose["hips_y"]) - 0.88 * (PlaceholderSkater.UPPER_LEG + PlaceholderSkater.LOWER_LEG), -0.08)
 			target = target.lerp(hang, free)
 		var toe: float = feet_yaw + deg_to_rad(float(pose["toe_" + s]) - 90.0)
-		var foot_basis: Basis = Basis(space_q.slerp(board_q, flat)) * Basis(Vector3.UP, toe)
+		var foot_basis: Basis = Basis(space_q.slerp(board_q, flat)) * Basis(Vector3.UP, toe) \
+				* Basis(Vector3.RIGHT, deg_to_rad(float(pose.get("fpitch_" + s, 0.0))))
 		_solve_leg(side, target, facing + out * 0.35, foot_basis)
 	for side: String in ["Left", "Right"]:
 		var s: String = side.left(1)
@@ -378,6 +384,8 @@ static func _blank() -> Dictionary:
 	pose["foot_R"] = Vector3.ZERO
 	pose["toe_L"] = FRONT_TOE
 	pose["toe_R"] = BACK_TOE
+	pose["fpitch_L"] = 0.0
+	pose["fpitch_R"] = 0.0
 	pose["feet_on_board"] = 1.0
 	pose["feet_free"] = 0.0
 	pose["hand_L"] = Vector3.ZERO
@@ -779,10 +787,18 @@ static func _pose_walk(pose: Dictionary, phase: float, speed: float) -> void:
 	var half: float = minf(0.18 + 0.045 * speed, 0.32) * amp  ## foot travel either side of the hips
 	var stance: float = lerpf(0.5, 0.4, run_k)  ## share of the cycle a foot is on the ground
 	var foot_lift: float = (0.05 + 0.05 * run_k) * amp
-	var reach: float = sqrt(WALK_LEG * WALK_LEG - half * half)  ## hip height that keeps the legs just reachable
-	var bob: float = 0.025 * amp * -cos(4.0 * PI * phase)  ## highest over a planted foot
-	var hips: float = PlaceholderSkater.ANKLE_HEIGHT + reach - PlaceholderSkater.HIP_HEIGHT - 0.03 * (1.0 - amp) + bob
-	var lean: float = (3.0 + 9.0 * run_k) * amp
+	# Inverted pendulum: the hips ride an arc over the planted foot (highest as it passes under them, lowest at the
+	# strike), the stance leg nearly straight with a soft knee; a run sinks a little more.
+	var planted: float = 0.0  ## forward-back offset of the stance foot from the hips
+	for off: float in [0.0, 0.5]:
+		var u0: float = fposmod(phase + off, 1.0)
+		if u0 < stance:
+			planted = _foot_cycle(u0, half, stance, 0.0).x
+	var leg: float = WALK_LEG * (0.985 - 0.03 * run_k * amp)
+	var reach: float = sqrt(leg * leg - planted * planted)
+	var bob: float = reach - leg  ## the arc's drop, for the board's carry bob
+	var hips: float = PlaceholderSkater.ANKLE_HEIGHT + reach - PlaceholderSkater.HIP_HEIGHT
+	var lean: float = (1.5 + 8.5 * run_k) * amp  ## an upright walk; a run leans into it
 	pose["hips_y"] = hips
 	pose["lift"] = -PlaceholderSkater.DECK_TOP_Y  ## body root on the ground
 	pose["pitch"] = lean
@@ -793,17 +809,51 @@ static func _pose_walk(pose: Dictionary, phase: float, speed: float) -> void:
 	pose["feet_on_board"] = 0.0
 	# Centre the feet under the hips, which the forward lean pushes ahead.
 	var centre: float = -(PlaceholderSkater.HIP_HEIGHT + hips) * sin(deg_to_rad(lean))
-	var left: Vector2 = _foot_cycle(fposmod(phase, 1.0), half, stance, foot_lift)
-	var right: Vector2 = _foot_cycle(fposmod(phase + 0.5, 1.0), half, stance, foot_lift)
-	pose["foot_L"] = Vector3(-0.09, PlaceholderSkater.ANKLE_HEIGHT + left.y, centre + left.x)
-	pose["foot_R"] = Vector3(0.09, PlaceholderSkater.ANKLE_HEIGHT + right.y, centre + right.x)
-	_curl(pose, 3.0 + 8.0 * run_k)
-	var swing: float = (16.0 + 26.0 * run_k) * amp * -cos(2.0 * PI * phase)  ## forward when the right foot is
-	pose["LeftUpperArm"] = Vector3(swing, 0.0, -4.0)
-	pose["LeftLowerArm"] = Vector3(10.0 + 40.0 * run_k * amp, 0.0, 0.0)
+	for sd: Array in [["L", -0.09, 0.0], ["R", 0.09, 0.5]]:
+		var u: float = fposmod(phase + float(sd[2]), 1.0)
+		var f: Vector2 = _foot_cycle(u, half, stance, foot_lift)
+		var pitch: float = _foot_roll(u, stance) * amp
+		pose["fpitch_" + str(sd[0])] = pitch
+		pose["foot_" + str(sd[0])] = Vector3(float(sd[1]), PlaceholderSkater.ANKLE_HEIGHT + f.y + _roll_raise(pitch), centre + f.x)
+	# Upright: chest lifted and open (shoulders back), head up over the shoulders, the lean taken at the hips.
+	_curl(pose, -3.0 + 9.0 * run_k)
+	pose["Neck"] = Vector3(lean * 0.3 - 2.0, 0.0, 0.0)
+	pose["Head"] = Vector3(lean * 0.5 + 4.0, 0.0, 0.0)
+	# Hip sway: the pelvis turns with the forward leg and drops on the swing side; the chest counter-turns.
+	var c: float = cos(2.0 * PI * phase)
+	var sn: float = sin(2.0 * PI * phase)
+	pose["Hips"] = Vector3(0.0, -6.0 * amp * c, -3.0 * amp * sn)
+	pose["Spine"] = (pose["Spine"] as Vector3) + Vector3(0.0, 2.0 * amp * c, 2.0 * amp * sn)
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(0.0, 4.0 * amp * c, 1.0 * amp * sn)
+	var swing: float = (18.0 + 24.0 * run_k) * amp * -c  ## forward when the right foot is
+	pose["LeftUpperArm"] = Vector3(swing, 0.0, -5.0)
+	pose["LeftLowerArm"] = Vector3(10.0 + maxf(swing, 0.0) * 0.5 * (1.0 - run_k) + 40.0 * run_k * amp, 0.0, 0.0)
 	pose["RightUpperArm"] = Vector3(0.0, 0.0, 6.0)
 	pose["RightLowerArm"] = Vector3(30.0, 0.0, 0.0)
 	_carry_board(pose, bob * 0.6)
+
+
+## Heel-to-toe shoe pitch (degrees, + toe up) at cycle position u: toe up at heel strike, flat through mid-stance,
+## heel rising to the toe-off, then swinging through back to toe up for the next strike.
+static func _foot_roll(u: float, stance: float) -> float:
+	if u < stance:
+		var k: float = u / stance
+		if k < 0.15:
+			return lerpf(WALK_HEEL_STRIKE, 0.0, _smooth(k / 0.15))
+		if k < 0.6:
+			return 0.0
+		return -WALK_TOE_OFF * _smooth((k - 0.6) / 0.4)
+	var s: float = (u - stance) / (1.0 - stance)
+	return lerpf(-WALK_TOE_OFF, WALK_HEEL_STRIKE, _smooth(s))
+
+
+## How far the ankle rises so the lowest of the heel and the ball of a pitched shoe stays on the ground.
+static func _roll_raise(pitch_deg: float) -> float:
+	var a: float = deg_to_rad(pitch_deg)
+	var h: float = PlaceholderSkater.ANKLE_HEIGHT
+	var heel: float = -h * cos(a) - WALK_HEEL_Z * sin(a)
+	var ball: float = -h * cos(a) - WALK_BALL_Z * sin(a)
+	return maxf(0.0, -minf(heel, ball) - h)
 
 
 ## The board on edge under the right arm and the right hand on its top edge.

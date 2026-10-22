@@ -3,6 +3,17 @@ extends TestCase
 ## grid: in every pose, every skin region a garment declares it covers lies inside that garment (sampled vertices,
 ## each must have garment fabric just outside it along the ray from its bone's axis).
 
+
+## These tests check the lofted garments and code parts on the Houdini body (the VRM body wears none of them), so
+## bodies built without a "skin" option use it while a test of this file runs.
+func _init() -> void:
+	PlaceholderSkater.houdini_scopes += 1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		PlaceholderSkater.houdini_scopes -= 1
+
 const POSES: Array = [
 	["idle", "idle_ride", 0.0, 0.0, 0.0, 0.0], ["crouch", "crouch", 0.0, 1.0, 0.0, 0.0],
 	["ollie_up", "ollie", 0.2, 0.0, 0.0, 0.0], ["push", "push", 0.5, 0.0, 0.0, 0.0],

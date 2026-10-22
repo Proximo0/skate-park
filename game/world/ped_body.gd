@@ -23,7 +23,10 @@ static func random_look(rng: RandomNumberGenerator) -> SkaterLoadout:
 
 ## Builds and bakes a body for `look`. Returns the body root (named "SkaterBody", posable by SkaterPoser).
 static func build(look: SkaterLoadout) -> Node3D:
-	var body: Node3D = SkaterBuilder.build_body(look)
+	# Pedestrians keep the varied Houdini bodies and lofted outfits; the VRoid model is the lead skater's.
+	var opts: Dictionary = SkaterBuilder.body_options(look)
+	opts["skin"] = "houdini"
+	var body: Node3D = PlaceholderSkater.build_body(SkaterBuilder.body_palette(look), opts)
 	body.name = "SkaterBody"
 	Toon.apply_to(body)
 	bake(body)

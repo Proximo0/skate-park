@@ -3,6 +3,17 @@ extends TestCase
 ## length within 5% of the vulc), triangle budget, colourways, and the high top's collar staying outside the leg skin
 ## and the sock in every pose (covers "ankle").
 
+
+## These tests check the lofted garments and code parts on the Houdini body (the VRM body wears none of them), so
+## bodies built without a "skin" option use it while a test of this file runs.
+func _init() -> void:
+	PlaceholderSkater.houdini_scopes += 1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		PlaceholderSkater.houdini_scopes -= 1
+
 const IDS: Array = ["shoes_cupsole", "shoes_puffy", "shoes_high_top"]
 const POSES: Array = [
 	["idle", "idle_ride", 0.0, 0.0, 0.0, 0.0], ["crouch", "crouch", 0.0, 1.0, 0.0, 0.0],

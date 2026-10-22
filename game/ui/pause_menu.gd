@@ -98,7 +98,7 @@ func _build() -> void:
 	col.add_child(hair_btn)
 
 	var body_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
-	_set_toggle_text(body_btn, "Body physics", GameSettings.body_on())
+	body_btn.text = "Body physics: %s" % GameSettings.BODY_LEVEL_NAMES[GameSettings.body_level()]
 	body_btn.pressed.connect(_on_toggle.bind(body_btn, "Body physics", false))
 	col.add_child(body_btn)
 
@@ -204,6 +204,11 @@ func _set_toggle_text(b: Button, label: String, on: bool) -> void:
 
 
 func _on_toggle(b: Button, label: String, hair: bool) -> void:
+	if not hair:  # body physics cycles Off > Subtle > Normal > Bouncy
+		var level: int = GameSettings.next_body_level(GameSettings.body_level())
+		GameSettings.set_body_level(level)
+		b.text = "%s: %s" % [label, GameSettings.BODY_LEVEL_NAMES[level]]
+		return
 	var on: bool = not (GameSettings.hair_on() if hair else GameSettings.body_on())
 	if hair:
 		GameSettings.set_hair(on)

@@ -2,6 +2,17 @@ extends TestCase
 ## PlaceholderSkater: joint names, pose geometry, height and board size. No scene tree, so world
 ## transforms are composed by hand from node transforms.
 
+
+## These tests check the lofted garments and code parts on the Houdini body (the VRM body wears none of them), so
+## bodies built without a "skin" option use it while a test of this file runs.
+func _init() -> void:
+	PlaceholderSkater.houdini_scopes += 1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		PlaceholderSkater.houdini_scopes -= 1
+
 const JOINTS: PackedStringArray = [
 	"Hips", "Spine", "Chest", "Neck", "Head",
 	"LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",

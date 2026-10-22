@@ -3,6 +3,17 @@ extends TestCase
 ## covered skin stays inside the garment in every pose of the wardrobe pose grid, no pure green, the palette keys are
 ## used, and long pants never cut into the shoe in the riding stance.
 
+
+## These tests check the lofted garments and code parts on the Houdini body (the VRM body wears none of them), so
+## bodies built without a "skin" option use it while a test of this file runs.
+func _init() -> void:
+	PlaceholderSkater.houdini_scopes += 1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		PlaceholderSkater.houdini_scopes -= 1
+
 const BOTTOMS: Array = ["bottom_cargo_shorts", "bottom_skate_jeans", "bottom_joggers"]
 const SOCKS: Array = ["socks_tube", "socks_ankle", "socks_striped"]
 const LONG: Array = ["bottom_skate_jeans", "bottom_joggers"]

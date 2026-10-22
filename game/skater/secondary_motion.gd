@@ -4,7 +4,9 @@ extends Node
 ## bind() finds every Node3D named "HairSway_*" or "BodySway_*" under the visual root. Each tick the world
 ## acceleration of the pivot's attach point (plus gravity, seen in the parent's frame so body rotation counts)
 ## drives a spring. Hair swings like a pendulum on two axes, chains (HairSway_X, then a child HairSway_X2, ...)
-## lag down the chain. Bust pivots get a few mm of offset and at most about 3 degrees. Everything is clamped.
+## lag down the chain. Bust pivots ride a low-damped spring (a visible bounce on landings, pushes, steps and ollies
+## that settles in about a second), at the strength of GameSettings.body_level() (BUST_LEVELS: Off / Subtle / Normal /
+## Bouncy; at most 3.2 cm of travel and 10 degrees of tilt). Everything is clamped.
 ## Fixed 1/60 s steps (4 sub-steps each) keep it deterministic; a jump in position resets it (teleport, respawn).
 
 const HAIR_PREFIX: String = "HairSway_"
@@ -28,14 +30,20 @@ const CHAIN_BACK: Array[float] = [30.0, 18.0, 12.0]
 const CHAIN_FWD: Array[float] = [18.0, 10.0, 7.0]
 const CHAIN_SIDE: Array[float] = [20.0, 12.0, 8.0]
 
-const BUST_FREQ: float = 7.0
-const BUST_DAMP: float = 0.75
-const BUST_GAIN: float = 0.0004  ## metres of offset per m/s^2
-const BUST_MAX_OFFSET: float = 0.012  ## 1.2 cm
-const BUST_MAX_TILT: float = 3.0  ## degrees
+## Bust spring per GameSettings body level (0 Off, 1 Subtle, 2 Normal, 3 Bouncy): freq Hz, damping ratio, gain
+## (metres of offset per m/s^2 of apparent-gravity change), max offset (m) and max tilt (degrees). Lower damping
+## bounces longer; the vertical axis bounces most, as a real bust does.
+const BUST_LEVELS: Array[Dictionary] = [
+	{"freq": 6.0, "damp": 0.8, "gain": 0.0, "max": 0.0, "tilt": 0.0},
+	{"freq": 4.5, "damp": 0.3, "gain": 0.0008, "max": 0.012, "tilt": 3.0},
+	{"freq": 3.2, "damp": 0.12, "gain": 0.0018, "max": 0.024, "tilt": 7.0},
+	{"freq": 2.8, "damp": 0.08, "gain": 0.0025, "max": 0.032, "tilt": 10.0},
+]
+const BUST_DEFAULT_LEVEL: int = 2
 
 var hair_enabled: bool = true
 var body_enabled: bool = true
+var body_level: int = BUST_DEFAULT_LEVEL  ## BUST_LEVELS index while body_enabled
 var follow_settings: bool = true  ## read the toggles from GameSettings every tick
 
 var _pivots: Array[Pivot] = []
@@ -121,6 +129,7 @@ func _physics_process(_delta: float) -> void:
 	if follow_settings:
 		hair_enabled = GameSettings.hair_on()
 		body_enabled = GameSettings.body_on()
+		body_level = GameSettings.body_level()
 	tick()
 
 
@@ -213,17 +222,32 @@ func _step_hair(p: Pivot, eff_local: Vector3) -> void:
 	p.node.transform = Transform3D(p.rest.basis * b, p.rest.origin)
 
 
+## The bust spring settings of a body level (clamped to BUST_LEVELS).
+static func bust_params(level: int) -> Dictionary:
+	return BUST_LEVELS[clampi(level, 0, BUST_LEVELS.size() - 1)]
+
+
 func _step_bust(p: Pivot, eff_local: Vector3) -> void:
-	# Only the dynamic part: how far the apparent gravity departs from plain 1 g down.
+	var prm: Dictionary = bust_params(body_level)
+	var max_off: float = float(prm["max"])
+	if max_off <= 0.0:
+		_clear(p)
+		p.node.transform = p.rest
+		return
+	# Only the dynamic part: how far the apparent gravity departs from plain 1 g down. Mostly vertical, some sideways,
+	# little front to back.
 	var dev: Vector3 = eff_local - Vector3(0.0, -GRAVITY, 0.0)
-	var target: Vector3 = Vector3(dev.x, dev.y, dev.z * 0.5) * BUST_GAIN * 0.5
-	var w: float = TAU * BUST_FREQ
+	var target: Vector3 = Vector3(dev.x * 0.6, dev.y, dev.z * 0.4) * float(prm["gain"]) * 0.5
+	var w: float = TAU * float(prm["freq"])
+	var damp: float = float(prm["damp"])
 	var h: float = DT / float(SUBSTEPS)
 	for i: int in SUBSTEPS:
-		var acc: Vector3 = (target - p.pos) * (w * w) - p.vel * (2.0 * BUST_DAMP * w)
+		var acc: Vector3 = (target - p.pos) * (w * w) - p.vel * (2.0 * damp * w)
 		p.vel += acc * h
 		p.pos += p.vel * h
-	p.pos = p.pos.limit_length(BUST_MAX_OFFSET)
-	var tilt: float = deg_to_rad(BUST_MAX_TILT) / BUST_MAX_OFFSET
+	if p.pos.length() > max_off:
+		p.pos = p.pos.limit_length(max_off)
+		p.vel *= 0.5  ## a soft stop at the limit, not a hard wall
+	var tilt: float = deg_to_rad(float(prm["tilt"])) / max_off
 	var rot := Vector3(p.pos.y * tilt * 0.5, 0.0, -p.pos.x * tilt)
 	p.node.transform = Transform3D(p.rest.basis * Basis.from_euler(rot), p.rest.origin + p.pos)

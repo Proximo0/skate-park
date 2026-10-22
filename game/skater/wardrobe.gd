@@ -67,6 +67,12 @@ const DEFAULTS: Dictionary = {
 	},
 }
 
+## Slots a VRM body (PlaceholderSkater skin "vrm", VrmBody) wears from the Wardrobe. The lofted garments were made for
+## the code and Houdini bodies and do not fit the VRoid model, so for now it wears only the skate shoes (on the code
+## Foot joints, where VrmBody pins its ankles); its top and bottom are the bikini skin texture (or its own clothes).
+## Follow-up plan: docs/vrm_pipeline.md.
+const VRM_SLOTS: PackedStringArray = ["shoes"]
+
 ## Skin regions any shoe hides: the skinned body's bare feet (the code skin has none). Not part of covers(): a foot
 ## sits deep in a roomy shoe rather than just under its surface, so tests/unit/test_garments_shoes.gd checks it is
 ## enclosed in its own way.
@@ -167,12 +173,13 @@ static func build_item(slot: String, id: String, rig: Dictionary, body_type: Str
 
 
 ## Builds every garment slot of the (resolved) options onto the rig (not hair: AnimeHead.build() does that), then
-## hides the skin regions the garments cover.
+## hides the skin regions the garments cover. A VRM body (rig "skin" == "vrm") gets only the VRM_SLOTS.
 static func dress(rig: Dictionary, options: Dictionary, mats: Dictionary) -> void:
 	var body_type: String = str(rig["body_type"])
+	var vrm: bool = str(rig.get("skin", "")) == "vrm"
 	var covered: PackedStringArray = []
 	for slot: String in SLOTS:
-		if slot == "hair":
+		if slot == "hair" or (vrm and not VRM_SLOTS.has(slot)):
 			continue
 		var ids: Array = []
 		if slot == "accessory":

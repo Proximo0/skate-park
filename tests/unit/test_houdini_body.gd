@@ -2,6 +2,17 @@ extends TestCase
 ## HoudiniBody: the baked prepare results are current, every triangle has a region, the cuts are capped (no hole at
 ## the neck, wrists or ankles), the weights are clean, and a barefoot body stands on its soles.
 
+
+## These tests check the Houdini body itself, so bodies built without a "skin" option use it while a test of this
+## file runs (the default skin is the VRM body).
+func _init() -> void:
+	PlaceholderSkater.houdini_scopes += 1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		PlaceholderSkater.houdini_scopes -= 1
+
 const BAREFOOT: Dictionary = {"top": "none", "bottom": "none", "socks": "none", "shoes": "none", "accessories": []}
 
 

@@ -39,7 +39,9 @@ static func create(role_: String, name_: String, look: SkaterLoadout, extra: Dic
 	n.board = SkaterBuilder.build_board(look)
 	n.board.name = "Skateboard"
 	n.add_child(n.board)
-	n.body = PlaceholderSkater.build_body(palette, SkaterBuilder.body_options(look))
+	var opts: Dictionary = SkaterBuilder.body_options(look)
+	opts["skin"] = "houdini"  # shop staff keep their own outfits; the VRoid model is the lead skater's
+	n.body = PlaceholderSkater.build_body(palette, opts)
 	n.body.name = "SkaterBody"
 	n.body.position.y = PlaceholderSkater.DECK_TOP_Y
 	n.add_child(n.body)
