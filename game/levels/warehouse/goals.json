@@ -1,0 +1,108 @@
+{
+	"run_seconds": 120,
+	"goals": [
+		{
+			"id": "high_score_15k",
+			"title": "High Score: 15,000",
+			"description": "Land 15,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 15000
+		},
+		{
+			"id": "pro_score_40k",
+			"title": "Pro Score: 40,000",
+			"description": "Land 40,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 40000
+		},
+		{
+			"id": "combo_6k",
+			"title": "Graveyard Shift: 6,000 Combo",
+			"description": "Land a single combo worth 6,000 points.",
+			"type": "combo",
+			"target": 6000
+		},
+		{
+			"id": "collect_skate",
+			"title": "Collect S-K-A-T-E",
+			"description": "Find S, K, A, T and E: pallet gap, catwalk, container gap, truck well, settling pit.",
+			"type": "collect",
+			"items": [
+				"S",
+				"K",
+				"A",
+				"T",
+				"E"
+			]
+		},
+		{
+			"id": "collect_cans",
+			"title": "Find the 6 Spray Cans",
+			"description": "The crew stashed six cans round the yard: flatcar, catwalk ramp, pipe run, flatbed, barriers, bank wall.",
+			"type": "collect",
+			"items": [
+				"can",
+				"can",
+				"can",
+				"can",
+				"can",
+				"can"
+			]
+		},
+		{
+			"id": "secret_tape",
+			"title": "The Lost Tape",
+			"description": "Someone bricked up a room behind the hall's east wall. Find the hole and grab the tape.",
+			"type": "collect",
+			"items": [
+				"tape"
+			]
+		},
+		{
+			"id": "gap_hunter_8",
+			"title": "Gap Hunter: 8 gaps",
+			"description": "Discover 8 gaps around the warehouse.",
+			"type": "gaps",
+			"target": 8
+		},
+		{
+			"id": "container_c",
+			"title": "Container Hop",
+			"description": "Grab the C floating over the gap between the stacked containers in the south yard.",
+			"type": "collect",
+			"items": [
+				"C"
+			]
+		},
+		{
+			"id": "forklift_f",
+			"title": "Forklift Hop",
+			"description": "Ollie the forklift and grab the F over its mast.",
+			"type": "collect",
+			"items": [
+				"F"
+			]
+		},
+		{
+			"id": "grind_5",
+			"title": "Catwalk Marathon: grind 5 seconds",
+			"description": "Hold one grind for 5 seconds (the catwalk rail is long enough).",
+			"type": "grind_time",
+			"target": 5
+		},
+		{
+			"id": "manual_4",
+			"title": "Night Shift Manual: 4 seconds",
+			"description": "Hold one manual for 4 seconds.",
+			"type": "manual_time",
+			"target": 4
+		},
+		{
+			"id": "special_1",
+			"title": "Lights Out Special",
+			"description": "Land any special trick.",
+			"type": "special",
+			"target": 1
+		}
+	]
+}
