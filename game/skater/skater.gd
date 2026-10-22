@@ -164,6 +164,12 @@ const ACID_MAX_NY: float = 0.97
 const ACID_ALONG_DOT: float = 0.2  ## the face must fall away along the travel (its outward normal along the motion)
 const ACID_ANIM_TIME: float = 0.55  ## s the "acid_drop" pose runs (the drop, the catch and the roll-away) before idle
 const ACID_LEAD: float = 0.15  ## s of horizontal travel the drop's path leads by (it carries on, it does not stop dead)
+## Links (THUG2): switching grinds and manuals in place, the ways out of a wallride or a lip trick, rail transfers.
+const SWITCH_BALANCE_KEEP: float = 0.5  ## a grind or manual switch half resets the balance meter (angle and drift)
+const MANUAL_SWITCH_MIN: float = 0.25  ## s into a manual before the other manual's flick switches it (not the entry flick)
+const WALL_REVERT_PUSH: float = 2.5  ## m/s straight out from the wall of a revert off a wallride
+const LIP_POP_OUT: float = 1.5  ## m/s out over the ramp of a flip or grab out of a lip trick
+const TRANSFER_MIN_AIR: float = 0.2  ## s in the air, at least, for a catch on another rail to count as a Rail Transfer
 
 ## Live physics tuning. Every ride number is read from here each tick.
 var tune: PhysicsTuning = PhysicsTuning.shared()
@@ -265,6 +271,17 @@ var _plant: Dictionary = {}
 var _wallplant_left: float = 0.0  ## s the foot stays planted on a wall (a wallplant in progress), 0 when not
 var _wallplant_n: Vector3 = Vector3.ZERO  ## the planted wall's outward normal (horizontal)
 var _wallplant_cool: float = 0.0  ## s left before another wallplant
+# links (see the consts above SWITCH_BALANCE_KEEP)
+var _grind_trick: Dictionary = {}  ## the grind being done (what a grind press on the rail switches away from)
+var _grind_charge: float = -1.0  ## s ollie has been held on the rail since it went down there; -1 when not crouching
+var _queued_manual: Dictionary = {}  ## a manual flicked on a rail: the drop off it lands into it
+var _link_from: String = ""  ## what this air left: "rail" or "wallride" (a link bonus if it ends on a rail), else ""
+var _link_rail: GrindRail = null  ## the rail this air left (a transfer must catch another one)
+var _revert_on_land: bool = false  ## reverted out of a lip trick: the revert fires at the touchdown
+var _manual_trick: Dictionary = {}  ## the manual being held (manual or nose manual): what a flatland trick returns to
+var _manual_since: float = 0.0  ## s since the manual started or last switched
+var _flatland: Dictionary = {}  ## the flatland trick held (grab held in a manual), {} when none
+var _pivot_wait: int = -1  ## ticks until a lone spin press pivots the manual (it waits out the ramp snap's chord)
 
 
 func _ready() -> void:
@@ -399,15 +416,15 @@ func _step(delta: float) -> void:
 		SkateState.State.ROLLING:
 			_tick_rolling(delta, requests)
 		SkateState.State.MANUAL:
-			_tick_manual(delta)
+			_tick_manual(delta, requests)
 		SkateState.State.AIR:
 			_tick_air(delta, requests)
 		SkateState.State.GRIND:
-			_tick_grind(delta)
+			_tick_grind(delta, requests)
 		SkateState.State.LIP:
 			_tick_lip(delta, requests)
 		SkateState.State.WALLRIDE:
-			_tick_wallride(delta)
+			_tick_wallride(delta, requests)
 		SkateState.State.BAIL:
 			_tick_bail(delta)
 	_finish_step(delta)
@@ -439,7 +456,7 @@ func _tick_rolling(delta: float, requests: Array) -> void:
 	if _recent_revert_press <= REVERT_BUFFER_TICKS and state.event("revert"):
 		_recent_revert_press = 100
 		switch_stance = not switch_stance
-		_score_trick({"id": "revert", "name": "Revert", "points": 100, "kind": "revert", "anim": "revert"})
+		_score_trick(_revert_trick())
 		_set_anim("revert")
 		return
 	if powersliding:
@@ -539,6 +556,8 @@ func _ollie(power: float, move: String = "") -> void:
 		up = (_floor_normal + Vector3.UP).normalized()  # on a steep transition, pop out of the ramp too
 	var from_ground: bool = state.state in [SkateState.State.ROLLING, SkateState.State.MANUAL]
 	var is_nollie: bool = nollie and from_ground and move == ""
+	if from_ground:
+		_link_from = ""
 	tricks.consume("ollie")  # this press has popped: it must not also wallplant or buffer a pop on the next landing
 	if is_nollie:
 		power *= tune.nollie_pop  # popped off the nose: a touch lower
@@ -1196,29 +1215,125 @@ func _fallback_facing(n: Vector3) -> Vector3:
 	return f.normalized() if f.length() > 0.01 else Vector3.FORWARD
 
 
-func _tick_manual(delta: float) -> void:
+## One tick of a manual. Besides the balance and the ollie out, THUG2's links: grind (a rail in reach) grinds straight
+## from the manual, revert reverts out of it (rolling, combo still open), a spin button pivots 180 (see _manual_pivot),
+## the other manual's flick switches to it, grab + stick holds a flatland trick (data kind "flatland") and a flip pressed
+## with the ollie flips in the air.
+func _tick_manual(delta: float, requests: Array) -> void:
 	_ground_move(delta, false)
 	combo.add_hold_points(_hold_pps, delta)
+	_manual_since += delta
 	if not balance.update(delta, -_stick.y):
 		_bail({"cause": "manual", "lean": balance.angle})
 		return
 	if not is_on_floor() or _left_edge:
+		_flatland = {}
+		_link_from = ""
 		state.event("fall_off")
 		_enter_air(false)
 		return
+	for r: Dictionary in requests:
+		if r["button"] == "flip":
+			_pending_air.append({"req": r, "t": _t})  # waits for the pop, as on the ground
+	_pending_air = _pending_air.filter(func(p: Dictionary) -> bool: return _t - float(p["t"]) < 0.2)
 	if _just_pressed.has("ollie"):
 		balance_kind = ""
+		_flatland = {}
 		_ollie(tune.ollie_min)
 		return
+	if _recent_grind_press < 8 and _try_grind():
+		return
+	if _just_pressed.has("revert"):
+		_manual_revert()
+		return
+	if chord.suppressing():
+		_pivot_wait = -1  # the spin press was half of a ramp snap's chord
+	elif (_just_pressed.has("spin_left") or _just_pressed.has("spin_right")) and _pivot_wait < 0:
+		_pivot_wait = ChordInput.WINDOW_TICKS
+	if _pivot_wait >= 0:
+		_pivot_wait -= 1
+		if _pivot_wait < 0:
+			_manual_pivot()
+	var seq: Array = tricks.manual_flick_now()
+	if seq.size() == 2 and _manual_since >= MANUAL_SWITCH_MIN:
+		var m: Dictionary = db.find_sequence(seq, "")
+		if not m.is_empty() and str(m["id"]) != str(_manual_trick.get("id", "")):
+			_ev("manual_switch")
+			_flatland = {}
+			_half_reset_balance()
+			_score_trick(m)
+			_manual_trick = m
+			_manual_since = 0.0
+	_tick_flatland(requests)
 	if speed < 0.6:
 		balance_kind = ""
+		_flatland = {}
 		state.event("manual_end")
 		_set_anim("idle_ride")
+
+
+## Flatland: grab + stick in a manual starts that flatland trick (scored, pays per second while held); letting go of
+## grab goes back to the manual underneath.
+func _tick_flatland(requests: Array) -> void:
+	for r: Dictionary in requests:
+		if r["button"] != "grab":
+			continue
+		var t: Dictionary = db.find_flatland("grab", str(r["dir"]))
+		if not t.is_empty() and str(t["id"]) != str(_flatland.get("id", "")):
+			_ev("flatland")
+			_flatland = t
+			_score_trick(t)
+	if not _flatland.is_empty() and not _held.has("grab"):
+		_flatland = {}
+		_hold_pps = int(_manual_trick.get("points_per_sec", 0))
+		_set_anim(str(_manual_trick.get("anim", "manual_manual")))
+
+
+## 180 pivot on the down wheels: the rider and board turn half round, so the stance switches and the wheels that are
+## down now lead (a manual becomes a nose manual and back). The travel does not change.
+func _manual_pivot() -> void:
+	var t: Dictionary = db.find_flatland("spin", "")
+	if t.is_empty():
+		t = {"id": "manual_pivot", "name": "180 Pivot", "points": 150, "kind": "flatland", "anim": "manual_pivot"}
+	var other: Dictionary = db.get_trick("nose_manual" if str(_manual_trick.get("id", "manual")) == "manual" else "manual")
+	_ev("manual_pivot")
+	_flatland = {}
+	switch_stance = not switch_stance
+	_score_trick(t)
+	if not other.is_empty():
+		_manual_trick = other
+	_hold_pps = int(_manual_trick.get("points_per_sec", 0))
+	_set_anim(str(_manual_trick.get("anim", "manual_manual")))
+	_manual_since = 0.0
+
+
+## Revert out of a manual: back down on four wheels with a 180 (stance switched), rolling with the combo still open, so
+## a manual or an ollie straight after links on.
+func _manual_revert() -> void:
+	balance_kind = ""
+	_flatland = {}
+	_pivot_wait = -1
+	state.event("manual_end")
+	switch_stance = not switch_stance
+	tricks.clear()  # the manual's own flick must not start the next manual on the next tick
+	_ev("manual_revert")
+	_score_trick(_revert_trick())
+
+
+func _revert_trick() -> Dictionary:
+	return {"id": "revert", "name": "Revert", "points": 100, "kind": "revert", "anim": "revert"}
+
+
+## A grind or manual switch keeps the run of the balance but takes half of its lean and drift away.
+func _half_reset_balance() -> void:
+	balance.angle *= SWITCH_BALANCE_KEEP
+	balance.velocity *= SWITCH_BALANCE_KEEP
 
 
 # --- air ----------------------------------------------------------------------------------------------
 
 func _go_airborne(_from_grind: bool) -> void:
+	_link_from = ""  # off the ground: no rail or wall behind this air
 	if state.event("fall_off") or state.state == SkateState.State.AIR:
 		_enter_air(false)
 		_roll_off = not vert_air and state.state == SkateState.State.AIR
@@ -1473,12 +1588,24 @@ func _land(n: Vector3, impact: Vector3 = Vector3.ZERO) -> void:
 	_grab_trick = {}
 	var seq: Array = tricks.manual_tap_sequence()
 	var m: Dictionary = db.find_sequence(seq, "") if seq.size() == 2 else {}
+	if m.is_empty():
+		m = _queued_manual  # flicked on the rail before the drop off it
+	_queued_manual = {}
+	_link_from = ""
+	_link_rail = null
+	var revert_now: bool = _revert_on_land
+	_revert_on_land = false
 	if not m.is_empty() and state.event("land_manual"):
 		tricks.clear()
 		_start_balance_trick(m, "manual")
 	else:
 		state.event("land")
 		_set_anim("land")
+		if revert_now and state.event("revert"):
+			# reverted out of a lip trick: the 180 comes as the wheels touch the transition
+			switch_stance = not switch_stance
+			_recent_revert_press = 100
+			_score_trick(_revert_trick())
 	up_direction = n
 	landed.emit(result)
 
@@ -1498,7 +1625,7 @@ func _predict_landing_normal() -> Vector3:
 # --- rails, lips, walls -------------------------------------------------------------------------------
 
 func _try_grind() -> bool:
-	if speed < tune.grind_min_speed * 0.5 and state.state == SkateState.State.ROLLING:
+	if speed < tune.grind_min_speed * 0.5 and state.state in [SkateState.State.ROLLING, SkateState.State.MANUAL]:
 		return false
 	var best: GrindRail = null
 	var best_hit: Dictionary = {}
@@ -1510,7 +1637,7 @@ func _try_grind() -> bool:
 		if r == _left_rail and _t - _left_rail_t < 0.25:
 			continue  # just popped off its end: let a quick press transfer to the next rail
 		var hit: Dictionary = r.closest(global_position)
-		if hit.is_empty():
+		if hit.is_empty() or _flying_off_end(r, hit):
 			continue
 		var p: Vector3 = hit["point"]
 		var dy: float = p.y - global_position.y
@@ -1525,6 +1652,7 @@ func _try_grind() -> bool:
 		return false
 	if best.kind == "coping" and vert_air:
 		return false  # vert + coping = lip trick, handled by _try_lip
+	var air_time: float = state.time_in_state if state.state == SkateState.State.AIR else 0.0
 	if not state.event("grind_start"):
 		return false
 	_rail = best
@@ -1546,6 +1674,15 @@ func _try_grind() -> bool:
 	global_position = best_hit["point"] as Vector3
 	vert_air = false
 	_recent_grind_press = 100
+	_flatland = {}
+	_queued_manual = {}
+	# Linked in from another rail or off a wall through the air: a link bonus before the grind (THUG2's transfers).
+	if _link_from == "rail" and _is_transfer(best, air_time):
+		_score_link("rail_transfer")
+	elif _link_from == "wallride":
+		_score_link("wall_to_rail")
+	_link_from = ""
+	_link_rail = null
 	var t: Dictionary = db.find("grind", TrickInput.quantize(_stick), false)
 	if t.is_empty():
 		t = {"id": "fifty_fifty", "name": "50-50", "points": 100, "kind": "grind", "anim": "grind_fifty_fifty", "points_per_sec": 60}
@@ -1553,7 +1690,54 @@ func _try_grind() -> bool:
 	return true
 
 
-func _tick_grind(delta: float) -> void:
+## A rail's end that the skater is moving away from (closest point at the end, travel pointing on out past it) is not a
+## rail to catch: it would end on the next tick (and two rails' ends side by side would catch back and forth). A closed
+## loop (a bowl's coping, a planter's edges) has no end.
+func _flying_off_end(r: GrindRail, hit: Dictionary) -> bool:
+	var gp: PackedVector3Array = r.global_points()
+	if gp.size() < 2 or gp[0].distance_to(gp[gp.size() - 1]) < 0.01:
+		return false
+	var seg: int = hit["segment"]
+	var t: float = hit["t"]
+	var tan: Vector3 = hit["tangent"]
+	var out: Vector3 = Vector3.ZERO
+	if seg == 0 and t <= 0.0:
+		out = -tan
+	elif seg == gp.size() - 2 and t >= 1.0:
+		out = tan
+	else:
+		return false
+	var hv: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	var ho: Vector3 = Vector3(out.x, 0.0, out.z)
+	return hv.length() > 1.0 and ho.length() > 0.01 and hv.normalized().dot(ho.normalized()) > 0.5
+
+
+## A rail transfer: a different piece's rail (not the other edge of the same ledge or box), after a real hop.
+func _is_transfer(to: GrindRail, air_time: float) -> bool:
+	if air_time < TRANSFER_MIN_AIR:
+		return false
+	if _link_rail == null or not is_instance_valid(_link_rail):
+		return true
+	return to != _link_rail and to.get_parent() != _link_rail.get_parent()
+
+
+## A link bonus (data kind "link") into the combo, scored like a gap: no repeat penalty, shown as a banner.
+func _score_link(id: String) -> void:
+	var t: Dictionary = db.find_link(id) if db != null else {}
+	var nm: String = str(t.get("name", id.capitalize()))
+	var pts: int = int(t.get("points", 200))
+	_ev("link:" + id)
+	combo.add_gap(nm, pts)
+	special.add_points(pts)
+	state.mark_trick()
+	gap_hit.emit(nm, pts)
+
+
+## One tick on a rail. THUG2's links: grind + stick switches to that grind in place (scored, balance half reset), flip
+## and grab presses wait for the pop, ollie held crouches and its release pops (higher the longer the crouch, see
+## grind_pop_min / grind_pop_max; holding through the rail's end pops there), and the manual flick done on the rail
+## lands the drop off it in that manual.
+func _tick_grind(delta: float, requests: Array) -> void:
 	if _rail == null or not is_instance_valid(_rail):
 		state.event("fall_off")
 		_enter_air(true)
@@ -1583,17 +1767,53 @@ func _tick_grind(delta: float) -> void:
 	if not balance.update(delta, _stick.x):
 		_grind_topple()
 		return
+	for r: Dictionary in requests:
+		if r["button"] == "grind":
+			var t: Dictionary = db.find("grind", str(r["dir"]), false)
+			if not t.is_empty() and str(t["id"]) != str(_grind_trick.get("id", "")):
+				_ev("grind_switch")
+				_half_reset_balance()
+				_grind_trick = t
+				_hold_pps = int(t.get("points_per_sec", 0))
+				_score_trick(t)
+		else:
+			_pending_air.append({"req": r, "t": _t})  # flip or grab: with the pop
+	_pending_air = _pending_air.filter(func(p: Dictionary) -> bool: return _t - float(p["t"]) < 0.2)
+	var seq: Array = tricks.manual_flick_now()
+	if seq.size() == 2:
+		var m: Dictionary = db.find_sequence(seq, "")
+		if not m.is_empty():
+			_queued_manual = m
+			_ev("manual_queued")
 	if _just_pressed.has("ollie"):
-		_left_rail = _rail
-		_left_rail_t = _t
-		_ollie(7.5)
-		return
+		_grind_charge = 0.0  # pressed on the rail: crouch, the release pops
+	if _grind_charge >= 0.0:
+		if _held.has("ollie") and not bool(next["ended"]):
+			_grind_charge += delta
+			crouch = clampf(_grind_charge / tune.crouch_full, 0.0, 1.0)
+		else:
+			_grind_pop()
+			return
 	if bool(next["ended"]):
 		_left_rail = _rail
 		_left_rail_t = _t
+		_link_from = "rail"
+		_link_rail = _rail
 		state.event("fall_off")
 		velocity += Vector3.UP * 3.0
 		_enter_air(true)
+
+
+## Ollie off the rail: a tap pops grind_pop_min, a full crouch (crouch_full s of ollie held on the rail) grind_pop_max.
+func _grind_pop() -> void:
+	var power: float = lerpf(tune.grind_pop_min, tune.grind_pop_max, crouch)
+	_grind_charge = -1.0
+	crouch = 0.0
+	_left_rail = _rail
+	_left_rail_t = _t
+	_link_from = "rail"
+	_link_rail = _rail
+	_ollie(power)
 
 
 ## The grind balance tipped over. Low and moving: step off the rail on the side you leaned, a small sideways hop to
@@ -1615,6 +1835,9 @@ func _grind_topple() -> void:
 		return
 	_left_rail = _rail
 	_left_rail_t = _t
+	_grind_charge = -1.0
+	crouch = 0.0
+	_link_from = ""
 	_ev("topple_carve")
 	state.event("fall_off")
 	velocity = along * TOPPLE_KEEP + right * side * TOPPLE_HOP_SIDE + Vector3.UP * TOPPLE_HOP_UP
@@ -1649,12 +1872,21 @@ func _try_lip() -> bool:
 	return false
 
 
-func _tick_lip(delta: float, _requests: Array) -> void:
+## One tick of a lip trick. Out of it (THUG2): ollie or grind drops back in, revert drops in and reverts at the
+## touchdown, flip or grab pops up out of the stall (tune.lip_pop) with that trick, then drops back in.
+func _tick_lip(delta: float, requests: Array) -> void:
 	combo.add_hold_points(_hold_pps, delta)
 	if not balance.update(delta, _stick.x):
 		_bail({"cause": "lip", "lean": balance.angle})
 		return
-	if _just_pressed.has("ollie") or _just_pressed.has("grind") or balance.time_held() > tune.lip_max_time:
+	var pop: Dictionary = {}
+	for r: Dictionary in requests:
+		if r["button"] == "flip" or r["button"] == "grab":
+			pop = r
+			break
+	var revert: bool = _just_pressed.has("revert")
+	if _just_pressed.has("ollie") or _just_pressed.has("grind") or revert or not pop.is_empty() \
+			or balance.time_held() > tune.lip_max_time:
 		# drop back in: down the ramp, which faces along the launch normal
 		balance_kind = ""
 		state.event("lip_end")
@@ -1665,27 +1897,56 @@ func _tick_lip(delta: float, _requests: Array) -> void:
 		facing = out
 		_launch_normal = Vector3.UP
 		vert_air = false
+		_link_from = ""
 		spin.start(_yaw())
 		_set_anim("air")
+		if revert:
+			_ev("lip_revert")
+			_revert_on_land = true
+			_recent_revert_press = 100  # the press is spent on this: not an acid drop on the way down
+		elif not pop.is_empty():
+			_ev("lip_pop")
+			velocity = out * LIP_POP_OUT + Vector3.UP * tune.lip_pop
+			_air_trick(pop)
 
 
-func _tick_wallride(delta: float) -> void:
+## One tick on a wall. Out of it (THUG2): ollie is a wallie; flip or grab is a wallie with that trick; revert pushes off
+## with a 180 (stance switched). A rail caught after any of them, or after riding off the wall's end, is "Wall to Rail".
+func _tick_wallride(delta: float, requests: Array) -> void:
 	combo.add_hold_points(_hold_pps, delta)
 	velocity = velocity.slide(_wall_normal)
 	velocity += Vector3.DOWN * tune.gravity * 0.3 * delta
 	velocity += -_wall_normal * 0.5  # stay against the wall
 	up_direction = Vector3.UP
 	move_and_slide()
-	if _just_pressed.has("ollie"):
+	var trick: Dictionary = {}
+	for r: Dictionary in requests:
+		if r["button"] == "flip" or r["button"] == "grab":
+			trick = r
+			break
+	if _just_pressed.has("ollie") or not trick.is_empty():
 		velocity += _wall_normal * 3.5 + Vector3.UP * 6.0
 		state.event("ollie")
 		_ev("ollie")
+		_link_from = "wallride"
 		_score_trick({"id": "wallie", "name": "Wallie", "points": 200, "kind": "wallride", "anim": "ollie"})
+		if not trick.is_empty():
+			_pending_air.append({"req": trick, "t": _t})  # the flip or grab comes off the wall with the pop
 		_enter_air(false)
+		return
+	if _just_pressed.has("revert"):
+		_ev("wall_revert")
+		velocity += _wall_normal * WALL_REVERT_PUSH
+		state.event("fall_off")
+		_link_from = "wallride"
+		switch_stance = not switch_stance
+		_enter_air(false)
+		_score_trick(_revert_trick())
 		return
 	if state.time_in_state > tune.wallride_time or not is_on_wall() or is_on_floor():
 		state.event("fall_off")
 		velocity += _wall_normal * 1.0
+		_link_from = "wallride"
 		_enter_air(false)
 		if is_on_floor():
 			_land(get_floor_normal())
@@ -2402,6 +2663,7 @@ func _bail(ctx: Dictionary = {}) -> void:
 	_grab_trick = {}
 	_air_trick_until = 0.0
 	vert_air = false
+	_clear_links()
 	state.event("bail")
 	if combo.is_active():
 		# A combo of gaps only (scored with no trick opening it) leaves state.combo_open false, so the bail above did
@@ -2504,7 +2766,18 @@ func respawn() -> void:
 	_end_powerslide()
 	_set_nollie(false)
 	_nollie_air = false
+	_clear_links()
 	_set_anim("idle_ride")
+
+
+func _clear_links() -> void:
+	_grind_charge = -1.0
+	_queued_manual = {}
+	_link_from = ""
+	_link_rail = null
+	_revert_on_land = false
+	_flatland = {}
+	_pivot_wait = -1
 
 
 # --- snapshot / restore ---------------------------------------------------------------------------------
@@ -2580,6 +2853,18 @@ func snapshot() -> Dictionary:
 		"wallplant_cool": _wallplant_cool,
 		"camera_hold": camera_hold,
 		"camera_anchor": camera_anchor,
+		"links": {
+			"grind_trick": _grind_trick.duplicate(true),
+			"grind_charge": _grind_charge,
+			"queued_manual": _queued_manual.duplicate(true),
+			"link_from": _link_from,
+			"link_rail": str(_link_rail.get_path()) if _link_rail != null and is_instance_valid(_link_rail) and _link_rail.is_inside_tree() else "",
+			"revert_on_land": _revert_on_land,
+			"manual_trick": _manual_trick.duplicate(true),
+			"manual_since": _manual_since,
+			"flatland": _flatland.duplicate(true),
+			"pivot_wait": _pivot_wait,
+		},
 		"chord": chord.to_dict(),
 		"state": {
 			"state": int(state.state),
@@ -2685,6 +2970,17 @@ func restore(d: Dictionary) -> void:
 	_wallplant_cool = float(d.get("wallplant_cool", 0.0))
 	camera_hold = float(d.get("camera_hold", 0.0))
 	camera_anchor = d.get("camera_anchor", Vector3.ZERO)
+	var lk: Dictionary = d.get("links", {})
+	_grind_trick = (lk.get("grind_trick", {}) as Dictionary).duplicate(true)
+	_grind_charge = float(lk.get("grind_charge", -1.0))
+	_queued_manual = (lk.get("queued_manual", {}) as Dictionary).duplicate(true)
+	_link_from = str(lk.get("link_from", ""))
+	_link_rail = _rail_at(str(lk.get("link_rail", "")))
+	_revert_on_land = bool(lk.get("revert_on_land", false))
+	_manual_trick = (lk.get("manual_trick", {}) as Dictionary).duplicate(true)
+	_manual_since = float(lk.get("manual_since", 0.0))
+	_flatland = (lk.get("flatland", {}) as Dictionary).duplicate(true)
+	_pivot_wait = int(lk.get("pivot_wait", -1))
 	chord.from_dict(d.get("chord", {}))
 	var st: Dictionary = d["state"]
 	state.state = int(st["state"]) as SkateState.State
@@ -2747,6 +3043,14 @@ func _rail_at(path: String) -> GrindRail:
 
 func _start_balance_trick(t: Dictionary, kind: String) -> void:
 	balance_kind = kind
+	_grind_charge = -1.0
+	_pivot_wait = -1
+	if kind == "grind":
+		_grind_trick = t
+	elif kind == "manual":
+		_manual_trick = t
+		_manual_since = 0.0
+		_flatland = {}
 	_seed += 1
 	balance.start(_seed, 1.0 + combo.trick_count() * 0.02)
 	_hold_pps = int(t.get("points_per_sec", 0))

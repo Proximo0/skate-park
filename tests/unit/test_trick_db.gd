@@ -77,6 +77,8 @@ func test_by_kind_counts() -> void:
 	assert_eq(db.by_kind("lip").size(), 4, "lips")
 	assert_eq(db.by_kind("manual").size(), 2, "manuals")
 	assert_eq(db.by_kind("special").size(), 4, "specials")
+	assert_eq(db.by_kind("flatland").size(), 6, "flatland: 5 grab dirs + the 180 pivot")
+	assert_eq(db.by_kind("link").size(), TrickDB.LINK_IDS.size(), "links")
 	assert_eq(db.by_kind("bogus").size(), 0, "unknown kind")
 
 
@@ -134,3 +136,28 @@ func test_board_moves_score_from_the_table() -> void:
 	assert_eq(db.find_move("kickflip").size(), 0, "a flip is not a move")
 	assert_eq(db.by_kind("move").size(), TrickDB.MOVE_IDS.size(), "moves")
 	assert_eq(db.find("", "", false).size(), 0, "moves never match a button")
+
+
+func test_find_flatland() -> void:
+	var db: TrickDB = _db()
+	assert_eq(str(db.find_flatland("grab", "").get("id", "")), "casper")
+	assert_eq(str(db.find_flatland("grab", "N").get("id", "")), "pogo")
+	assert_eq(str(db.find_flatland("grab", "S").get("id", "")), "anti_casper")
+	assert_eq(str(db.find_flatland("grab", "NE").get("id", "")), "casper", "a dir with no flatland trick falls back to neutral")
+	assert_eq(str(db.find_flatland("spin", "").get("id", "")), "manual_pivot")
+	assert_eq(db.find_flatland("flip", "").size(), 0, "flip in a manual is no flatland trick (it waits for the pop)")
+	assert_eq(str(db.find("grab", "", false).get("id", "")), "melon", "flatland never shadows the air grabs")
+	for t: Dictionary in db.by_kind("flatland"):
+		assert_true(str(t.get("anim", "")).begins_with("manual_"), "%s poses as a manual (the poser keys manual_*)" % t["id"])
+		assert_true(int(t.get("points", 0)) >= 150 and int(t.get("points", 0)) <= 500, "%s THUG2-sized points" % t["id"])
+
+
+func test_links_score_from_the_table() -> void:
+	var db: TrickDB = _db()
+	for id: String in TrickDB.LINK_IDS:
+		var t: Dictionary = db.find_link(id)
+		assert_eq(str(t.get("kind", "")), "link", "%s is a link" % id)
+		assert_true(int(t.get("points", 0)) >= 200, "%s scores" % id)
+	assert_eq(str(db.find_link("rail_transfer").get("name", "")), "Rail Transfer")
+	assert_eq(str(db.find_link("wall_to_rail").get("name", "")), "Wall to Rail")
+	assert_eq(db.find_link("kickflip").size(), 0, "a flip is not a link")

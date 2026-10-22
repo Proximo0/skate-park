@@ -5,6 +5,7 @@ extends RefCounted
 ## Combo rules: mark_trick() opens the combo. It lands when the skater is ROLLING and LAND_WINDOW has
 ## passed since the last landing or revert. Bailing with an open combo emits combo_bailed.
 ## Manual linking: ROLLING -> MANUAL -> ROLLING keeps the combo open, because the landing timer only runs in ROLLING.
+## MANUAL -> GRIND: grind pressed in a manual beside a rail grinds straight from it.
 ## Revert: a ROLLING state reached by "land" can be reverted within REVERT_WINDOW. The window restarts.
 ## Caveman: WALK -> AIR (board thrown under the feet in a jump on foot), then "land" -> ROLLING as usual.
 
@@ -87,7 +88,7 @@ func _target(event_name: String) -> int:
 			if state != State.BAIL:
 				return State.BAIL
 		"grind_start":
-			if state in [State.AIR, State.ROLLING]:
+			if state in [State.AIR, State.ROLLING, State.MANUAL]:
 				return State.GRIND
 		"manual_start":
 			if state == State.ROLLING:

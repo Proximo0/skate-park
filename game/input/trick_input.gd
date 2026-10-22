@@ -129,6 +129,15 @@ func manual_tap_sequence() -> Array:
 	return [str(first["dir"]), str(recent[recent.size() - 1]["dir"])]
 
 
+## manual_tap_sequence(), but only on the tick its second dir was entered, so a flick acts once. Inside a grind or a
+## manual (where the stick also balances) this is the one-shot manual flick: a manual queued off a rail, or the other
+## manual switched to.
+func manual_flick_now() -> Array:
+	if _history.is_empty() or int(_history[_history.size() - 1].get("start", -1)) != _tick:
+		return []
+	return manual_tap_sequence()
+
+
 ## True when `button` went down within the last `ticks` ticks (0: only this tick). A press is a buffer: it can act
 ## a moment after it happened, e.g. an ollie tapped just before touchdown. Call consume() once it has acted.
 func pressed_within(button: String, ticks: int) -> bool:

@@ -64,6 +64,8 @@ static func table() -> Array:
 		["m_wallplant", ["wallplant_push_out_ms", "wallplant_into_left_ms"]],
 		["m_caveman", ["caveman_roll_speed_ms"]],
 		["m_acid_drop", ["acid_drop_energy_keep"]],
+		["m_grind_links", ["grind_switch_speed_keep", "rail_transfer_speed_keep", "grind_pop_charge_ratio"]],
+		["m_lip_out", ["lip_pop_flip_margin_s"]],
 	]
 
 
@@ -1262,3 +1264,35 @@ func m_acid_drop() -> Dictionary:
 		return {"acid_drop_energy_keep": NAN}
 	return {"acid_drop_energy_keep": float(a["spd"]) / maxf(float(a["ideal"]), 0.01), "x_acid_drop_face_ny": a["ny"],
 		"x_acid_drop_speed_ms": a["spd"]}
+
+
+func _links(path: String) -> Variant:
+	var m: Variant = (load(path) as GDScript).new()
+	m.host = host
+	m.SkaterScript = SkaterScript
+	return m
+
+
+## Grind links (tests/sim/sim_grind_links.gd): speed kept through a switch to another grind on the rail and through an
+## ollie transfer to the next rail, and the height of a fully charged pop off a rail over a tap pop's.
+func m_grind_links() -> Dictionary:
+	var sim: Variant = _links("res://tests/sim/sim_grind_links.gd")
+	var sw: Dictionary = await sim.switch_data()
+	var tr: Dictionary = await sim.transfer_data()
+	var tap: Dictionary = await sim.pop_data(1)
+	var full: Dictionary = await sim.pop_data(30)
+	return {
+		"grind_switch_speed_keep": float(sw["keep"]) if str(sw["anim"]) == "grind_boardslide" else NAN,
+		"rail_transfer_speed_keep": float(tr["keep"]) if str(tr["names"]).contains("Rail Transfer") else NAN,
+		"grind_pop_charge_ratio": float(full["h"]) / maxf(float(tap["h"]), 0.01),
+		"x_grind_pop_tap_m": tap["h"], "x_grind_pop_full_m": full["h"],
+	}
+
+
+## Kickflip out of a nose stall on a 4 m quarter: air time from the pop to the touchdown, less the flip's time.
+func m_lip_out() -> Dictionary:
+	var sim: Variant = _links("res://tests/sim/sim_wall_lip_outs.gd")
+	var d: Dictionary = await sim.lip_flip_data()
+	if not str(d["names"]).contains("Kickflip"):
+		return {"lip_pop_flip_margin_s": NAN}
+	return {"lip_pop_flip_margin_s": float(d["air"]) - tv("flip_time", 0.42), "x_lip_pop_landing": d["land"]}

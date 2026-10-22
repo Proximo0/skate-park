@@ -41,6 +41,9 @@ const FIELDS: Array = [
 	["rail_friction", 1.2, 0.0, 5.0, 0.05, "Grind", "Grind friction at 8 m/s, m/s² (scales with speed: about 0.15 m/s lost per metre at any pace)."],
 	["wallride_time", 1.2, 0.2, 4.0, 0.05, "Grind", "Longest wallride, s."],
 	["lip_max_time", 2.5, 0.5, 6.0, 0.1, "Grind", "Longest lip trick, s."],
+	["grind_pop_min", 7.5, 2.0, 15.0, 0.1, "Grind", "Pop speed of a tap ollie off a rail, m/s (hold ollie on the rail to crouch for more)."],
+	["grind_pop_max", 9.0, 2.0, 18.0, 0.1, "Grind", "Pop speed off a rail after a full crouch (crouch_full s held), m/s."],
+	["lip_pop", 5.0, 0.0, 10.0, 0.25, "Grind", "Flip or grab out of a lip trick: the pop up out of the stall, m/s."],
 	["walk_speed", 1.6, 0.5, 3.0, 0.05, "Walk", "Walking speed at a half-tilted stick, m/s."],
 	["run_speed", 4.0, 2.0, 8.0, 0.1, "Walk", "Running speed at a full stick, m/s."],
 	["walk_accel", 27.0, 5.0, 80.0, 1.0, "Walk", "Walking acceleration, m/s² (the default reaches run speed in about 0.15 s)."],
@@ -104,6 +107,9 @@ var rail_gravity: float
 var rail_friction: float
 var wallride_time: float
 var lip_max_time: float
+var grind_pop_min: float
+var grind_pop_max: float
+var lip_pop: float
 var walk_speed: float
 var run_speed: float
 var walk_accel: float

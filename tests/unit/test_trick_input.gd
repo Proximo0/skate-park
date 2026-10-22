@@ -240,3 +240,22 @@ func test_push_with_up_pulses_then_ollie_is_a_plain_ollie() -> void:
 		f.feed(up if i % 3 == 0 else Vector2.ZERO, [], [])
 	f.feed(up, ["ollie"], ["ollie"])
 	assert_eq(f.ollie_variant(), "", "pulses right up to an up + ollie press: still a push")
+
+
+func test_manual_flick_now_fires_once_on_the_second_dir() -> void:
+	var f: TrickInput = TrickInput.new()
+	f.feed(Vector2(0, -1), [], [])  # N flick
+	assert_eq(f.manual_flick_now(), [], "one dir is no sequence")
+	f.feed(Vector2(0, 1), [], [])  # S
+	assert_eq(f.manual_flick_now(), ["N", "S"], "the tick the second dir comes in")
+	f.feed(Vector2(0, 1), [], [])  # still S
+	assert_eq(f.manual_flick_now(), [], "held: not again")
+	assert_eq(f.manual_tap_sequence(), ["N", "S"], "the plain sequence is still there")
+
+
+func test_manual_flick_now_needs_a_flick_first() -> void:
+	var f: TrickInput = TrickInput.new()
+	for i: int in TrickInput.MANUAL_TAP_TICKS + 3:
+		f.feed(Vector2(0, -1), [], [])  # holding up: a push, not a flick
+	f.feed(Vector2(0, 1), [], [])
+	assert_eq(f.manual_flick_now(), [], "a held push then back is not a manual flick")

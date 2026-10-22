@@ -83,12 +83,13 @@ func test_bail_from_every_state_but_bail() -> void:
 	assert_eq(b.state, SkateState.State.BAIL)
 
 
-func test_grind_start_from_air_and_rolling_only() -> void:
-	for s: int in [SkateState.State.AIR, SkateState.State.ROLLING]:
+func test_grind_start_from_air_rolling_and_manual_only() -> void:
+	# MANUAL -> GRIND: grind pressed in a manual beside a rail grinds straight from it (a THUG2 link)
+	for s: int in [SkateState.State.AIR, SkateState.State.ROLLING, SkateState.State.MANUAL]:
 		var k: SkateState = _with_state(s as SkateState.State)
 		assert_true(k.event("grind_start"), "grind_start from %d" % s)
 		assert_eq(k.state, SkateState.State.GRIND)
-	for s: int in [SkateState.State.MANUAL, SkateState.State.GRIND, SkateState.State.LIP,
+	for s: int in [SkateState.State.GRIND, SkateState.State.LIP,
 			SkateState.State.WALLRIDE, SkateState.State.BAIL]:
 		var k: SkateState = _with_state(s as SkateState.State)
 		assert_false(k.event("grind_start"), "grind_start refused from %d" % s)

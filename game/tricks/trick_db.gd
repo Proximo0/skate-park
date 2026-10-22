@@ -10,6 +10,10 @@ extends RefCounted
 ## - find_sequence() matches manuals and specials by sequence and button.
 ## - find_move() looks up a board move by id (kind "move": wallplant, boneless, no_comply, caveman, acid_drop). Moves are
 ##   started by the skater's own rules (a button in a situation), never matched from a button and dir.
+## - find_flatland() matches the tricks done inside a manual (kind "flatland": button "grab" + dir, falling back to the
+##   neutral one; the "spin" button's 180 pivot).
+## - find_link() looks up a link by id (kind "link": rail_transfer, wall_to_rail), the bonuses for joining one balance
+##   trick to the next through the air. The skater scores them like gaps (no repeat penalty).
 ## Returned dictionaries are copies; callers may mutate them.
 
 const DATA_PATH: String = "res://data/tricks.json"
@@ -17,9 +21,11 @@ const REQUIRED_FIELDS: PackedStringArray = [
 	"id", "name", "kind", "button", "dir", "double_tap", "points",
 	"anim", "hold", "sequence", "points_per_sec",
 ]
-const VALID_KINDS: PackedStringArray = ["flip", "grab", "grind", "manual", "lip", "special", "move"]
+const VALID_KINDS: PackedStringArray = ["flip", "grab", "grind", "manual", "lip", "special", "move", "flatland", "link"]
 ## The board moves the skater scores by id (THUG2 move set); every one must be in the table.
 const MOVE_IDS: PackedStringArray = ["wallplant", "boneless", "no_comply", "caveman", "acid_drop"]
+## The links the skater scores by id; every one must be in the table.
+const LINK_IDS: PackedStringArray = ["rail_transfer", "wall_to_rail"]
 const VALID_DIRS: PackedStringArray = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", ""]
 const MATCHABLE_KINDS: PackedStringArray = ["flip", "grab", "grind"]
 const NEUTRAL_BUTTONS: PackedStringArray = ["flip", "grab", "grind"]
@@ -108,6 +114,27 @@ func find_move(id: String) -> Dictionary:
 	return found.duplicate(true)
 
 
+## A flatland trick (done in a manual) for a button and stick dir: the exact dir, else the button's neutral one, else {}.
+func find_flatland(button: String, dir: String) -> Dictionary:
+	var neutral: Dictionary = {}
+	for t: Dictionary in _tricks:
+		if str(t.get("kind", "")) != "flatland" or str(t.get("button", "")) != button:
+			continue
+		if str(t.get("dir", "")) == dir:
+			return t.duplicate(true)
+		if str(t.get("dir", "")) == "":
+			neutral = t
+	return neutral.duplicate(true)
+
+
+## A link (kind "link") by id, or {} when there is none.
+func find_link(id: String) -> Dictionary:
+	if not _by_id.has(id) or str((_by_id[id] as Dictionary).get("kind", "")) != "link":
+		return {}
+	var found: Dictionary = _by_id[id]
+	return found.duplicate(true)
+
+
 func by_kind(kind: String) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for t: Dictionary in _tricks:
@@ -161,6 +188,9 @@ func _validate() -> void:
 	for id: String in MOVE_IDS:
 		if find_move(id).is_empty():
 			push_error("TrickDB: missing move %s" % id)
+	for id: String in LINK_IDS:
+		if find_link(id).is_empty():
+			push_error("TrickDB: missing link %s" % id)
 	for button: String in NEUTRAL_BUTTONS:
 		if not _by_key.has(_key(button, "", false)):
 			push_error("TrickDB: no neutral trick for button %s" % button)
