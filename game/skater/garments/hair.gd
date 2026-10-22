@@ -335,7 +335,7 @@ static func messy(rig: Dictionary, _body_type: String, mats: Dictionary) -> void
 ## (azimuth 0 = front, + toward +X; elevation 90 = straight up). Its tip lifts off the scalp by `flick` (a spiky end).
 ## Built in head space, then made relative to `parent` (HeadModel or a sway pivot under it).
 static func _tuft(parent: Node3D, mats: Dictionary, part_name: String, root: Vector2, tip: Vector2, hw: float, flick: float, key: String,
-		curl: float, base_lift: float = 0.004) -> void:
+		curl: float, base_lift: float = 0.004, sides: int = 10, sub: int = 4) -> void:
 	var d0: Vector3 = _dir(root)
 	var d1: Vector3 = _dir(tip)
 	var off: Vector3 = parent.position if parent.name != "HeadModel" else Vector3.ZERO
@@ -353,7 +353,7 @@ static func _tuft(parent: Node3D, mats: Dictionary, part_name: String, root: Vec
 		nrm.append((q - AnimeHead.CENTER).normalized())
 		ws.append(hw * (0.55 + 0.45 * smoothstep(0.0, 0.3, t)) * (1.0 - pow(t, 1.5)) + 0.0005)
 		ts.append(0.0042 * (1.0 - 0.7 * t) + 0.0005)
-	SkaterParts.part(parent, part_name, AnimeHead.lock_mesh(pts, ws, ts, nrm, curl, 10, 4), Vector3.ZERO, mats, key)
+	SkaterParts.part(parent, part_name, AnimeHead.lock_mesh(pts, ws, ts, nrm, curl, sides, sub), Vector3.ZERO, mats, key)
 
 
 ## (azimuth, elevation) a fraction f of the way from a to b on the sphere.
@@ -597,22 +597,31 @@ static func _gather(parent: Node3D, part_name: String, mats: Dictionary, key: St
 
 ## Angel-ring sheen: n short streaks around the crown at height y.
 static func _sheen(head: Node3D, mats: Dictionary, angles: Array, y: float, lift: float = 0.0075, wscale: float = 1.0,
-		key: String = "hair_shine", name_tag: String = "HairSheen") -> void:
+		key: String = "hair_shine", name_tag: String = "HairSheen", span: float = 16.5) -> void:
+	var n: int = 4 if span <= 17.0 else 6
+	var sides: int = 6 if span <= 17.0 else 4  # the long gloss arcs are thin: 4 sides, 2 subdivisions
+	var sub: int = 3 if span <= 17.0 else 2
 	for i: int in angles.size():
 		var a: float = deg_to_rad(float(angles[i]))
 		var pts: PackedVector3Array = PackedVector3Array()
-		for k: int in 4:
-			var aa: float = a + deg_to_rad(-8.0 + 5.5 * float(k))
-			pts.append(AnimeHead.cap_point(aa, y + 0.003 * sin(PI * float(k) / 3.0) - 0.01 * absf(sin(a)), AnimeHead.CAP_T + lift))
-		var ws: PackedFloat32Array = PackedFloat32Array([0.0006, 0.0026 * wscale, 0.0026 * wscale, 0.0006])
-		_lock(head, "%s%dMesh" % [name_tag, i], mats, key, pts, ws, PackedFloat32Array([0.0006, 0.0011, 0.0011, 0.0006]), 0.0, 6, 3)
+		var ws: PackedFloat32Array = PackedFloat32Array()
+		var ts: PackedFloat32Array = PackedFloat32Array()
+		for k: int in n:
+			var f: float = float(k) / float(n - 1)
+			var aa: float = a + deg_to_rad(span * (f - 0.5))
+			pts.append(AnimeHead.cap_point(aa, y + 0.003 * sin(PI * f) - 0.01 * absf(sin(a)), AnimeHead.CAP_T + lift))
+			var bell: float = sin(PI * f)  ## tapered to points at both ends
+			ws.append(0.0006 + 0.002 * wscale * bell)
+			ts.append(0.0006 + 0.0005 * bell)
+		_lock(head, "%s%dMesh" % [name_tag, i], mats, key, pts, ws, ts, 0.0, sides, sub)
 
 
 ## Short-hair gloss: broad spec bands across the crown (hair_shine) and cool rim streaks over the temples and the back
 ## of the head (hair_rim), so dark short cuts read as lit forms, not flat blobs.
 static func _gloss(head: Node3D, mats: Dictionary, lift: float, y: float = 0.17) -> void:
-	_sheen(head, mats, [-35.0, 35.0, 180.0], y, lift, 3.4, "hair_shine", "HairGloss")
-	_sheen(head, mats, [-100.0, 100.0, -150.0, 150.0], y - 0.035, lift, 2.2, "hair_rim", "HairRim")
+	# Long thin tapered arcs (an "angel ring" broken by the locks), not short fat pills.
+	_sheen(head, mats, [-35.0, 35.0, 180.0], y, lift, 1.7, "hair_shine", "HairGloss", 30.0)
+	_sheen(head, mats, [-100.0, 100.0, -150.0, 150.0], y - 0.035, lift, 1.2, "hair_rim", "HairRim", 26.0)
 
 
 ## Deterministic jitter in [-1, 1] for lock i (no random numbers in game code).
@@ -889,8 +898,10 @@ static func bun(rig: Dictionary, _body_type: String, mats: Dictionary) -> void:
 	SkaterParts.part(head, "BunCoreMesh", SkaterParts.sphere_small(0.028), bun_c, mats, "hair_mid").scale = Vector3(1.0, 0.85, 1.0)
 	for i: int in 4:
 		var ang: float = TAU * float(i) / 4.0 + 0.8
-		var d: Vector3 = Vector3(cos(ang), 0.7 + 0.2 * _jit(i, 3.0), sin(ang)).normalized()
-		var pts: PackedVector3Array = PackedVector3Array([bun_c + d * 0.022, bun_c + d * 0.038, bun_c + d * 0.052 + Vector3(0.0, 0.004, 0.0)])
+		# Short loose ends tucked along the bun's side (longer, steeper ones stood up like ears).
+		var d: Vector3 = Vector3(cos(ang), 0.15 + 0.1 * _jit(i, 3.0), sin(ang)).normalized()
+		var pts: PackedVector3Array = PackedVector3Array([bun_c + d * 0.02, bun_c + d * 0.03 + Vector3(0.0, -0.004, 0.0),
+				bun_c + d * 0.037 + Vector3(0.0, -0.01, 0.0)])
 		_lock(head, "BunEnd%dMesh" % i, mats, "hair_base", pts, PackedFloat32Array([0.006, 0.0045, 0.0004]),
 				PackedFloat32Array([0.002, 0.0015, 0.0004]), 0.2, 6, 3)
 	for s: float in [-1.0, 1.0]:
@@ -952,13 +963,14 @@ static func short_spiky(rig: Dictionary, _body_type: String, mats: Dictionary) -
 static func undercut(rig: Dictionary, _body_type: String, mats: Dictionary) -> void:
 	var head: Node3D = rig["HeadModel"]
 	_scalp(head, mats, "hair_shadow")
-	# Clipped sides and back: short flat tufts in the dark shades.
+	# Clipped sides and back: short flat tufts in the scalp's shade, close together so they read as a clean fade (the
+	# darkest shade on alternate tufts read as holes in the hair).
 	var n: int = 0
-	for az: float in [-150.0, -120.0, -95.0, -70.0, 180.0, 150.0, 120.0, 95.0, 70.0]:
+	for az: float in [-165.0, -145.0, -125.0, -105.0, -85.0, -68.0, 180.0, 165.0, 145.0, 125.0, 105.0, 85.0, 68.0]:
 		for row: int in 2:
 			var e0: float = 34.0 if row == 0 else 12.0
 			_tuft(head, mats, "UndercutClip%dMesh" % n, Vector2(az, e0), Vector2(az + 4.0 * signf(az), e0 - 22.0), 0.02, 0.0,
-					"hair_shadow" if (n % 2 == 0) else "hair_deep", 0.2, -0.006)
+					"hair_shadow", 0.2, -0.006, 6, 3)  # flat clipped tufts: fewer sides keep the head on budget
 			n += 1
 	# Top: broad locks from the front hairline swept back over the crown, slightly to the left.
 	var tops: Array = [
@@ -1004,8 +1016,8 @@ static func buzz(rig: Dictionary, _body_type: String, mats: Dictionary) -> void:
 			var tip: Vector2 = Vector2(az + 6.0, e - 24.0)
 			if front:
 				tip = Vector2(az * 1.05, maxf(e - 24.0, 42.0))
-			_tuft(head, mats, "BuzzTuft%dMesh" % n, Vector2(az, e), tip, 0.022, 0.0, "hair_mid" if n % 3 != 0 else "hair_shadow",
-					0.15, -0.007)
+			# One shade: darker tufts on so short a cut read as holes.
+			_tuft(head, mats, "BuzzTuft%dMesh" % n, Vector2(az, e), tip, 0.022, 0.0, "hair_mid", 0.15, -0.007)
 			n += 1
 	_gloss(head, mats, 0.0095, 0.166)
 

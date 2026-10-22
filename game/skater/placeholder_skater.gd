@@ -260,18 +260,41 @@ static func _build_arm(chest: Node3D, side: String, s: float, mats: Dictionary, 
 		rig[str(n.name)] = n
 
 
-## Soft hand: a flattened palm, four rounded fingers and a thumb, merged into one mesh. Hangs along -Y.
+## Soft hand, hanging along -Y with the palm toward +Z and the thumb on the inner side (-s): a slim tapered palm, four
+## jointed fingers graded in length and relaxed in a slight curl toward the palm, and a two-segment thumb, merged into
+## one mesh. (A round puck palm with straight sausage fingers read as a mitten.)
 static func _hand_mesh(s: float) -> ArrayMesh:
 	var items: Array = []
-	items.append([SkaterParts.sphere_small(0.028), Transform3D(Basis.from_scale(Vector3(0.95, 1.2, 0.6)), Vector3(0.0, -0.034, 0.0))])
-	for i: int in 4:
-		var x: float = (float(i) - 1.5) * 0.0145
-		var len: float = 0.046 - 0.004 * absf(float(i) - 1.5)
-		var tilt: Basis = Basis(Vector3.RIGHT, -0.18)
-		items.append([SkaterParts.capsule_small(0.0078, len), Transform3D(tilt, Vector3(x, -0.07 - len * 0.35, -0.004))])
-	var thumb_basis: Basis = Basis(Vector3.BACK, -s * 0.7) * Basis(Vector3.RIGHT, -0.2)
-	items.append([SkaterParts.capsule_small(0.0088, 0.042), Transform3D(thumb_basis, Vector3(-s * 0.03, -0.045, -0.012))])
+	# Palm: wider across the knuckles than at the wrist, thin front to back, with a soft heel under the thumb.
+	items.append([SkaterParts.sphere_small(0.026), Transform3D(Basis.from_scale(Vector3(0.98, 1.3, 0.44)), Vector3(0.0, -0.037, 0.001))])
+	items.append([SkaterParts.sphere_small(0.012), Transform3D(Basis.from_scale(Vector3(1.0, 1.4, 0.8)), Vector3(-s * 0.011, -0.03, 0.004))])
+	items.append([SkaterParts.capsule_small(0.0105, 0.05), Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(0.0, -0.062, 0.0))])
+	# Fingers, index (inner side) to little finger: [x, base y, length].
+	var fingers: Array = [[-0.0195, -0.066, 0.042], [-0.0065, -0.068, 0.047], [0.0065, -0.067, 0.044], [0.0185, -0.063, 0.035]]
+	for f: Array in fingers:
+		var base: Vector3 = Vector3(s * float(f[0]), float(f[1]), 0.0)
+		var l: float = float(f[2])
+		var r: float = 0.0062 if absf(float(f[0])) < 0.015 else 0.0057
+		var curl: float = 0.22 + 0.06 * absf(float(f[0])) / 0.02  ## the outer fingers curl a little more
+		var d0: Vector3 = Vector3(0.0, -cos(curl), sin(curl))
+		var mid: Vector3 = base + d0 * l * 0.55
+		var d1: Vector3 = Vector3(0.0, -cos(curl * 2.4), sin(curl * 2.4))
+		items.append(_hand_bone(base, mid, r))
+		items.append(_hand_bone(mid, mid + d1 * l * 0.45, r * 0.9))
+	# Thumb: out from the heel of the palm, angled across the front of the palm.
+	var t0: Vector3 = Vector3(-s * 0.021, -0.026, 0.006)
+	var t1: Vector3 = t0 + Vector3(-s * 0.008, -0.021, 0.009)
+	var t2: Vector3 = t1 + Vector3(s * 0.001, -0.018, 0.012)
+	items.append(_hand_bone(t0, t1, 0.0078))
+	items.append(_hand_bone(t1, t2, 0.0068))
 	return SkaterParts.merge(items)
+
+
+## A capsule from a to b of radius r, as a SkaterParts.merge item.
+static func _hand_bone(a: Vector3, b: Vector3, r: float) -> Array:
+	var d: Vector3 = b - a
+	var basis: Basis = Basis(Quaternion(Vector3.UP, d.normalized()))
+	return [SkaterParts.capsule_small(r, d.length() + 2.0 * r), Transform3D(basis, (a + b) * 0.5)]
 
 
 ## foot_z: ankle offset from the hips along Z (negative = forward, toward the nose).

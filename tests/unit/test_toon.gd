@@ -100,3 +100,44 @@ func _param(m: ShaderMaterial, name: String) -> float:
 	re.compile("uniform\\s+float\\s+" + name + "\\b[^=;]*=\\s*([-0-9.eE]+)")
 	var hit: RegExMatch = re.search(m.shader.code)
 	return float(hit.get_string(1)) if hit != null else -1.0
+
+
+func _tagged(key: String, color: Color, tex: Texture2D = null) -> MeshInstance3D:
+	var mi: MeshInstance3D = MeshInstance3D.new()
+	mi.mesh = BoxMesh.new()
+	var std: StandardMaterial3D = StandardMaterial3D.new()
+	std.albedo_color = color
+	std.albedo_texture = tex
+	mi.material_override = std
+	mi.set_meta("palette", key)
+	return mi
+
+
+func test_skin_and_hair_get_warm_character_shading() -> void:
+	var skin: MeshInstance3D = _tagged("skin", Color(0.9, 0.7, 0.55))
+	var hair: MeshInstance3D = _tagged("hair_base", Color(0.95, 0.8, 0.4))
+	var tie: MeshInstance3D = _tagged("hair_tie", Color(1.0, 0.4, 0.35))
+	for mi: MeshInstance3D in [skin, hair, tie]:
+		Toon.apply_to(mi)
+	var sm: ShaderMaterial = skin.material_override as ShaderMaterial
+	var tint: Color = sm.get_shader_parameter("shadow_tint")
+	assert_true(tint.r > tint.b, "skin shades into a warm band, not the park's cool violet")
+	var hm: ShaderMaterial = hair.material_override as ShaderMaterial
+	assert_eq(hm.get_shader_parameter("shadow_tint"), Toon.HAIR_PARAMS["shadow_tint"], "hair look")
+	assert_true(is_same(tie.material_override, Toon.material(Color(1.0, 0.4, 0.35))), "the hair tie is plain cloth colour")
+	assert_false(is_same(sm, Toon.material(Color(0.9, 0.7, 0.55))), "skin look cached apart from the plain colour")
+	for mi: MeshInstance3D in [skin, hair, tie]:
+		mi.free()
+
+
+func test_textured_cloth_does_not_reuse_a_plain_cloth_material() -> void:
+	var img: Image = Image.create(2, 2, false, Image.FORMAT_RGB8)
+	var plain: MeshInstance3D = _tagged("top", Color.WHITE)
+	var plaid: MeshInstance3D = _tagged("top_plaid", Color.WHITE, ImageTexture.create_from_image(img))
+	Toon.apply_to(plain)
+	Toon.apply_to(plaid)
+	var pm: ShaderMaterial = plaid.material_override as ShaderMaterial
+	assert_false(is_same(plain.material_override, pm), "a white plaid shirt keeps its own material")
+	assert_true(pm.get_shader_parameter("albedo_tex") != null, "with its texture")
+	plain.free()
+	plaid.free()

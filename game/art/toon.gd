@@ -11,6 +11,18 @@ const INK: Color = Color(0.106, 0.106, 0.184, 1.0)
 
 ## Strength of the saturation-aware cloth shadow (skater garment meshes, palette keys top*/bottom*/sock*).
 const CLOTH_SHADE: float = 1.0
+## Character skin (palette "skin" and the head's skin-derived keys): anime skin shades into a warm rosy band, not the
+## park's cool violet shadow (which turned faces and limbs muddy grey-orange), with a gentle mid band and a warm rim.
+const SKIN_KEYS: PackedStringArray = ["skin", "head_skin_shadow", "head_blush"]
+const SKIN_PARAMS: Dictionary = {
+	"shadow_tint": Color(0.76, 0.54, 0.64), "mid_level": 0.86, "mid_threshold": 0.34, "lit_threshold": 0.7,
+	"band_softness": 0.045, "rim_color": Color(1.0, 0.86, 0.8), "rim_strength": 0.3,
+}
+## Character hair (palette keys hair_*, not the tie): a warm, saturated shadow so blonde stays golden in the shade.
+const HAIR_PARAMS: Dictionary = {
+	"shadow_tint": Color(0.74, 0.56, 0.52), "mid_level": 0.86, "band_softness": 0.03, "rim_color": Color(1.0, 0.95, 0.85),
+	"rim_strength": 0.28,
+}
 
 static var _outline_material: ShaderMaterial = null
 static var _cache: Dictionary = {}
@@ -21,12 +33,16 @@ static var outlines_enabled: bool = false
 
 ## Toon material for a flat colour. With outline (and outlines_enabled), the ink outline pass is its next_pass.
 ## Cached per colour: the same colour and outline flag return the same instance.
-static func material(color: Color, outline: bool = true, tex: Texture2D = null, cloth: bool = false) -> ShaderMaterial:
+static func material(color: Color, outline: bool = true, tex: Texture2D = null, cloth: bool = false,
+		look: String = "") -> ShaderMaterial:
 	var key: String = "%s|%s" % [color.to_html(true), str(outline)]
 	if tex != null:
 		key = "%s|t%d|%s" % [color.to_html(true), tex.get_instance_id(), str(outline)]
 	if cloth:
-		key = "%s|cloth|%s" % [color.to_html(true), str(outline)]
+		## (with its texture: a white plaid flannel must not reuse a plain white cloth material)
+		key = "%s|cloth%s|%s" % [color.to_html(true), ("|t%d" % tex.get_instance_id()) if tex != null else "", str(outline)]
+	if look != "":
+		key = "%s|%s|%s" % [color.to_html(true), look, str(outline)]
 	if _cache.has(key):
 		return _cache[key] as ShaderMaterial
 	var mat: ShaderMaterial = ShaderMaterial.new()
@@ -36,6 +52,9 @@ static func material(color: Color, outline: bool = true, tex: Texture2D = null, 
 		mat.set_shader_parameter("albedo_tex", tex)
 	if cloth:
 		mat.set_shader_parameter("cloth_shade", CLOTH_SHADE)
+	var params: Dictionary = SKIN_PARAMS if look == "skin" else HAIR_PARAMS if look == "hair" else {}
+	for p: String in params:
+		mat.set_shader_parameter(p, params[p])
 	if outline and outlines_enabled:
 		mat.next_pass = _shared_outline()
 	_cache[key] = mat
@@ -149,5 +168,10 @@ static func _apply_one(mi: MeshInstance3D, outline: bool) -> bool:
 		tex = (src as StandardMaterial3D).albedo_texture
 	var key: String = str(mi.get_meta("palette", ""))
 	var cloth: bool = key.begins_with("top") or key.begins_with("bottom") or key.begins_with("sock")
-	mi.material_override = material(color, outline, tex, cloth)
+	var look: String = ""
+	if tex == null and key in SKIN_KEYS:
+		look = "skin"
+	elif tex == null and key.begins_with("hair_") and key != "hair_tie":
+		look = "hair"
+	mi.material_override = material(color, outline, tex, cloth, look)
 	return true

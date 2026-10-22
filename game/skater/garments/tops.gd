@@ -14,12 +14,18 @@ const TRIM_DEFAULT: Color = Color(1.0, 0.5, 0.4)
 const CUP_EDGE_LIFT: float = 0.003  ## the cup comes down to this lift at its edges, under the piping
 const CUP_PIPING_R: float = 0.003
 const TANK_GROW: float = 0.006
+const TANK_STRAP_R: float = 0.0062  ## a thicker round strap read as a rope lying on the shoulder
+const TANK_STRAP_TOP: float = 0.001  ## strap crest over the shoulder line (higher stood off the slimmer Houdini shoulder)
 const TANK_HEM: float = 1.05  ## hem height: just under the bust, so the under-bust and belly stay bare
 const HOODIE_GROW: float = 0.011
 const FLANNEL_GROW: float = 0.0115
 const TEE_GROW: float = 0.003
+const SLEEVE_CAP: float = 0.85  ## sleeve cap height as a share of the code deltoid's
+const RIB_H: float = 0.012  ## height of a loose shirt's ribbed collar band
+const COLLAR_HUG: float = 0.13  ## the flannel collar's top drawn in toward the neck by this share
 const SKIRT_TEE: float = 0.021  ## loose tee over the waistband zone
 const SKIRT_FLANNEL: float = 0.026
+const TEE_ARC: float = 1.4  ## half-angle (radians from the front) of the tee front under the open flannel
 const FLANNEL_GAP: float = 0.3  ## half-angle of the open front, from the front-centre line
 const PLAID_TILE: float = 0.08  ## metres per texture tile of the plaid
 const TEE_DEFAULT: Color = Color(0.78, 0.77, 0.88)
@@ -291,8 +297,14 @@ static func _shirt(rig: Dictionary, body_type: String, mats: Dictionary, tag: St
 	SkaterParts.part(rig["Hips"], tag + "HipsMesh", _surf(hips_rows, opt, 0.0, TAU, hips_y, 0.1), Vector3.ZERO, mats, key)
 	# Collar and hem.
 	var collar: PackedVector3Array = chest_rows[chest_rows.size() - 1]
-	SkaterParts.part(rig["Chest"], tag + "CollarMesh", _ring_tube(collar, float(opt.get("collar_r", 0.0055 if loose else 0.007))),
-			Vector3.ZERO, mats, trim)
+	if loose:
+		# A flat ribbed band lying on the fabric with a thin rolled lip: a round cord here read as a loose choker.
+		SkaterParts.part(rig["Chest"], tag + "CollarBandMesh", _rib_band(chest_rows, RIB_H, 0.0016), Vector3.ZERO, mats, trim)
+		SkaterParts.part(rig["Chest"], tag + "CollarMesh", _ring_tube(_lifted(collar, 0.0012), float(opt.get("collar_r", 0.0032))),
+				Vector3.ZERO, mats, trim)
+	else:
+		SkaterParts.part(rig["Chest"], tag + "CollarMesh", _ring_tube(collar, float(opt.get("collar_r", 0.007))), Vector3.ZERO, mats,
+				trim)
 	SkaterParts.part(rig["Hips"], tag + "HemMesh", _ring_tube(hips_rows[0], float(opt.get("hem_r", 0.004 if loose else 0.002))),
 			Vector3.ZERO, mats, str(opt.get("hem_key", key)))
 	# Contrast panel across the chest (rash guard).
@@ -321,13 +333,15 @@ static func _sleeves(rig: Dictionary, body_type: String, mats: Dictionary, tag: 
 		var arm: Array = secs["upper_arm"]
 		var sg: float = grow + (0.004 if loose else 0.0)
 		var rows: Array = []
-		var y_top: float = maxf(dc.w + delt.y, float((arm[0] as Array)[0]) + 0.004) + sg  ## over the deltoid and the arm's top
+		## over the deltoid and the arm's top; the cap a little under the code deltoid's crown (SLEEVE_CAP), which stood
+		## proud of the slimmer fitted Houdini shoulder as a puff with a notch behind it
+		var y_top: float = maxf(dc.w + delt.y * SLEEVE_CAP, float((arm[0] as Array)[0]) + 0.004) + sg
 		var y_end: float = -sleeve_end * ul
 		var steps: int = 22
 		for i: int in steps + 1:
 			var y: float = lerpf(y_top, y_end, pow(float(i) / float(steps), 1.4))
 			var sec: Array = (SkaterParts.section_at(arm, y) as Array).duplicate()
-			var e: float = (y - dc.w) / delt.y
+			var e: float = (y - dc.w) / (delt.y * SLEEVE_CAP + sg)
 			var dome: float = sqrt(maxf(1.0 - e * e, 0.0))  ## the deltoid cap (a scaled sphere) stays inside
 			sec[1] = maxf(float(sec[1]), delt.x * dome)
 			sec[2] = maxf(float(sec[2]), delt.z * dome)
@@ -420,6 +434,58 @@ static func _fan(c: Vector3, ring: PackedVector3Array) -> ArrayMesh:
 
 
 ## Closed tube following a ring of points (collars, cuffs, hems).
+## A row of points drawn toward its centroid (in XZ) by the share k.
+static func _hugged(row: PackedVector3Array, k: float) -> PackedVector3Array:
+	var c: Vector3 = Vector3.ZERO
+	for p: Vector3 in row:
+		c += p
+	c /= float(maxi(row.size(), 1))
+	var out: PackedVector3Array = PackedVector3Array()
+	for p: Vector3 in row:
+		out.append(Vector3(lerpf(p.x, c.x, k), p.y, lerpf(p.z, c.z, k)))
+	return out
+
+
+## A ring pushed out from its own centre line by `lift` (metres), in the ring's plane.
+static func _lifted(ring: PackedVector3Array, lift: float) -> PackedVector3Array:
+	var c: Vector3 = Vector3.ZERO
+	for p: Vector3 in ring:
+		c += p
+	c /= float(maxi(ring.size(), 1))
+	var out: PackedVector3Array = PackedVector3Array()
+	for p: Vector3 in ring:
+		var d: Vector3 = Vector3(p.x - c.x, 0.0, p.z - c.z)
+		out.append(p + (d.normalized() * lift if d.length() > 1e-5 else Vector3.ZERO))
+	return out
+
+
+## Ribbed band over the top `h` metres of a garment's rows (listed bottom to top), standing `lift` off the fabric.
+static func _rib_band(rows: Array, h: float, lift: float) -> ArrayMesh:
+	var top: PackedVector3Array = rows[rows.size() - 1]
+	var top_y: float = 0.0
+	for p: Vector3 in top:
+		top_y += p.y
+	top_y /= float(top.size())
+	var band: Array = []
+	for r: PackedVector3Array in rows:
+		var y: float = 0.0
+		for p: Vector3 in r:
+			y += p.y
+		if y / float(r.size()) >= top_y - h - 0.001:
+			band.append(_lifted(r, lift))
+	if band.size() < 2:
+		band = [_lifted(rows[rows.size() - 2], lift), _lifted(top, lift)]
+	return SkaterParts.grid(band, true)
+
+
+## A capped tube of radius r along an open row of points.
+static func _open_tube(row: PackedVector3Array, r: float) -> ArrayMesh:
+	var radii: PackedFloat32Array = PackedFloat32Array()
+	radii.resize(row.size())
+	radii.fill(r)
+	return SkaterParts.tube_capped(row, radii, 6)
+
+
 static func _ring_tube(ring: PackedVector3Array, r: float) -> ArrayMesh:
 	var pts: PackedVector3Array = ring.duplicate()
 	pts.append(ring[0])
@@ -642,13 +708,13 @@ static func crop_tank(rig: Dictionary, body_type: String, mats: Dictionary) -> v
 		var pts: PackedVector3Array = PackedVector3Array()
 		pts.append(_gpoint(secs, chest_y, y_front, a_front, grow, body_type, false, ref, true))
 		pts.append(SkaterParts.section_point(top, a_front, grow + 0.004) + Vector3(0.0, 0.004, 0.0))
-		pts.append(Vector3(s * strap_x, top_y - chest_y + 0.007, float(top[5])))
+		pts.append(Vector3(s * strap_x, top_y - chest_y + TANK_STRAP_TOP, float(top[5])))
 		pts.append(SkaterParts.section_point(top, a_back, grow + 0.004) + Vector3(0.0, 0.004, 0.0))
 		pts.append(_gpoint(secs, chest_y, y_back, a_back, grow, body_type, false, ref, false))
 		pts = SkaterParts.smooth3d(pts, 3)
 		var radii: PackedFloat32Array = PackedFloat32Array()
 		radii.resize(pts.size())
-		radii.fill(0.009)
+		radii.fill(TANK_STRAP_R)
 		SkaterParts.part(chest, ("Left" if s < 0.0 else "Right") + "CropTankStrapMesh", SkaterParts.tube_capped(pts, radii, 8),
 				Vector3.ZERO, mats, "top")
 
@@ -659,7 +725,7 @@ static func crop_tank(rig: Dictionary, body_type: String, mats: Dictionary) -> v
 ## on the back of the neck and shoulders. Sleeves follow the arm joints.
 static func hoodie(rig: Dictionary, body_type: String, mats: Dictionary) -> void:
 	_mats(mats)
-	var opt: Dictionary = {"collar_y": 1.345, "hem_y": 0.86, "band": false, "collar_r": 0.011, "hem_r": 0.0075,
+	var opt: Dictionary = {"collar_y": 1.345, "hem_y": 0.86, "band": false, "collar_r": 0.0055, "hem_r": 0.0075,
 			"hem_key": "top_trim", "cuff_r": 0.0075, "sleeve_grow": 0.0085}
 	_shirt(rig, body_type, mats, "Hoodie", HOODIE_GROW, true, 1.1, 0.86, opt)
 	var ref: Array = _ref_section(body_type)
@@ -782,11 +848,15 @@ static func flannel(rig: Dictionary, body_type: String, mats: Dictionary) -> voi
 	Wardrobe.mat(mats, "top_tee", TEE_DEFAULT)
 	_plaid_mat(mats)
 	var ref: Array = _ref_section(body_type)
-	# The tee under it: a closed loose tee, shorter than the overshirt, short sleeves.
+	# The tee under it: shorter than the overshirt, short sleeves, and only its front (TEE_ARC either side of the
+	# front-centre line): its back, never seen under the overshirt, poked out through the flannel's back as the spine
+	# bent (the tee's Spine piece swinging out past the flannel's Hips piece).
 	_skirt_t = SKIRT_TEE
-	var tee: Dictionary = _layer(rig, body_type, mats, "FlannelTee", TEE_GROW, 0.9, 1.335, {"key": "top_tee"}, ref, Callable())
-	SkaterParts.part(rig["Hips"], "FlannelTeeHemMesh", _ring_tube((tee["hips"] as Array)[0], 0.003), Vector3.ZERO, mats, "top_tee")
-	SkaterParts.part(rig["Chest"], "FlannelTeeCollarMesh", _ring_tube(tee["top"], 0.0065), Vector3.ZERO, mats, "top_tee")
+	var tee: Dictionary = _layer(rig, body_type, mats, "FlannelTee", TEE_GROW, 0.9, 1.335, {"key": "top_tee", "arc": TEE_ARC}, ref,
+			Callable())
+	SkaterParts.part(rig["Hips"], "FlannelTeeHemMesh", _open_tube((tee["hips"] as Array)[0], 0.003), Vector3.ZERO, mats, "top_tee")
+	SkaterParts.part(rig["Chest"], "FlannelTeeCollarMesh", _open_tube(_lifted(tee["top"], 0.001), 0.0042), Vector3.ZERO, mats,
+			"top_tee")
 	_sleeves(rig, body_type, mats, "FlannelTee", TEE_GROW + 0.002, true, 0.5, -1.0, {"key": "top_tee", "trim": "top_tee", "cuff_r": 0.004})
 	# The overshirt: panels from the front gap (wider toward the hem) round the back.
 	_skirt_t = SKIRT_FLANNEL
@@ -827,7 +897,8 @@ static func _layer(rig: Dictionary, body_type: String, mats: Dictionary, tag: St
 		if open:
 			rows = _panel_rows(secs[str(pc[1])], base, body_type, true, ref, grow, bool(pc[5]), float(pc[2]), float(pc[3]), 26, 44, pc[4], gap)
 		else:
-			var angles: PackedFloat32Array = _angles(0.0, TAU, 56, true)
+			var arc: float = float(opt.get("arc", 0.0))
+			var angles: PackedFloat32Array = _angles(-arc, arc, 28, false) if arc > 0.0 else _angles(0.0, TAU, 56, true)
 			var lo: PackedFloat32Array = PackedFloat32Array()
 			var hi: PackedFloat32Array = PackedFloat32Array()
 			lo.resize(angles.size())
@@ -835,7 +906,8 @@ static func _layer(rig: Dictionary, body_type: String, mats: Dictionary, tag: St
 			lo.fill(float(pc[2]))
 			hi.fill(float(pc[3]))
 			rows = _shaped(secs[str(pc[1])], base, body_type, true, ref, grow, grow, bool(pc[5]), angles, lo, hi, 26, pc[4])
-		SkaterParts.part(rig[str(pc[0])], tag + str(pc[0]) + "Mesh", _surf(rows, opt, 0.0, TAU, base, 0.1, not open), Vector3.ZERO, mats,
+		var closed: bool = not open and float(opt.get("arc", 0.0)) <= 0.0
+		SkaterParts.part(rig[str(pc[0])], tag + str(pc[0]) + "Mesh", _surf(rows, opt, 0.0, TAU, base, 0.1, closed), Vector3.ZERO, mats,
 				str(opt["key"]))
 		if str(pc[0]) == "Chest":
 			out["top"] = rows[rows.size() - 1]
@@ -848,10 +920,14 @@ static func _flannel_collar(rig: Dictionary, body_type: String, mats: Dictionary
 	var chest_y: float = float(rig["rest_y"]["Chest"])
 	var rows: Array = _panel_rows(rig["sections"]["chest"], chest_y, body_type, true, ref, FLANNEL_GROW + 0.001, true, 1.3, 1.352, 5, 36,
 			Vector2(0.0, -0.011), func(_y: float) -> float: return 0.035)
+	# The collar stands on the code skin's neck base; the Houdini neck is slimmer, so the collar leans in toward its
+	# top instead of standing off it as a hoop.
+	for i: int in rows.size():
+		rows[i] = _hugged(rows[i], COLLAR_HUG * float(i) / float(maxi(rows.size() - 1, 1)))
 	SkaterParts.part(rig["Chest"], "FlannelCollarMesh", _surf(rows, {"plaid": true}, 0.0, TAU, chest_y, 0.1, false), Vector3.ZERO, mats,
 			"top_plaid")
 	var top: PackedVector3Array = rows[rows.size() - 1]
 	var r: PackedFloat32Array = PackedFloat32Array()
 	r.resize(top.size())
-	r.fill(0.0035)
+	r.fill(0.0026)
 	SkaterParts.part(rig["Chest"], "FlannelCollarEdgeMesh", SkaterParts.tube_capped(top, r, 6), Vector3.ZERO, mats, "top")

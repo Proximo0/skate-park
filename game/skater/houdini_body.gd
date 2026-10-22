@@ -89,6 +89,14 @@ const HOME: Dictionary = {
 	"knee": "LowerLeg", "calf": "LowerLeg", "calf_low": "LowerLeg", "ankle": "LowerLeg", "foot": "Foot",
 }
 
+## Surface relax after the fit (_Mesh.relax): passes, and how far (m) a vertex may move out (garments are lofted just
+## outside the fitted surface) or in from its fitted position.
+const RELAX_ITERS: int = 8
+const RELAX_OUT: float = 0.0004
+const RELAX_IN: float = 0.003
+## Neighbour-averaging passes over the final normals (_Mesh.smooth_normals).
+const NORMAL_SMOOTH: int = 2
+
 ## Baked prepare results (tools/bake_houdini_body.sh): the prepared ArrayMesh with metas "regions", "tri_region",
 ## "bake_version", "glb_md5" (the .glb it came from) and "source_md5" (this script, checked by the tests).
 const BAKED: Dictionary = {
@@ -240,8 +248,11 @@ static func _prepare(kind: String) -> Dictionary:
 	if fit_enabled:
 		_fit(m, cl, vreg, _armpit(m, names, tri_region, vreg))
 		m.recompute_normals()
+		m.relax(RELAX_ITERS, 0.5, RELAX_OUT, RELAX_IN, planes, tri_region)
+		m.recompute_normals()
 	tri_region = _piece_joints(m, cl, names, tri_region, binds, rest, tags)
 	m.recompute_normals()
+	m.smooth_normals(NORMAL_SMOOTH)
 	for pl: Array in planes:
 		var first: int = m.idx.size() / 3
 		_cap(m, tags, pl[0], pl[1], pl[2], pl[3], pl[6], str(pl[7]) + "_cap")
@@ -944,6 +955,121 @@ class _Mesh:
 		for v: int in pos.size():
 			if acc[v].length_squared() > 1e-20:
 				nrm[v] = (acc[v] * sgn).normalized()
+
+	## Welded vertex groups (vertices at the same position share one) and each group's neighbour groups, plus the
+	## groups on an open edge (a cut's rim): [group of vertex, neighbours per group, open groups].
+	func topology() -> Array:
+		var key_of: Dictionary = {}
+		var group: PackedInt32Array = PackedInt32Array()
+		group.resize(pos.size())
+		var count: int = 0
+		for v: int in pos.size():
+			var k: Vector3i = Vector3i((pos[v] * 20000.0).round())
+			if not key_of.has(k):
+				key_of[k] = count
+				count += 1
+			group[v] = int(key_of[k])
+		var nb: Array = []
+		for g: int in count:
+			nb.append({})
+		var edges: Dictionary = {}
+		for t: int in idx.size() / 3:
+			for e: int in 3:
+				var a: int = group[idx[t * 3 + e]]
+				var b: int = group[idx[t * 3 + (e + 1) % 3]]
+				if a == b:
+					continue
+				(nb[a] as Dictionary)[b] = true
+				(nb[b] as Dictionary)[a] = true
+				var ek: Vector2i = Vector2i(mini(a, b), maxi(a, b))
+				edges[ek] = int(edges.get(ek, 0)) + 1
+		var open: Dictionary = {}
+		for ek: Vector2i in edges:
+			if int(edges[ek]) == 1:
+				open[ek.x] = true
+				open[ek.y] = true
+		return [group, nb, open]
+
+	## Relaxes the surface (Laplacian steps of `lam`, a vertex moving at most `max_out` outward along its normal and
+	## `max_in` inward from where it started): irons out the small dents and ridges the fit leaves where it projects
+	## onto the code skin's overlapping lofts, which showed as mottled shading bands. Region borders (the garment edges
+	## and the armpit and hip seams the cover checks rely on), open rims, caps and the vertices
+	## near the neck, wrist and ankle cut planes (planes: [normal, d, centre, radius, ...] rows) stay put, so the caps still find their loops.
+	func relax(iters: int, lam: float, max_out: float, max_in: float, planes: Array, tri_region: PackedInt32Array) -> void:
+		var topo: Array = topology()
+		var group: PackedInt32Array = topo[0]
+		var nb: Array = topo[1]
+		var open: Dictionary = topo[2]
+		var gpos: PackedVector3Array = PackedVector3Array()
+		var gnrm: PackedVector3Array = PackedVector3Array()
+		gpos.resize(nb.size())
+		gnrm.resize(nb.size())
+		var frozen: Dictionary = open.duplicate()
+		var region_of: Dictionary = {}  ## group -> its triangles' region, or -1 on a region border (kept put)
+		for t: int in idx.size() / 3:
+			for k: int in 3:
+				var g: int = group[idx[t * 3 + k]]
+				if int(region_of.get(g, tri_region[t])) != tri_region[t]:
+					frozen[g] = true
+				region_of[g] = tri_region[t]
+		for v: int in pos.size():
+			gpos[group[v]] = pos[v]
+			gnrm[group[v]] += nrm[v]
+			if cap_vertex.has(v):
+				frozen[group[v]] = true
+			else:
+				for pl: Array in planes:
+					if absf((pl[0] as Vector3).dot(pos[v]) - float(pl[1])) < 0.012 and pos[v].distance_to(pl[2]) < float(pl[3]) * 1.5:
+						frozen[group[v]] = true
+		var start: PackedVector3Array = gpos.duplicate()
+		for g: int in gnrm.size():
+			gnrm[g] = gnrm[g].normalized()
+		for it: int in iters:
+			var nxt: PackedVector3Array = gpos.duplicate()
+			for g: int in nb.size():
+				var ns: Dictionary = nb[g]
+				if frozen.has(g) or ns.is_empty():
+					continue
+				var mean: Vector3 = Vector3.ZERO
+				for o: int in ns:
+					mean += gpos[o]
+				mean /= float(ns.size())
+				# Along the normal only: sliding over the surface would carry a vertex away from the weights and the
+				# region its place gave it.
+				var along: float = (gpos[g] - start[g]).dot(gnrm[g]) + lam * (mean - gpos[g]).dot(gnrm[g])
+				nxt[g] = start[g] + gnrm[g] * clampf(along, -max_in, max_out)
+			gpos = nxt
+		for v: int in pos.size():
+			pos[v] = gpos[group[v]]
+
+	## Averages each vertex normal with its neighbours' (`iters` passes) and gives welded vertices one normal, so the
+	## toon bands run in smooth curves over the remeshed surface. Caps keep theirs.
+	func smooth_normals(iters: int) -> void:
+		var topo: Array = topology()
+		var group: PackedInt32Array = topo[0]
+		var nb: Array = topo[1]
+		var gn: PackedVector3Array = PackedVector3Array()
+		gn.resize(nb.size())
+		var capped: Dictionary = {}
+		for v: int in pos.size():
+			if cap_vertex.has(v):
+				capped[group[v]] = true
+			else:
+				gn[group[v]] += nrm[v]
+		for it: int in iters:
+			var nxt: PackedVector3Array = gn.duplicate()
+			for g: int in nb.size():
+				if capped.has(g):
+					continue
+				var acc: Vector3 = gn[g].normalized() * 2.0
+				for o: int in nb[g]:
+					if not capped.has(o):
+						acc += gn[o].normalized()
+				nxt[g] = acc
+			gn = nxt
+		for v: int in pos.size():
+			if not cap_vertex.has(v) and gn[group[v]].length_squared() > 1e-12:
+				nrm[v] = gn[group[v]].normalized()
 
 	func recompute_cap_normals() -> void:
 		for v: int in cap_vertex.keys():

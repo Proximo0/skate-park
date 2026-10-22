@@ -23,6 +23,9 @@ const LEG_EDGE_GROW: float = 0.008
 const SHORTS_TOP_Y: float = 0.968
 const SHORTS_LEG_T: float = 0.66
 const SHORTS_GROW: float = 0.008
+## The seat's crotch (_waist): sections below GUSSET_REF over the pelvis bottom keep GUSSET_WIDTH of that section's size.
+const GUSSET_REF: float = 0.038
+const GUSSET_WIDTH: float = 0.85
 
 
 static func builders() -> Dictionary:
@@ -174,9 +177,7 @@ static func board_shorts(rig: Dictionary, body_type: String, mats: Dictionary) -
 	var base: float = float(rig["rest_y"]["Hips"])
 	var pelvis: Array = rig["sections"]["pelvis"]
 	var seat: Array = AnimeOutfit.clip(pelvis, float(pelvis[0][0]), SHORTS_TOP_Y - base)
-	var gusset: Array = (seat[0] as Array).duplicate()
-	gusset[0] = float(gusset[0]) - 0.008  ## past the skin's end, so the crotch stays inside the seat
-	seat.push_front(gusset)
+	seat = _crotch(seat, pelvis)
 	SkaterParts.part(hips, "BoardShortsSeatMesh", SkaterParts.loft(seat, 36, SHORTS_GROW), Vector3.ZERO, mats, "bottom")
 	SkaterParts.part(hips, "BoardShortsWaistbandMesh", SkaterParts.loft(AnimeOutfit.clip(pelvis, SHORTS_TOP_Y - 0.026 - base,
 			SHORTS_TOP_Y - base), 36, SHORTS_GROW + 0.003), Vector3.ZERO, mats, "bottom_trim")
@@ -372,14 +373,32 @@ static func _tube_part(parent: Node3D, part_name: String, pts: PackedVector3Arra
 
 ## Seat over the pelvis (Hips) up to top_y with a waistband of band_h in band_key, and a lining round the low waist
 ## (Spine) so a bent spine never shows skin. Same construction as the board shorts.
+## The seat's crotch: the code pelvis pinches in to a point under the thigh roots, where the legs' tubes close over
+## it. With a thigh raised high (method, crouch) the leg tube swings off the groin crease, so the seat's lowest
+## sections keep most of the width of the hips just above them (a gusset), and a last section past the skin's end
+## closes it. Returns the new section list.
+static func _crotch(seat: Array, pelvis: Array) -> Array:
+	var out: Array = []
+	var ref: Array = SkaterParts.section_at(pelvis, float(pelvis[0][0]) + GUSSET_REF)
+	for sec0: Array in seat:
+		var sec: Array = sec0.duplicate()
+		if float(sec[0]) < float(pelvis[0][0]) + GUSSET_REF:
+			for c: int in [1, 2, 3]:
+				sec[c] = maxf(float(sec[c]), float(ref[c]) * GUSSET_WIDTH)
+		out.append(sec)
+	var gusset: Array = (out[0] as Array).duplicate()
+	gusset[0] = float(gusset[0]) - 0.008
+	gusset[1] = float(gusset[1]) * 0.6
+	out.push_front(gusset)
+	return out
+
+
 static func _waist(rig: Dictionary, mats: Dictionary, prefix: String, top_y: float, grow: float, band_h: float, band_key: String) -> void:
 	var hips: Node3D = rig["Hips"]
 	var base: float = float(rig["rest_y"]["Hips"])
 	var pelvis: Array = rig["sections"]["pelvis"]
 	var seat: Array = AnimeOutfit.clip(pelvis, float(pelvis[0][0]), top_y - base)
-	var gusset: Array = (seat[0] as Array).duplicate()
-	gusset[0] = float(gusset[0]) - 0.008
-	seat.push_front(gusset)
+	seat = _crotch(seat, pelvis)
 	SkaterParts.part(hips, prefix + "SeatMesh", SkaterParts.loft(seat, 36, grow), Vector3.ZERO, mats, "bottom")
 	SkaterParts.part(hips, prefix + "WaistbandMesh", SkaterParts.loft(AnimeOutfit.clip(pelvis, top_y - band_h - base, top_y - base),
 			36, grow + 0.003), Vector3.ZERO, mats, band_key)

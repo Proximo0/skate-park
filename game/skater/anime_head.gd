@@ -99,6 +99,8 @@ const COLORS: Dictionary = {
 const HAIR_FLOOR: Dictionary = {"hair_base": 0.3, "hair_mid": 0.235, "hair_shadow": 0.17, "hair_deep": 0.1,
 		"hair_shine": 0.74, "hair_rim": 0.5}
 const HAIR_COOL: Color = Color(0.5, 0.55, 0.72)
+## Shade keys warmed before the floor (warmed()): [hue shift toward red, saturation scale, value lift].
+const HAIR_WARM: Dictionary = {"hair_shadow": [0.022, 1.12, 0.03], "hair_deep": [0.04, 1.2, 0.08]}
 ## Hair style built when build() is given none, per body type.
 const DEFAULT_HAIR: Dictionary = {"female": "hair_ponytail", "male": "hair_messy"}
 
@@ -167,12 +169,24 @@ static func _add_materials(mats: Dictionary) -> void:
 	_hair_floor(mats)
 
 
-## Keeps every hair colour above its luminance floor (see HAIR_FLOOR).
+## Keeps every hair colour above its luminance floor (see HAIR_FLOOR), after warming the shade keys (HAIR_WARM).
 static func _hair_floor(mats: Dictionary) -> void:
 	for key: String in HAIR_FLOOR:
 		var mat: StandardMaterial3D = mats.get(key) as StandardMaterial3D
 		if mat != null:
+			if HAIR_WARM.has(key) and not mat.has_meta("warmed"):
+				mat.set_meta("warmed", true)
+				mat.albedo_color = warmed(key, mat.albedo_color)
 			mat.albedo_color = floored(key, mat.albedo_color)
+
+
+## The shade colour `c` of hair key `key` hue-shifted toward red and a little richer (HAIR_WARM): a plainly darkened
+## blonde reads olive and muddy, where anime shading turns golden hair amber in its shadows.
+static func warmed(key: String, c: Color) -> Color:
+	var w: Array = HAIR_WARM[key]
+	if c.s < 0.15:
+		return c  ## greys and near-black stay neutral
+	return Color.from_hsv(fposmod(c.h - float(w[0]), 1.0), clampf(c.s * float(w[1]), 0.0, 1.0), clampf(c.v + float(w[2]), 0.0, 1.0), c.a)
 
 
 ## The colour `c` of hair palette key `key` lifted (toward a cool blue-grey) until it reaches the key's floor.
