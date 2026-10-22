@@ -1,0 +1,157 @@
+{
+	"gaps": [
+		{
+			"id": "snake_charmer",
+			"name": "Snake Charmer",
+			"points": 500,
+			"start_zone": "snake_in",
+			"end_zone": "snake_out",
+			"require": "",
+			"max_time": 10.0
+		},
+		{
+			"id": "beach_bowl_hop",
+			"name": "Beach Bowl Hop",
+			"points": 450,
+			"start_zone": "sp_bowl_rim_n",
+			"end_zone": "sp_bowl_rim_s",
+			"require": "AIR",
+			"max_time": 3.0
+		},
+		{
+			"id": "over_the_sandbox",
+			"name": "Over The Sandbox",
+			"points": 300,
+			"start_zone": "sp_funbox_a",
+			"end_zone": "sp_funbox_b",
+			"require": "AIR",
+			"max_time": 2.5
+		},
+		{
+			"id": "pyramid_scheme",
+			"name": "Pyramid Scheme",
+			"points": 350,
+			"start_zone": "sp_pyr_n",
+			"end_zone": "sp_pyr_s",
+			"require": "AIR",
+			"max_time": 3.0
+		},
+		{
+			"id": "seawall_slide",
+			"name": "Seawall Slide",
+			"points": 650,
+			"start_zone": "seawall_w",
+			"end_zone": "seawall_e",
+			"require": "GRIND",
+			"max_time": 9.0
+		},
+		{
+			"id": "pier_approach",
+			"name": "Pier Approach",
+			"points": 450,
+			"start_zone": "ledge_pier_a",
+			"end_zone": "ledge_pier_b",
+			"require": "GRIND",
+			"max_time": 8.0
+		},
+		{
+			"id": "seawall_drop",
+			"name": "Seawall Drop",
+			"points": 250,
+			"start_zone": "seawall_top",
+			"end_zone": "sand_front",
+			"require": "",
+			"max_time": 2.5
+		},
+		{
+			"id": "lifeguard_steps",
+			"name": "Lifeguard Steps",
+			"points": 400,
+			"start_zone": "bw_stairs_top",
+			"end_zone": "bw_stairs_bottom",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "beach_launch",
+			"name": "Beach Launch",
+			"points": 500,
+			"start_zone": "launch_lip",
+			"end_zone": "launch_sand",
+			"require": "AIR",
+			"max_time": 2.5
+		},
+		{
+			"id": "rooftop_surf",
+			"name": "Rooftop Surf",
+			"points": 700,
+			"start_zone": "roof_surf",
+			"end_zone": "roof_pizza",
+			"require": "AIR",
+			"max_time": 2.5
+		},
+		{
+			"id": "pier_rail_marathon",
+			"name": "Pier Rail Marathon",
+			"points": 900,
+			"start_zone": "pier_rail_a",
+			"end_zone": "pier_rail_b",
+			"require": "GRIND",
+			"max_time": 12.0
+		},
+		{
+			"id": "missing_planks",
+			"name": "Missing Planks",
+			"points": 500,
+			"start_zone": "pier_gap_a",
+			"end_zone": "pier_gap_b",
+			"require": "",
+			"max_time": 2.5
+		},
+		{
+			"id": "pier_plunge",
+			"name": "Pier Plunge",
+			"points": 600,
+			"start_zone": "pier_side",
+			"end_zone": "pier_sand",
+			"require": "",
+			"max_time": 2.5
+		},
+		{
+			"id": "rock_hop",
+			"name": "Rock Hop",
+			"points": 350,
+			"start_zone": "rock_kick",
+			"end_zone": "rock_land",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "boardwalk_rails",
+			"name": "Boardwalk Rails",
+			"points": 300,
+			"start_zone": "bw_rail_a",
+			"end_zone": "bw_rail_b",
+			"require": "",
+			"max_time": 2.0
+		},
+		{
+			"id": "pier_end_air",
+			"name": "Pier End Air",
+			"points": 500,
+			"start_zone": "pier_qp_lip",
+			"end_zone": "pier_qp_air",
+			"require": "",
+			"max_time": 2.0
+		},
+		{
+			"id": "boardwalk_manual",
+			"name": "Boardwalk Manual",
+			"points": 300,
+			"start_zone": "bw_pad_a",
+			"end_zone": "bw_pad_b",
+			"require": "MANUAL",
+			"max_time": 5.0
+		}
+	]
+}

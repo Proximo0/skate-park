@@ -1,0 +1,96 @@
+{
+	"run_seconds": 120,
+	"goals": [
+		{
+			"id": "beach_score_15k",
+			"title": "High Score: 15,000",
+			"description": "Land 15,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 15000
+		},
+		{
+			"id": "beach_score_40k",
+			"title": "Pro Score: 40,000",
+			"description": "Land 40,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 40000
+		},
+		{
+			"id": "beach_combo_6k",
+			"title": "Sunset Combo: 6,000",
+			"description": "Land a single combo worth 6,000 points.",
+			"type": "combo",
+			"target": 6000
+		},
+		{
+			"id": "beach_skate",
+			"title": "Collect S-K-A-T-E",
+			"description": "Snake run, bowl, pier end, Beach Launch and the pier rail: find all five letters.",
+			"type": "collect",
+			"items": [
+				"S",
+				"K",
+				"A",
+				"T",
+				"E"
+			]
+		},
+		{
+			"id": "beach_pizza",
+			"title": "Five Slices",
+			"description": "Grab the five pizza slices along the lines.",
+			"type": "collect",
+			"items": [
+				"pizza",
+				"pizza",
+				"pizza",
+				"pizza",
+				"pizza"
+			]
+		},
+		{
+			"id": "beach_gaps_6",
+			"title": "Gap Hunter: 6 beach gaps",
+			"description": "Discover 6 gaps around the beachfront.",
+			"type": "gaps",
+			"target": 6
+		},
+		{
+			"id": "beach_gaps_12",
+			"title": "Beach Bum: 12 gaps",
+			"description": "Discover 12 gaps around the beachfront.",
+			"type": "gaps",
+			"target": 12
+		},
+		{
+			"id": "beach_pier_grind",
+			"title": "Pier Rat: grind 4 seconds",
+			"description": "Grind the pier railing for 4 seconds in one go.",
+			"type": "grind_time",
+			"target": 4
+		},
+		{
+			"id": "beach_manual_5",
+			"title": "Boardwalk Balance: manual 5 seconds",
+			"description": "Hold one manual for 5 seconds.",
+			"type": "manual_time",
+			"target": 5
+		},
+		{
+			"id": "beach_secret_tape",
+			"title": "Secret Tape",
+			"description": "Somebody left a tape on the rooftops. Find a way up.",
+			"type": "collect",
+			"items": [
+				"TAPE"
+			]
+		},
+		{
+			"id": "beach_special",
+			"title": "Golden Hour Special",
+			"description": "Land any special trick.",
+			"type": "special",
+			"target": 1
+		}
+	]
+}
