@@ -453,13 +453,26 @@ func test_big_landing_compresses_and_holds_for_a_fifth_to_two_fifths_of_a_second
 
 
 func test_sketchy_landing_staggers_then_settles() -> void:
+	var live: Dictionary = {"impact": 0.4, "stagger_left": 0.4, "stagger_time": 0.4}
 	var clean: Dictionary = SkaterPoser.pose_for("land", 0.2, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4})
-	var sketchy: Dictionary = SkaterPoser.pose_for("land", 0.2, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4, "sketchy": 1.0})
+	var sketchy: Dictionary = SkaterPoser.pose_for("land", 0.2, 0.0, 0.0, false, 0.0, 0.0, live)
 	var arm_swing: float = ((sketchy["LeftUpperArm"] as Vector3) - (clean["LeftUpperArm"] as Vector3)).length()
 	assert_true(arm_swing > 20.0, "arms windmill on a sketchy landing (%f)" % arm_swing)
-	var settled: Dictionary = SkaterPoser.pose_for("land", SkaterPoser.SKETCHY_TIME + 0.5, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4, "sketchy": 1.0})
-	var ref: Dictionary = SkaterPoser.pose_for("land", SkaterPoser.SKETCHY_TIME + 0.5, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4})
-	assert_near(float(settled["lean"]), float(ref["lean"]), 0.001, "the stagger is over")
+	# Keyed to the physics stagger: the wobble is gone the moment Skater.stagger runs out, whatever the anim clock says.
+	var over: Dictionary = {"impact": 0.4, "stagger_left": 0.0, "stagger_time": 0.4}
+	var settled: Dictionary = SkaterPoser.pose_for("land", 0.3, 0.0, 0.0, false, 0.0, 0.0, over)
+	var ref: Dictionary = SkaterPoser.pose_for("land", 0.3, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4})
+	assert_near(float(settled["lean"]), float(ref["lean"]), 0.001, "the stagger is over when Skater.stagger is")
+	# ...and it fades with the remaining time: more left, more wobble.
+	var wob: Callable = func(left: float) -> float:
+		var p: Dictionary = SkaterPoser.pose_for("land", 0.2, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4, "stagger_left": left, "stagger_time": 0.4})
+		return ((p["LeftUpperArm"] as Vector3) - (ref["LeftUpperArm"] as Vector3)).length()
+	assert_true(wob.call(0.4) > wob.call(0.2) and wob.call(0.2) > wob.call(0.05), "the wobble fades as the stagger counts down")
+	# A short landing pose does not cut it off: the same wobble shows on the ground-riding anims.
+	var idle_clean: Dictionary = SkaterPoser.pose_for("idle_ride", 1.0, 0.0, 0.0)
+	var idle_stag: Dictionary = SkaterPoser.pose_for("idle_ride", 1.0, 0.0, 0.0, false, 0.0, 0.0, {"stagger_left": 0.3, "stagger_time": 0.4})
+	assert_true(((idle_stag["LeftUpperArm"] as Vector3) - (idle_clean["LeftUpperArm"] as Vector3)).length() > 10.0,
+			"the stagger carries on after the land anim ends")
 
 
 func test_vert_air_turns_the_rider_toward_world_up() -> void:
@@ -506,3 +519,98 @@ func test_new_grabs_grinds_and_lips_have_full_poses() -> void:
 	var rot_a: Vector3 = SkaterPoser.pose_for("grind_overcrook", 0.4, 0.6, 0.0)["board_rot"]
 	var rot_b: Vector3 = SkaterPoser.pose_for("grind_crooked_grind", 0.4, 0.6, 0.0)["board_rot"]
 	assert_true(rot_a.distance_to(rot_b) > 5.0, "overcrook differs from crooked")
+
+
+## Every shipped grab / grind / lip anim resolves to its own intended pose branch (exact id first, never a keyword from
+## another trick: grind_noseslide is not a nose grind, grind_tailslide not a tail grind).
+const GRAB_BRANCH: Dictionary = {
+	"grab_madonna": "madonna", "grab_rocket_air": "rocket", "grab_judo": "judo", "grab_crossbone": "crossbone",
+	"grab_christ_air": "christ", "grab_crail": "crail", "grab_japan": "japan", "grab_roast_beef": "roast",
+	"grab_cannonball": "cannonball", "grab_indy": "indy", "grab_melon": "melon", "grab_method": "method",
+	"grab_mute": "mute", "grab_nosegrab": "nosegrab", "grab_tailgrab": "tailgrab", "grab_benihana": "benihana",
+	"grab_stalefish": "stalefish", "grab_airwalk": "airwalk",
+}
+const LIP_BRANCH: Dictionary = {
+	"lip_invert": "invert", "lip_one_foot_invert": "one_foot_invert", "lip_eggplant": "eggplant",
+	"lip_blunt_to_fakie": "blunt", "lip_nose_pick": "nose_pick", "lip_nose_stall": "nose_stall",
+	"lip_smith_stall": "smith", "lip_feeble_stall": "feeble", "lip_axle_stall": "axle", "lip_rock_to_fakie": "rock",
+	"lip_disaster": "disaster",
+}
+
+
+func test_each_grab_id_resolves_to_its_own_shape() -> void:
+	var shapes: Dictionary = {}
+	for a: String in GRAB_BRANCH:
+		assert_eq(SkaterPoser.pose_branch(a), "grab:" + str(GRAB_BRANCH[a]), "branch for " + a)
+		var g: Dictionary = SkaterPoser.grab_shape(a)
+		var sig: String = str(g)
+		assert_false(shapes.has(sig), "%s has a shape of its own (not %s's)" % [a, str(shapes.get(sig, ""))])
+		shapes[sig] = a
+	assert_eq(SkaterPoser.pose_branch("grab_double_airwalk"), "grab:airwalk", "an unknown id falls back on its keyword")
+	assert_eq(SkaterPoser.pose_branch("grab_zzz"), "grab:mute", "an unknown id falls back on mute")
+
+
+func test_each_grind_id_resolves_to_its_own_pose() -> void:
+	var rots: Dictionary = {}
+	for a: String in SkaterPoser.GRIND_BRANCHES:
+		assert_eq(SkaterPoser.pose_branch(a), "grind:" + a, "branch for " + a)
+		var p: Dictionary = SkaterPoser.pose_for(a, 0.4, 0.6, 0.0)
+		var sig: String = "%s|%s|%s|%s" % [str(p["board_rot"]), str(p["board_pos"]), str(p["body_yaw"]), str(p["pitch"])]
+		assert_false(rots.has(sig), "%s has a pose of its own (not %s's)" % [a, str(rots.get(sig, ""))])
+		rots[sig] = a
+	assert_eq(SkaterPoser.pose_branch("grind_fifty_fifty"), "grind:default", "50-50 rides the plain pose")
+	# The collisions the keyword fallback used to risk: noseslide is a slide across the rail, not a nosegrind.
+	var ns: Dictionary = SkaterPoser.pose_for("grind_noseslide", 0.4, 0.6, 0.0)
+	var ng: Dictionary = SkaterPoser.pose_for("grind_nosegrind", 0.4, 0.6, 0.0)
+	assert_true(absf(float(ns["body_yaw"]) - float(ng["body_yaw"])) > 45.0, "noseslide faces down the rail, a nosegrind does not")
+	var ts: Dictionary = SkaterPoser.pose_for("grind_tailslide", 0.4, 0.6, 0.0)
+	var fo: Dictionary = SkaterPoser.pose_for("grind_five_oh", 0.4, 0.6, 0.0)
+	assert_true(absf(float(ts["body_yaw"]) - float(fo["body_yaw"])) > 45.0, "tailslide faces down the rail, a 5-0 does not")
+	var nb: Dictionary = SkaterPoser.pose_for("grind_nosebluntslide", 0.4, 0.6, 0.0)
+	assert_near(float(nb["body_yaw"]), float(ng["body_yaw"]), 0.01, "nose blunt slide keeps the stance (not a slide across)")
+	assert_true((nb["board_rot"] as Vector3).x < -30.0, "nose blunt slide stands the board up on its nose")
+
+
+func test_each_lip_id_resolves_to_its_own_pose() -> void:
+	for a: String in LIP_BRANCH:
+		assert_eq(SkaterPoser.pose_branch(a), "lip:" + str(LIP_BRANCH[a]), "branch for " + a)
+	var coping: Dictionary = {}
+	for a: String in ["lip_axle_stall", "lip_nose_stall", "lip_nose_pick", "lip_blunt_to_fakie", "lip_smith_stall", "lip_feeble_stall"]:
+		var p: Dictionary = SkaterPoser.pose_for(a, 0.4, 0.4, 0.0)
+		var sig: String = "%s|%s|%s" % [str(p["board_rot"]), str(p["board_pos"]), str(p["pitch"])]
+		coping[a] = sig
+	var seen: Dictionary = {}
+	for a: String in coping:
+		assert_false(seen.has(coping[a]), "coping %s has its own pose" % a)
+		seen[coping[a]] = true
+	# Inverts and the eggplant go upside down; nothing else does.
+	for a: String in ["lip_invert", "lip_one_foot_invert", "lip_eggplant"]:
+		assert_true(float(SkaterPoser.pose_for(a, 0.4, 0.4, 0.0)["pitch"]) > 100.0, a + " inverts the rider")
+	for a: String in ["lip_nose_pick", "lip_nose_stall", "lip_blunt_to_fakie", "lip_smith_stall", "lip_feeble_stall"]:
+		assert_true(float(SkaterPoser.pose_for(a, 0.4, 0.4, 0.0)["pitch"]) < 30.0, a + " keeps the rider upright")
+	var pick: Dictionary = SkaterPoser.pose_for("lip_nose_pick", 0.4, 0.4, 0.0)
+	var stall: Dictionary = SkaterPoser.pose_for("lip_nose_stall", 0.4, 0.4, 0.0)
+	assert_true(float(pick["grip_R"]) > 0.5 and float(stall["grip_R"]) < 0.5, "the nose pick holds the tail, the nose stall does not")
+
+
+func test_ledge_stalls_sit_near_flat_on_the_edge_at_standing_height() -> void:
+	for a: String in ["lip_axle_stall", "lip_nose_stall", "lip_nose_pick", "lip_blunt_to_fakie", "lip_smith_stall",
+			"lip_feeble_stall", "lip_rock_to_fakie", "lip_disaster"]:
+		var cop: Dictionary = SkaterPoser.pose_for(a, 0.4, 0.4, 0.0)
+		var led: Dictionary = SkaterPoser.pose_for(a, 0.4, 0.4, 0.0, false, 0.0, 0.0, {"ledge": true})
+		assert_true(_has_full_pose(led), "full ledge pose for " + a)
+		var bp: Vector3 = led["board_rot"]
+		assert_true(absf(bp.x) < 45.0, "%s lies near flat on the ledge (%f deg)" % [a, bp.x])
+		assert_true(absf((cop["board_rot"] as Vector3).x) > 60.0 or a == "lip_blunt_to_fakie", "%s stands up on coping" % a)
+		var hip: float = float(led["hips_y"])
+		assert_true(hip > SkaterPoser.IDLE_HIPS - 0.2, "%s: the rider stands at normal height (hips_y %f)" % [a, hip])
+		# the feet are on the board: the ankles within a hand of the deck
+		var d: float = (led["foot_L"] as Vector3).distance_to(SkaterPoser.deck_point(led, SkaterPoser.FRONT_FOOT + Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)))
+		assert_true(d < 0.05, "%s: the front foot is on the deck" % a)
+	var ns: Dictionary = SkaterPoser.pose_for("lip_nose_stall", 0.4, 0.4, 0.0, false, 0.0, 0.0, {"ledge": true})
+	var smith: Dictionary = SkaterPoser.pose_for("lip_smith_stall", 0.4, 0.4, 0.0, false, 0.0, 0.0, {"ledge": true})
+	var feeble: Dictionary = SkaterPoser.pose_for("lip_feeble_stall", 0.4, 0.4, 0.0, false, 0.0, 0.0, {"ledge": true})
+	var blunt: Dictionary = SkaterPoser.pose_for("lip_blunt_to_fakie", 0.4, 0.4, 0.0, false, 0.0, 0.0, {"ledge": true})
+	assert_true((ns["board_rot"] as Vector3).x < -10.0, "nose stall: tail up")
+	assert_true((blunt["board_rot"] as Vector3).x > 20.0, "blunt: nose up on the tail")
+	assert_true((smith["board_rot"] as Vector3).z < -10.0 and (feeble["board_rot"] as Vector3).z > 10.0, "smith and feeble roll opposite ways")

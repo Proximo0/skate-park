@@ -65,7 +65,7 @@ const LAND_TIME_MIN: float = 0.2
 const LAND_TIME_PER_IMPACT: float = 0.55
 const LAND_HIT: float = 0.3  ## share of the landing spent compressing; the rest springs back
 const LAND_HOLD: float = 0.16  ## share of the landing the knees stay at the bottom of the compression, big landings only
-const SKETCHY_TIME: float = 0.6  ## a sketchy landing (caught late) staggers for this long: arms windmill, the body wobbles
+const STAGGER_TIME_DEFAULT: float = 0.4  ## Skater.stagger runs for tune.stagger_time (0.4 s): arms windmill, the body wobbles, fading as it counts down
 const LAND_DEPTH_MAX: float = 1.2  ## crouch-equivalent at impact 1 (hips CROUCH_DROP * this below idle)
 const BLEND_RATE_LAND: float = 30.0  ## a landing dip is quick; the slow blend would swallow a small one
 ## Carving (ctx "carve", -1..1, + = turning toward visual +X): the body leans into the turn, the deck rolls on its
@@ -110,6 +110,11 @@ const GRIND_STALL: float = 6.0  ## 5-0 / nosegrind: board pitch about the grindi
 ## The VRoid lead (ctx "vrm"): its own leg lengths and IK keep the feet on the tilted deck and its garments are skin,
 ## so the stall can tip the board a believable amount. Houdini garments (never grinding in play) keep the small cap.
 const GRIND_STALL_VRM: float = 14.0
+const LEDGE_AXLE: float = 12.0  ## ledge stall: board pitch about the truck on the edge, degrees (nose up positive)
+const LEDGE_NOSE: float = 24.0  ## nose stall: tail up on the front truck
+const LEDGE_BLUNT: float = 38.0  ## blunt to fakie: nose up on the tail
+const LEDGE_ROCK: float = 5.0
+const LEDGE_CROUCH: float = 0.45  ## knees stay soft but the rider is on his feet over the ledge
 const GRIND_BLUNT: float = 50.0  ## blunt slide: board stood up nose high on its tail
 ## "drop_in" (the ramp snap): tail hooked on the coping with the nose up for RampSnap.HANG_TIME, then the front foot
 ## stomps the nose down over RampSnap.STOMP_TIME while the rider leans into the ramp; then the board rolls over the
@@ -169,8 +174,6 @@ var _has_pose: bool = false
 var _preview_t: float = 0.0
 var _air_t: float = 0.0  ## seconds the skater has been in the AIR state
 var _tilt_s: float = 0.0  ## smoothed vert-air tilt weight 0..1
-var _sketchy: bool = false  ## the last landing was sketchy (Skater.landed)
-var _landed_hooked: bool = false
 var _pivot_clock: float = 99.0  ## seconds since the skater's manual pivot (switch stance flipped inside a manual)
 var _prev_switch: bool = false
 var _prev_manual: bool = false
@@ -296,13 +299,11 @@ func _skater_ctx(delta: float) -> Dictionary:
 	ctx["tilt_w"] = _tilt_s
 	var parent: Node3D = body.get_parent() as Node3D
 	ctx["up_local"] = (parent.global_basis.inverse() * Vector3.UP) if parent != null else Vector3.UP
-	# A landing caught late (Skater.landed "sketchy") staggers for a moment.
-	if skater.has_signal("landed") and not _landed_hooked:
-		_landed_hooked = true
-		skater.connect("landed", _on_landed)
-	if str(skater.get("anim")) != "land":
-		_sketchy = false
-	ctx["sketchy"] = 1.0 if _sketchy else 0.0
+	# A landing caught late staggers while Skater.stagger counts down (tune.stagger_time, the physics' own clock).
+	var tn: Object = skater.get("tune") as Object
+	ctx["stagger_left"] = float(skater.get("stagger"))
+	ctx["stagger_time"] = float(tn.get("stagger_time")) if tn != null else STAGGER_TIME_DEFAULT
+	ctx["ledge"] = bool(skater.get("lip_on_ledge"))
 	return ctx
 
 
@@ -310,10 +311,6 @@ func _skater_ctx(delta: float) -> Dictionary:
 func _in_air() -> bool:
 	var st: Object = skater.get("state") as Object
 	return st != null and st.has_method("state_name") and str(st.call("state_name")) == "AIR"
-
-
-func _on_landed(result: String) -> void:
-	_sketchy = result == "sketchy"
 
 
 ## Remembers the ragdoll-driven joints and board (world space) each frame, so the get-up can start from them.
@@ -508,6 +505,10 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 	var ride_speed: float = float(ctx.get("ride_speed", 99.0))
 	var ext: float = air_extend(float(ctx.get("vy", 0.0)))
 	var carve: float = clampf(float(ctx.get("carve", 0.0)), -1.0, 1.0)
+	var stagger_total: float = maxf(float(ctx.get("stagger_time", STAGGER_TIME_DEFAULT)), 0.05)
+	var stagger_left: float = maxf(float(ctx.get("stagger_left", 0.0)), 0.0)
+	var stagger_w: float = clampf(stagger_left / stagger_total, 0.0, 1.0)
+	var stagger_t: float = maxf(stagger_total - stagger_left, 0.0)
 	if CARVE_ANIMS.has(anim) and absf(carve) > 0.001:
 		_board_turn(pose, Vector3(0.0, 0.0, -CARVE_ROLL * carve), Vector3.ZERO)  ## deck rolls into the turn
 	if anim.begins_with("flip_"):
@@ -520,7 +521,7 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 		var piv: float = clampf(t / PIVOT_TIME, 0.0, 1.0) if anim == "manual_pivot" else float(ctx.get("pivot_p", 1.0))
 		_pose_manual(pose, anim, t, maxf(c, 0.2), b, piv, float(ctx.get("pivot_dir", 1.0)), float(ctx.get("vy", 0.0)))
 	elif anim.begins_with("lip_"):
-		_pose_lip(pose, t, maxf(c, 0.4), b, anim)
+		_pose_lip(pose, t, maxf(c, 0.4), b, anim, bool(ctx.get("ledge", false)))
 	elif anim.begins_with("special_"):
 		_pose_special(pose, anim, t)
 	else:
@@ -542,7 +543,7 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 			"air":
 				_pose_air(pose, t, ext, float(ctx.get("vy", 0.0)))
 			"land":
-				_pose_land(pose, t, c, impact, float(ctx.get("sketchy", 0.0)))
+				_pose_land(pose, t, c, impact, stagger_w, stagger_t)
 				var after: float = t - land_time(impact)
 				if after > 0.0:
 					_idle_life(pose, after, ride_speed)
@@ -576,10 +577,33 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 			_:
 				_pose_idle(pose, c)
 	if CARVE_ANIMS.has(anim):
+		if anim != "land":
+			_stagger_wobble(pose, stagger_w, stagger_t)  # the stagger outlasts a small landing's pose: keep wobbling on the board
 		_carve(pose, carve)
 	_look(pose)
 	_vert_tilt(pose, ctx, ext)
 	return pose
+
+
+## Grind anim ids that have a pose of their own in _pose_grind (matched by exact id; no keyword fallback, so
+## grind_noseslide / grind_nosebluntslide / grind_tailslide can never be mistaken for a nose or tail grind).
+const GRIND_BRANCHES: PackedStringArray = [
+	"grind_five_oh", "grind_nosegrind", "grind_crooked_grind", "grind_overcrook", "grind_willy_grind", "grind_salad_grind",
+	"grind_suski_grind", "grind_smith_grind", "grind_feeble_grind", "grind_boardslide", "grind_lipslide", "grind_noseslide",
+	"grind_tailslide", "grind_hurricane", "grind_darkslide", "grind_nosebluntslide", "grind_blunt_slide",
+]
+
+
+## The pose branch an anim id resolves to, as "kind:key" ("grab:rocket", "grind:grind_noseslide", "lip:nose_pick",
+## "grind:default" for a plain 50-50). A test hook: pose_for dispatches through the same key functions.
+static func pose_branch(anim: String) -> String:
+	if anim.begins_with("grab_"):
+		return "grab:" + grab_key(anim)
+	if anim.begins_with("grind_"):
+		return "grind:" + (anim if GRIND_BRANCHES.has(anim) else "default")
+	if anim.begins_with("lip_"):
+		return "lip:" + lip_key(anim)
+	return "other:" + anim
 
 
 ## Vert air (ctx "tilt_w" 0..1 ramps in and out as the skater enters and leaves vert air, "up_local" = world up in visual
@@ -901,8 +925,7 @@ static func _pose_air(pose: Dictionary, t: float, ext: float = 0.0, vy: float = 
 	pose["fpitch_R"] = -6.0 * tuck
 
 
-static func _pose_land(pose: Dictionary, t: float, c: float, impact: float = LAND_IMPACT_DEFAULT, sketchy: float = 0.0) -> void:
-	var stagger: float = clampf(sketchy, 0.0, 1.0) * clampf(1.0 - t / SKETCHY_TIME, 0.0, 1.0)
+static func _pose_land(pose: Dictionary, t: float, c: float, impact: float = LAND_IMPACT_DEFAULT, stagger: float = 0.0, stagger_t: float = 0.0) -> void:
 	var a: float = land_absorb(t, impact)
 	a = minf(a + 0.35 * stagger * (0.5 + 0.5 * sin(t * 18.0)), LAND_DEPTH_MAX)
 	_pose_idle(pose, maxf(c, a))
@@ -918,8 +941,13 @@ static func _pose_land(pose: Dictionary, t: float, c: float, impact: float = LAN
 	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(-8.0 * a * impact, 0.0, 0.0)
 	pose["LeftUpperArm"] = (pose["LeftUpperArm"] as Vector3) + Vector3(-18.0 * a * impact, 0.0, 10.0 * a * impact)
 	pose["RightUpperArm"] = (pose["RightUpperArm"] as Vector3) + Vector3(-18.0 * a * impact, 0.0, -10.0 * a * impact)
+	_stagger_wobble(pose, stagger, stagger_t)
+
+
+## Caught it late: the arms windmill to find the balance and the body wobbles side to side while it settles. `stagger` is
+## the weight 0..1 (Skater.stagger over tune.stagger_time, so it fades as the physics stagger ends), `t` seconds into it.
+static func _stagger_wobble(pose: Dictionary, stagger: float, t: float) -> void:
 	if stagger > 0.0:
-		# Caught it late: the arms windmill to find the balance and the body wobbles side to side while it settles.
 		var ph: float = t * 13.0
 		pose["lean"] = float(pose["lean"]) + 18.0 * stagger * sin(ph * 0.8)
 		pose["pitch"] = float(pose["pitch"]) + 6.0 * stagger * sin(ph * 0.55 + 1.0)
@@ -1064,8 +1092,8 @@ static func _pose_grab(pose: Dictionary, anim: String, t: float, ext: float = 0.
 	pose["lean"] = float(g["lean"]) * sway * k
 	pose["pitch"] = float(pose["pitch"]) + float(g["pitch"]) * k
 	_board_turn(pose, air_pitch * (1.0 - k) + (g["tweak"] as Vector3) * k, DECK_CENTER)
-	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.0, air_pull * (1.0 - k) + GRAB_RISE * k, 0.0)
-	pose["lift"] = GRAB_LIFT * k
+	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.0, air_pull * (1.0 - k) + float(g.get("rise", GRAB_RISE)) * k, 0.0)
+	pose["lift"] = float(g.get("lift", GRAB_LIFT)) * k
 	pose["Spine"] = Vector3.ZERO  ## the grab folds the torso itself
 	pose["Chest"] = Vector3.ZERO
 	_curl(pose, 8.0 * (1.0 - k) + float(g["curl"]) * k)
@@ -1100,6 +1128,28 @@ static func _pose_grab(pose: Dictionary, anim: String, t: float, ext: float = 0.
 			pose["grip_" + other] = k
 
 
+## Which grab shape an anim id uses. Exact ids first (grab_roast_beef, grab_rocket_air, grab_christ_air and every other
+## shipped id), then a keyword fallback for ids made up later (grab_double_airwalk), then "mute".
+const GRAB_IDS: Dictionary = {
+	"melon": "melon", "indy": "indy", "mute": "mute", "stalefish": "stalefish", "method": "method", "nosegrab": "nosegrab",
+	"tailgrab": "tailgrab", "benihana": "benihana", "airwalk": "airwalk", "cannonball": "cannonball", "crail": "crail",
+	"japan": "japan", "roast_beef": "roast", "madonna": "madonna", "judo": "judo", "crossbone": "crossbone",
+	"rocket_air": "rocket", "christ_air": "christ",
+}
+const GRAB_KEYWORDS: PackedStringArray = ["melon", "indy", "mute", "stalefish", "method", "nosegrab", "tailgrab", "benihana",
+		"airwalk", "cannonball", "crail", "japan", "roast", "madonna", "judo", "crossbone", "rocket", "christ"]
+
+
+static func grab_key(anim: String) -> String:
+	var id: String = anim.trim_prefix("grab_")
+	if GRAB_IDS.has(id):
+		return str(GRAB_IDS[id])
+	for k: String in GRAB_KEYWORDS:
+		if id.contains(k):
+			return k
+	return "mute"
+
+
 ## The body shape of a grab: grabbing hand ("L" front, "R" back, "" none) and the board spot it holds (stance frame),
 ## the board tweak (degrees), feet offsets, body lean/pitch (degrees), spine curl and extra spine/chest/head rotation,
 ## and the free arm (as the right arm's offsets; mirrored for a free left arm). Optional: "hand2" (a second hand's
@@ -1116,87 +1166,90 @@ static func _pose_grab(pose: Dictionary, anim: String, t: float, ext: float = 0.
 ## board stood up in front and the legs tucked behind it. Christ air: no hands, arms spread wide, the legs kicked out.
 ## Unknown grabs fall back on the mute shape.
 static func grab_shape(anim: String) -> Dictionary:
+	var key: String = grab_key(anim)
 	var g: Dictionary = {
 		"hand": "L", "spot": Vector3(EDGE, 0.0, -0.03), "tweak": Vector3(0.0, 0.0, GRAB_ROLL),
 		"front": Vector3.ZERO, "back": Vector3.ZERO, "lean": 0.0, "pitch": 0.0, "curl": GRAB_CURL,
 		"spine": Vector3(0.0, 0.0, -6.0), "chest": Vector3.ZERO, "head": Vector3(8.0, 0.0, 0.0),
 		"free": Vector3(-40.0, 0.0, 90.0), "fpitch_L": 0.0, "fpitch_R": 0.0,
 	}  ## mute: also the fallback for a grab with no shape of its own
-	if anim.contains("melon"):
+	if key == "melon":
 		g.merge({"spot": Vector3(-EDGE, 0.0, -0.09), "tweak": Vector3(0.0, 0.0, -1.8 * GRAB_ROLL), "lean": -22.0,
 				"curl": GRAB_CURL * 0.55, "spine": Vector3(-20.0, 0.0, 12.0), "chest": Vector3(-6.0, 0.0, 6.0),
 				"head": Vector3(-6.0, 0.0, 0.0), "free": Vector3(-35.0, 0.0, 95.0)}, true)
-	elif anim.contains("indy"):
+	elif key == "indy":
 		g.merge({"hand": "R", "spot": Vector3(EDGE, 0.0, 0.02), "lean": 0.0,
 				"curl": GRAB_CURL * 1.15, "spine": Vector3.ZERO, "chest": Vector3(6.0, 0.0, 0.0),
 				"head": Vector3(10.0, 0.0, 0.0), "free": Vector3(-25.0, 0.0, 95.0),
 				"back": Vector3(0.0, 0.02, 0.0)}, true)
-	elif anim.contains("mute"):
+	elif key == "mute":
 		pass
-	elif anim.contains("stalefish"):
+	elif key == "stalefish":
 		g.merge({"hand": "R", "spot": Vector3(-EDGE, 0.0, 0.12), "tweak": Vector3(0.0, 0.0, -1.6 * GRAB_ROLL), "lean": -24.0,
 				"curl": GRAB_CURL * 0.5, "spine": Vector3(-14.0, 0.0, 10.0), "chest": Vector3(-6.0, -14.0, 6.0),
 				"head": Vector3(-4.0, 0.0, 0.0), "free": Vector3(20.0, 0.0, 85.0),
 				"front": Vector3(0.0, 0.0, -0.04), "back": Vector3(-0.05, 0.12, -0.02), "fpitch_R": 24.0}, true)
-	elif anim.contains("method"):
+	elif key == "method":
 		g.merge({"spot": Vector3(-EDGE, 0.0, -0.08), "tweak": Vector3(0.0, 0.0, -2.0 * GRAB_ROLL), "lean": -25.0,
 				"back": Vector3(-0.12, 0.08, 0.03), "curl": GRAB_CURL * 0.3,
 				"spine": Vector3(-14.0, 0.0, 14.0), "chest": Vector3(8.0, 0.0, 6.0), "head": Vector3(12.0, 0.0, 0.0),
 				"free": Vector3(45.0, 0.0, 120.0)}, true)
-	elif anim.contains("nosegrab"):
+	elif key == "nosegrab":
 		g.merge({"spot": Vector3(0.0, 0.0, -0.36), "tweak": Vector3(18.0, 0.0, 0.0), "pitch": 7.0,
 				"curl": GRAB_CURL * 0.6, "spine": Vector3.ZERO, "head": Vector3(4.0, 0.0, 0.0),
 				"back": Vector3(0.0, 0.0, 0.03), "free": Vector3(-50.0, 0.0, 75.0)}, true)
-	elif anim.contains("tailgrab"):
+	elif key == "tailgrab":
 		g.merge({"hand": "R", "spot": Vector3(0.0, 0.0, 0.37), "tweak": Vector3(-18.0, 0.0, 0.0),
 				"pitch": -7.0, "curl": GRAB_CURL * 0.6, "spine": Vector3.ZERO,
 				"head": Vector3(4.0, 0.0, 0.0), "free": Vector3(-30.0, 0.0, 80.0)}, true)
-	elif anim.contains("benihana"):
+	elif key == "benihana":
 		g.merge({"hand": "R", "spot": Vector3(0.0, 0.0, 0.37), "tweak": Vector3(-20.0, 0.0, 0.0),
 				"pitch": -6.0, "curl": GRAB_CURL * 0.5, "spine": Vector3.ZERO,
 				"head": Vector3(4.0, 0.0, 0.0), "free": Vector3(-30.0, 0.0, 80.0),
 				"front": Vector3(0.1, 0.2, -0.2), "fpitch_L": -30.0}, true)  ## front foot kicked off, out and up
-	elif anim.contains("airwalk"):
+	elif key == "airwalk":
 		g.merge({"spot": Vector3(0.0, 0.0, -0.36), "tweak": Vector3(18.0, 0.0, 0.0), "pitch": 6.0,
 				"curl": GRAB_CURL * 0.45, "spine": Vector3.ZERO, "head": Vector3(0.0, 0.0, 0.0),
 				"legs": [Vector3(0.06, 0.08, -0.2), Vector3(-0.04, 0.06, 0.18)], "fpitch_L": -28.0, "fpitch_R": 26.0,
 				"free": Vector3(-60.0, 0.0, 70.0)}, true)
-	elif anim.contains("cannonball"):
-		g.merge({"spot": Vector3(EDGE, 0.0, -0.04), "tweak": Vector3(0.0, 0.0, GRAB_ROLL * 0.5), "pitch": 6.0,
-				"curl": GRAB_CURL * 1.7, "spine": Vector3(-8.0, 0.0, 0.0), "chest": Vector3(-10.0, 0.0, 0.0),
-				"head": Vector3(14.0, 0.0, 0.0), "back": Vector3(0.0, 0.08, -0.04), "front": Vector3(0.0, 0.08, 0.04),
-				"free": Vector3(-80.0, 0.0, 30.0)}, true)  ## knees hugged to the chest
-	elif anim.contains("crail"):
+	elif key == "cannonball":
+		# Sat up in a tuck: the body lifted and upright, hips back, knees hauled up to the chest with a hand hugging each
+		# shin, the deck pulled up under the feet.
+		g.merge({"spot": Vector3(EDGE + 0.1, 0.42, -0.2), "hand2": Vector3(-EDGE - 0.1, 0.42, -0.14),
+				"tweak": Vector3(0.0, 0.0, 0.0), "pitch": -8.0, "lift": 0.56, "rise": 0.98,
+				"curl": 4.0, "spine": Vector3(6.0, 0.0, 0.0), "chest": Vector3(4.0, 0.0, 0.0),
+				"head": Vector3(-4.0, 0.0, 0.0), "free": Vector3.ZERO}, true)
+	elif key == "crail":
 		g.merge({"hand": "R", "spot": Vector3(EDGE, 0.0, -0.2), "tweak": Vector3(10.0, 0.0, GRAB_ROLL),
 				"lean": 8.0, "curl": GRAB_CURL * 0.9, "spine": Vector3(0.0, 18.0, 0.0), "chest": Vector3(0.0, 14.0, 0.0),
 				"head": Vector3(6.0, 0.0, 0.0), "free": Vector3(-5.0, 0.0, 105.0)}, true)  ## back hand across to the nose
-	elif anim.contains("japan"):
+	elif key == "japan":
 		g.merge({"spot": Vector3(EDGE, 0.0, -0.16), "tweak": Vector3(-10.0, 0.0, GRAB_ROLL), "lean": 4.0,
 				"curl": GRAB_CURL * 1.0, "spine": Vector3(8.0, 0.0, 0.0), "chest": Vector3(10.0, 0.0, 0.0),
 				"head": Vector3(16.0, 0.0, 0.0), "back": Vector3(0.0, 0.14, 0.14), "fpitch_R": 24.0,
 				"free": Vector3(-20.0, 0.0, 110.0)}, true)  ## nose-side toe grab, back leg kicked up behind
-	elif anim.contains("roast"):
+	elif key == "roast":
 		g.merge({"hand": "R", "spot": Vector3(-EDGE, 0.0, 0.0), "tweak": Vector3(0.0, 0.0, -GRAB_ROLL),
 				"lean": -12.0, "curl": GRAB_CURL * 0.85, "spine": Vector3(-10.0, 0.0, 6.0), "chest": Vector3.ZERO,
 				"head": Vector3(8.0, 0.0, 0.0), "free": Vector3(-20.0, 0.0, 100.0)}, true)  ## back hand through the legs, heel edge
-	elif anim.contains("madonna"):
+	elif key == "madonna":
 		g.merge({"spot": Vector3(-EDGE, 0.0, -0.1), "tweak": Vector3(0.0, 0.0, -1.8 * GRAB_ROLL), "lean": -18.0,
 				"curl": GRAB_CURL * 0.25, "spine": Vector3(-18.0, 0.0, 10.0), "chest": Vector3(10.0, 0.0, 6.0),
 				"head": Vector3(14.0, 0.0, 0.0), "back": Vector3(-0.05, 0.3, 0.3), "fpitch_R": 40.0,
 				"free": Vector3(40.0, 0.0, 130.0)}, true)  ## back leg swept out and up behind
-	elif anim.contains("judo"):
+	elif key == "judo":
 		g.merge({"spot": Vector3(EDGE, 0.0, -0.1), "lean": 6.0, "curl": GRAB_CURL * 0.5,
 				"spine": Vector3(-6.0, 0.0, -8.0), "head": Vector3(0.0, 0.0, 0.0),
 				"front": Vector3(0.34, 0.14, -0.22), "fpitch_L": -20.0, "free": Vector3(-25.0, 0.0, 120.0)}, true)  ## front leg thrown out
-	elif anim.contains("crossbone"):
+	elif key == "crossbone":
 		g.merge({"hand": "R", "spot": Vector3(-EDGE, 0.0, -0.14), "tweak": Vector3(8.0, 0.0, -1.2 * GRAB_ROLL),
 				"lean": 10.0, "curl": GRAB_CURL * 0.8, "spine": Vector3(0.0, 24.0, 0.0), "chest": Vector3(0.0, 18.0, 0.0),
 				"head": Vector3(4.0, 0.0, 0.0), "free": Vector3(-10.0, 0.0, 110.0)}, true)
-	elif anim.contains("rocket"):
+	elif key == "rocket":
 		g.merge({"spot": Vector3(-0.04, 0.0, -0.34), "hand2": Vector3(0.04, 0.0, -0.34), "tweak": Vector3(52.0, 0.0, 0.0),
 				"pitch": 12.0, "curl": GRAB_CURL * 0.7, "spine": Vector3.ZERO, "head": Vector3(-4.0, 0.0, 0.0),
 				"legs": [Vector3(0.0, -0.05, 0.18), Vector3(0.0, 0.05, 0.3)], "free": Vector3.ZERO}, true)
-	elif anim.contains("christ"):
+	elif key == "christ":
 		g.merge({"hand": "", "spot": Vector3.ZERO, "tweak": Vector3(14.0, 0.0, 10.0), "lean": 0.0, "pitch": -6.0,
 				"curl": 0.0, "spine": Vector3(8.0, 0.0, 0.0), "chest": Vector3(14.0, 0.0, 0.0),
 				"head": Vector3(14.0, 0.0, 0.0), "front": Vector3(0.05, 0.1, -0.12), "back": Vector3(-0.05, 0.1, 0.16),
@@ -1505,62 +1558,158 @@ static func _pose_flatland(pose: Dictionary, anim: String, t: float, c: float, b
 			pose["grip_R"] = 1.0
 			_arms(pose, Vector3.ZERO, Vector3.ZERO, 0.0)
 
-static func _pose_lip(pose: Dictionary, t: float, c: float, b: float, anim: String = "lip_axle_stall") -> void:
+## Which lip pose an anim id uses. Exact ids first (so a keyword in one id can never pull another trick's pose), then a
+## keyword fallback for ids made up later, then the plain axle stall.
+const LIP_IDS: Dictionary = {
+	"axle_stall": "axle", "rock_to_fakie": "rock", "disaster": "disaster", "invert": "invert",
+	"one_foot_invert": "one_foot_invert", "eggplant": "eggplant", "blunt_to_fakie": "blunt", "nose_stall": "nose_stall",
+	"nose_pick": "nose_pick", "smith_stall": "smith", "feeble_stall": "feeble",
+}
+const LIP_KEYWORDS: PackedStringArray = ["one_foot", "invert", "eggplant", "blunt", "pick", "nose", "feeble", "smith", "rock"]
+
+
+static func lip_key(anim: String) -> String:
+	var id: String = anim.trim_prefix("lip_")
+	if LIP_IDS.has(id):
+		return str(LIP_IDS[id])
+	for k: String in LIP_KEYWORDS:
+		if id.contains(k):
+			return {"one_foot": "one_foot_invert", "pick": "nose_pick", "nose": "nose_stall"}.get(k, k)
+	return "axle"
+
+
+## Lip tricks. On coping the board stands up on the lip (LIP_PITCH about a truck, the rider ~1 m above it). On a ledge
+## (ctx "ledge", Skater.lip_on_ledge) the board lies near flat with one truck locked on the edge at the trick's stall angle
+## and the rider stands at normal height over it: nose stall tail up on the front truck, smith / feeble rolled over the
+## edge on the back truck, blunt with the tail on the edge and the nose high.
+static func _pose_lip(pose: Dictionary, t: float, c: float, b: float, anim: String = "lip_axle_stall",
+		on_ledge: bool = false) -> void:
+	var key: String = lip_key(anim)
 	var flail: float = 20.0 * sin(t * 8.0) * absf(b)
 	_arms(pose, Vector3(flail, 0.0, -60.0), Vector3(-flail, 0.0, 60.0), 30.0)
+	if key == "invert" or key == "one_foot_invert" or key == "eggplant":
+		_pose_plant(pose, t, b, key)
+		return
 	var pitch: float = LIP_PITCH + 8.0 * b
 	var pivot: Vector3 = REAR_TRUCK
 	var roll: float = 0.0
 	var body_pitch: float = -6.0
-	if anim.contains("invert") or anim.contains("eggplant"):
-		_pose_plant(pose, t, b, anim)
-		return
-	if anim.contains("nose"):
-		# Nose stall / nose pick: the weight over the front truck, the tail up and the shoulders forward.
-		pitch = -LIP_PITCH + 8.0 * b
-		pivot = FRONT_TRUCK
-		body_pitch = 9.0
-	elif anim.contains("blunt"):
-		pitch = LIP_PITCH + 14.0 + 6.0 * b
-		pivot = Vector3(0.0, 0.0, BACK_FOOT.z)
-		body_pitch = -10.0
-		_arms(pose, Vector3(flail, 0.0, -75.0), Vector3(-flail, 0.0, 75.0), 24.0)
-	elif anim.contains("feeble"):
-		roll = 16.0
-	elif anim.contains("smith"):
-		roll = -16.0
-		pivot = FRONT_TRUCK
-		body_pitch = 4.0
+	var hips_c: float = c
+	if on_ledge:
+		pitch = LEDGE_AXLE + 3.0 * b
+		hips_c = minf(c, LEDGE_CROUCH)
+		body_pitch = -3.0
+	match key:
+		"nose_stall", "nose_pick":
+			# Weight over the front truck, the tail up and the shoulders forward.
+			pitch = (-LEDGE_NOSE if on_ledge else -LIP_PITCH) + 8.0 * b
+			if key == "nose_pick":
+				pitch -= 12.0
+			pivot = FRONT_TRUCK
+			body_pitch = 9.0
+		"blunt":
+			pitch = (LEDGE_BLUNT if on_ledge else LIP_PITCH + 14.0) + 6.0 * b
+			pivot = Vector3(0.0, 0.0, BACK_FOOT.z)
+			body_pitch = -10.0
+			_arms(pose, Vector3(flail, 0.0, -75.0), Vector3(-flail, 0.0, 75.0), 24.0)
+		"feeble":
+			roll = 16.0
+			if on_ledge:
+				pitch = -9.0 + 3.0 * b
+				roll = 18.0
+		"smith":
+			roll = -16.0
+			pivot = FRONT_TRUCK
+			body_pitch = 4.0
+			if on_ledge:
+				pivot = REAR_TRUCK
+				pitch = -9.0 + 3.0 * b
+				roll = -18.0
+		"rock":
+			if on_ledge:
+				pitch = -LEDGE_ROCK + 3.0 * b
+				pivot = FRONT_TRUCK
+		"disaster":
+			if on_ledge:
+				pitch = LEDGE_AXLE + 8.0 + 3.0 * b
+				roll = 8.0
 	_board_turn(pose, Vector3(pitch, 0.0, roll), pivot)
-	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * c
+	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * hips_c
 	pose["pitch"] = body_pitch
 	_feet_on_board(pose)
+	if on_ledge:
+		pose["Head"] = Vector3(-6.0, 0.0, 0.0)
+		_curl(pose, 10.0 + 14.0 * hips_c)
+	if key == "nose_pick":
+		# The free hand lets go of the balance and reaches back for the tail to hold the pick.
+		pose["hand_R"] = _board_point(pose, Vector3(0.0, 0.05, 0.36))
+		pose["grip_R"] = 1.0
+		pose["RightUpperArm"] = Vector3.ZERO
 
 
 ## Plants on the coping: eggplant (one hand down, the board in the free hand's reach) and invert / one-foot invert
 ## (the rider inverted over the hand, legs up). The one-foot variant lets a leg hang bent.
 static func _pose_plant(pose: Dictionary, t: float, b: float, anim: String) -> void:
-	var sway: float = 4.0 * b + 3.0 * sin(t * 4.0)
-	pose["pitch"] = 140.0 + sway
-	pose["lift"] = 1.35
-	pose["feet_free"] = 1.0
+	var sway: float = 3.0 * b + 2.5 * sin(t * 3.0)
+	var egg: bool = anim.contains("eggplant")
+	pose["feet_free"] = 0.0
 	pose["feet_on_board"] = 0.0
 	pose["hips_y"] = IDLE_HIPS
-	pose["hand_L"] = Vector3(0.18, 0.0, 0.14)
 	pose["grip_L"] = 1.0
-	_board_turn(pose, Vector3(0.0, 0.0, 20.0), Vector3.ZERO)
-	pose["board_pos"] = Vector3(0.1, 0.55, -0.45)  ## held out by the free hand beside the head
-	pose["board_rot"] = Vector3(0.0, 0.0, 70.0)
-	if anim.contains("eggplant"):
-		pose["hand_R"] = _board_point(pose, Vector3(0.0, 0.1, 0.0))
-		pose["grip_R"] = 1.0
-		pose["pitch"] = 120.0 + sway
+	var tuck_l: Vector3 = Vector3(-0.1, 0.2, -0.06)  ## body-space ankle targets: straight up (the body is upside down)
+	var tuck_r: Vector3 = Vector3(0.1, 0.2, -0.06)
+	if egg:
+		# Eggplant: tipped well over, the support hand on the coping beside the head and the free hand bringing the
+		# deck up to the body while the knees fold over it.
+		pose["pitch"] = 146.0 + sway
+		pose["lift"] = 1.46
+		pose["hand_L"] = Vector3(0.0, -0.05, -0.3)
+		pose["board_rot"] = Vector3(0.0, 0.0, 50.0)
+		_hold_board(pose, Vector3(0.1, 0.55, 0.5), Vector3(0.0, 0.07, 0.0))
+		pose["Spine"] = Vector3(10.0, 0.0, 0.0)
+		pose["Chest"] = Vector3(8.0, 0.0, 0.0)
+		pose["Head"] = Vector3(-18.0, 0.0, 0.0)  ## eyes on the board in the free hand
+		tuck_l = Vector3(-0.1, 0.5, 0.2)
+		tuck_r = Vector3(0.1, 0.55, 0.28)
 	else:
-		_arms(pose, Vector3.ZERO, Vector3(0.0, 0.0, 70.0), 10.0)
+		# Invert: a one-handed handstand on the coping, the body straight over the support hand with the back arched a
+		# touch, the legs split, and the board held out to the side in the free hand.
+		pose["pitch"] = 168.0 + sway
+		pose["lift"] = 1.5
+		pose["hand_L"] = Vector3(0.0, -0.05, -0.2)
+		pose["board_rot"] = Vector3(0.0, 0.0, 50.0)
+		_hold_board(pose, Vector3(0.1, 0.5, 0.6), Vector3(0.0, 0.07, 0.0))
+		pose["Spine"] = Vector3(8.0, 0.0, 0.0)
+		pose["Chest"] = Vector3(6.0, 0.0, 0.0)
+		pose["Head"] = Vector3(-14.0, 0.0, 0.0)  ## looking up the wall past the hand
+		tuck_l = Vector3(-0.17, 0.22, -0.1)  ## the legs split a little
+		tuck_r = Vector3(0.17, 0.22, -0.02)
+	pose["grip_R"] = 1.0
 	if anim.contains("one_foot"):
-		pose["feet_free"] = 1.0
-		pose["Hips"] = Vector3(0.0, 0.0, 14.0)
-		pose["LeftLowerLeg"] = Vector3(50.0, 0.0, 0.0)
+		# One foot comes off: the knee folds and the shin hangs back, the hips cocked.
+		pose["Hips"] = Vector3(0.0, 0.0, 10.0)
+		tuck_l = Vector3(-0.1, 0.55, 0.3)
+	pose["foot_L"] = _body_point(pose, tuck_l)
+	pose["foot_R"] = _body_point(pose, tuck_r)
+
+
+## Holds the deck by the free (right) hand: places the board so its board-local `grip` point sits at `target` (visual
+## space) for the board rotation already in pose, and sends the right hand there.
+static func _hold_board(pose: Dictionary, target: Vector3, grip: Vector3) -> void:
+	var r: Basis = Basis.from_euler((pose["board_rot"] as Vector3) * (PI / 180.0))
+	pose["board_pos"] = target - r * grip
+	pose["hand_R"] = target
+	pose["grip_R"] = 1.0
+	_arms(pose, Vector3.ZERO, Vector3(0.0, 0.0, 70.0), 10.0)
+
+
+## A body-space point (body origin on the deck under the rider, -Z forward) in visual space, after the pose's pitch, lean
+## and lift turn the whole body.
+static func _body_point(pose: Dictionary, local: Vector3) -> Vector3:
+	var b: Basis = Basis(Vector3.RIGHT, deg_to_rad(-float(pose["pitch"]))) \
+			* Basis(Vector3.BACK, deg_to_rad(-float(pose["lean"]))) \
+			* Basis(Vector3.UP, deg_to_rad(float(pose["body_yaw"]) - 90.0))
+	return b * local + Vector3(0.0, PlaceholderSkater.DECK_TOP_Y + float(pose["lift"]), 0.0)
 
 
 static func _pose_special(pose: Dictionary, anim: String, t: float) -> void:
