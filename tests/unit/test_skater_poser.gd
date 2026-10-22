@@ -409,3 +409,65 @@ func test_acid_drop_tucks_and_levels_the_board() -> void:
 	assert_true((early["board_rot"] as Vector3).x < -5.0, "board follows the fall nose down")
 	assert_true(absf((late["board_rot"] as Vector3).x) < 1.0, "levelled out to the transition")
 	assert_true(float(early["hips_y"]) < SkaterPoser.IDLE_HIPS - 0.08, "tucked, knees up")
+
+
+func test_air_tucks_rising_and_reaches_for_the_ground_falling() -> void:
+	var rising: Dictionary = SkaterPoser.pose_for("air", 0.4, 0.0, 0.0, false, 0.0, 0.0, {"vy": 5.0})
+	var apex: Dictionary = SkaterPoser.pose_for("air", 0.4, 0.0, 0.0, false, 0.0, 0.0, {"vy": 0.0})
+	var falling: Dictionary = SkaterPoser.pose_for("air", 0.4, 0.0, 0.0, false, 0.0, 0.0, {"vy": -7.0})
+	var up: float = (rising["board_pos"] as Vector3).y
+	assert_true(up > 0.25, "board pulled well up under the feet on the way up (%f)" % up)
+	assert_true((apex["board_pos"] as Vector3).y > 0.15, "still tucked at the apex")
+	assert_true((falling["board_pos"] as Vector3).y < 0.08, "board down and the legs long for the landing")
+	var reach: float = PlaceholderSkater.UPPER_LEG + PlaceholderSkater.LOWER_LEG
+	for p: Dictionary in [rising, apex, falling]:
+		var hip: Vector3 = Vector3(0.0, PlaceholderSkater.DECK_TOP_Y + PlaceholderSkater.HIP_HEIGHT + float(p["hips_y"]), 0.0)
+		assert_true(((p["foot_R"] as Vector3).distance_to(hip)) < reach, "feet within reach of the hips")
+	assert_true(((rising["foot_R"] as Vector3).y - (falling["foot_R"] as Vector3).y) > 0.2, "knees tuck: the feet ride up toward the hips")
+	assert_true(absf((rising["LeftUpperArm"] as Vector3).x - (rising["RightUpperArm"] as Vector3).x) > 20.0, "arms balance asymmetrically")
+	assert_true((falling["Head"] as Vector3).x < (rising["Head"] as Vector3).x - 8.0, "eyes drop to the landing")
+
+
+func test_air_feet_stay_pinned_to_the_deck_in_every_phase() -> void:
+	for vy: float in [8.0, 4.0, 0.0, -3.0, -8.0]:
+		for t: float in [0.0, 0.1, 0.3, 0.8]:
+			var p: Dictionary = SkaterPoser.pose_for("air", t, 0.0, 0.0, false, 0.0, 0.0, {"vy": vy})
+			assert_near(float(p["feet_on_board"]), 1.0, 0.001, "shoes flat on the deck")
+			for pair: Array in [["foot_L", SkaterPoser.FRONT_FOOT], ["foot_R", SkaterPoser.BACK_FOOT]]:
+				var want: Vector3 = SkaterPoser.deck_point(p, (pair[1] as Vector3) + Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0))
+				assert_true((p[pair[0]] as Vector3).distance_to(want) < 0.06, "%s within 6 cm of its deck spot (vy %f t %f)" % [pair[0], vy, t])
+
+
+func test_big_landing_compresses_and_holds_for_a_fifth_to_two_fifths_of_a_second() -> void:
+	var im: float = 0.95
+	var depth: float = SkaterPoser.land_absorb(SkaterPoser.land_time(im) * SkaterPoser.LAND_HIT, im)
+	var down_until: float = 0.0
+	for i: int in 200:
+		var t: float = i * 0.005
+		if SkaterPoser.land_absorb(t, im) >= depth * 0.95:
+			down_until = t
+	assert_true(down_until > 0.2 and down_until < 0.45, "the knees are at the bottom until %f s" % down_until)
+	assert_true(SkaterPoser.land_time(im) > 0.55 and SkaterPoser.land_time(im) < 0.85, "back up inside a second")
+	var small_down: float = SkaterPoser.land_time(0.15) * SkaterPoser.LAND_HIT
+	assert_true(small_down < 0.12, "a small hop is quick")
+
+
+func test_sketchy_landing_staggers_then_settles() -> void:
+	var clean: Dictionary = SkaterPoser.pose_for("land", 0.2, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4})
+	var sketchy: Dictionary = SkaterPoser.pose_for("land", 0.2, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4, "sketchy": 1.0})
+	var arm_swing: float = ((sketchy["LeftUpperArm"] as Vector3) - (clean["LeftUpperArm"] as Vector3)).length()
+	assert_true(arm_swing > 20.0, "arms windmill on a sketchy landing (%f)" % arm_swing)
+	var settled: Dictionary = SkaterPoser.pose_for("land", SkaterPoser.SKETCHY_TIME + 0.5, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4, "sketchy": 1.0})
+	var ref: Dictionary = SkaterPoser.pose_for("land", SkaterPoser.SKETCHY_TIME + 0.5, 0.0, 0.0, false, 0.0, 0.0, {"impact": 0.4})
+	assert_near(float(settled["lean"]), float(ref["lean"]), 0.001, "the stagger is over")
+
+
+func test_vert_air_turns_the_rider_toward_world_up() -> void:
+	var up_local: Vector3 = Vector3(0.0, 0.1, -0.995).normalized()  ## board standing on the wall: world up is nearly along -Z
+	var none: Dictionary = SkaterPoser.pose_for("air", 0.5, 0.0, 0.0, false, 0.0, 0.0, {"vy": 1.0})
+	assert_eq(none["tilt"], Vector3.ZERO, "no tilt without vert air")
+	var tilted: Dictionary = SkaterPoser.pose_for("air", 0.5, 0.0, 0.0, false, 0.0, 0.0, {"vy": 1.0, "tilt_w": 1.0, "up_local": up_local})
+	var deg: float = (tilted["tilt"] as Vector3).length()
+	assert_true(deg > 55.0 and deg < 75.0, "the rider rights itself most of the way (%f deg)" % deg)
+	var landing: Dictionary = SkaterPoser.pose_for("air", 0.9, 0.0, 0.0, false, 0.0, 0.0, {"vy": -8.0, "tilt_w": 1.0, "up_local": up_local})
+	assert_near((landing["tilt"] as Vector3).length(), 0.0, 0.001, "the tilt is gone by the time the legs reach for the ramp")

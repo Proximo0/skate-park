@@ -61,16 +61,26 @@ const LAND_TIME: float = 0.2  ## recovery of a landing at the default impact (la
 ## Landing absorb (ctx "impact", Skater.land_impact 0..1): a small hop barely dips the knees and is back up in about
 ## 0.17 s, a big drop compresses deep (hips down to ~0.29 m below idle) and springs back over ~0.55 s.
 const LAND_IMPACT_DEFAULT: float = 0.35
-const LAND_TIME_MIN: float = 0.15
-const LAND_TIME_PER_IMPACT: float = 0.42
-const LAND_HIT: float = 0.22  ## share of the landing spent compressing; the rest springs back
+const LAND_TIME_MIN: float = 0.2
+const LAND_TIME_PER_IMPACT: float = 0.55
+const LAND_HIT: float = 0.3  ## share of the landing spent compressing; the rest springs back
+const LAND_HOLD: float = 0.16  ## share of the landing the knees stay at the bottom of the compression, big landings only
+const SKETCHY_TIME: float = 0.6  ## a sketchy landing (caught late) staggers for this long: arms windmill, the body wobbles
 const LAND_DEPTH_MAX: float = 1.2  ## crouch-equivalent at impact 1 (hips CROUCH_DROP * this below idle)
 const BLEND_RATE_LAND: float = 30.0  ## a landing dip is quick; the slow blend would swallow a small one
 ## Carving (ctx "carve", -1..1, + = turning toward visual +X): the body leans into the turn, the deck rolls on its
 ## trucks, the shoulders lead and the head looks through the turn.
-const CARVE_LEAN: float = 16.0
-const CARVE_ROLL: float = 6.0
+const CARVE_LEAN: float = 19.0
+const CARVE_ROLL: float = 8.0
 const CARVE_ACCEL: float = 9.0  ## m/s^2 of sideways acceleration for a full carve
+const TILT_PIVOT: Vector3 = Vector3(0.0, 0.55, 0.0)  ## visual space: the rider and board turn about the hips when the tilt is applied
+const TILT_VERT: float = 0.72  ## share of the way the vert-air rider rights itself toward world up (the board comes with)
+## Air body language (anim "air", ctx "vy"): the board is pulled up under the feet while rising, held at the apex, and the
+## legs reach for the ground as it falls; the eyes pick out the landing.
+const AIR_PULL_RISE: float = 0.30  ## board pulled this far up under the feet (metres) at the top of the pop
+const AIR_PULL_APEX: float = 0.22
+const AIR_PULL_LAND: float = 0.03
+const GROUND_ANIMS: PackedStringArray = ["idle_ride", "push", "crouch", "land"]
 const CARVE_ANIMS: PackedStringArray = ["idle_ride", "crouch", "push", "land"]
 ## Idle variety while stopped (ctx "ride_speed" under IDLE_STILL_SPEED): a cycle of shifting the weight onto the back
 ## foot, looking around, re-setting the front foot and loosening the arms, after IDLE_DELAY seconds of idling.
@@ -149,6 +159,10 @@ var _rest: Dictionary = {}  ## joint name -> Vector3 rest rotation (radians)
 var _current: Dictionary = {}
 var _has_pose: bool = false
 var _preview_t: float = 0.0
+var _air_t: float = 0.0  ## seconds the skater has been in the AIR state
+var _tilt_s: float = 0.0  ## smoothed vert-air tilt weight 0..1
+var _sketchy: bool = false  ## the last landing was sketchy (Skater.landed)
+var _landed_hooked: bool = false
 var _carve_s: float = 0.0  ## smoothed carve (-1..1) from the skater's turn rate
 var _prev_facing: Vector3 = Vector3.ZERO
 var _rag_joints: Dictionary = {}  ## joint name -> global Transform3D on the ragdoll's last frame
@@ -189,6 +203,15 @@ func _process(delta: float) -> void:
 			_push_cycle = float(tn.get("push_cycle"))
 			_push_contact = float(tn.get("push_contact"))
 		ctx = _skater_ctx(delta)
+		# Off an edge or up a vert wall the anim can still be a ground one (push, crouch, land): the body is airborne, so
+		# it gets the air pose (knees tucked, board under the feet) and its own air clock.
+		if _in_air():
+			_air_t += delta
+			if GROUND_ANIMS.has(anim):
+				anim = "air"
+				t = _air_t
+		else:
+			_air_t = 0.0
 	else:
 		_preview_t += delta
 		t = _preview_t
@@ -245,7 +268,31 @@ func _skater_ctx(delta: float) -> Dictionary:
 	_carve_s = lerpf(_carve_s, raw, 1.0 - exp(-6.0 * delta))
 	ctx["carve"] = _carve_s
 	ctx["vrm"] = body is VrmBody
+	# Vert air: the weight of the tilt (see _vert_tilt) eases in and out; up_local is world up in the visual's space.
+	var airy: bool = bool(skater.get("vert_air")) and _in_air()
+	var goal: float = 1.0 if airy else 0.0
+	_tilt_s = move_toward(_tilt_s, goal, delta * (6.0 if airy else 14.0))
+	ctx["tilt_w"] = _tilt_s
+	var parent: Node3D = body.get_parent() as Node3D
+	ctx["up_local"] = (parent.global_basis.inverse() * Vector3.UP) if parent != null else Vector3.UP
+	# A landing caught late (Skater.landed "sketchy") staggers for a moment.
+	if skater.has_signal("landed") and not _landed_hooked:
+		_landed_hooked = true
+		skater.connect("landed", _on_landed)
+	if str(skater.get("anim")) != "land":
+		_sketchy = false
+	ctx["sketchy"] = 1.0 if _sketchy else 0.0
 	return ctx
+
+
+## True while the skater's state machine is in AIR (the anim name can lag behind, see _process).
+func _in_air() -> bool:
+	var st: Object = skater.get("state") as Object
+	return st != null and st.has_method("state_name") and str(st.call("state_name")) == "AIR"
+
+
+func _on_landed(result: String) -> void:
+	_sketchy = result == "sketchy"
 
 
 ## Remembers the ragdoll-driven joints and board (world space) each frame, so the get-up can start from them.
@@ -301,12 +348,15 @@ func _capture_rest() -> void:
 func _apply(pose: Dictionary) -> void:
 	var rot: Vector3 = pose["board_rot"]
 	var board_basis: Basis = Basis.from_euler(rot * (PI / 180.0))
-	board.transform = Transform3D(board_basis, pose["board_pos"])
+	var tilt: Vector3 = pose["tilt"]
+	var tr: Basis = Basis(tilt.normalized(), deg_to_rad(tilt.length())) if tilt.length() > 0.01 else Basis.IDENTITY
+	var tilt_xf: Transform3D = Transform3D(tr, TILT_PIVOT - tr * TILT_PIVOT)  ## turns everything about the hips
+	board.transform = tilt_xf * Transform3D(board_basis, pose["board_pos"])
 
 	var b: Basis = Basis(Vector3.RIGHT, deg_to_rad(-float(pose["pitch"]))) \
 			* Basis(Vector3.BACK, deg_to_rad(-float(pose["lean"]))) \
 			* Basis(Vector3.UP, deg_to_rad(float(pose["body_yaw"]) - 90.0))
-	body.transform = Transform3D(b, Vector3(0.0, PlaceholderSkater.DECK_TOP_Y + float(pose["lift"]), 0.0))
+	body.transform = tilt_xf * Transform3D(b, Vector3(0.0, PlaceholderSkater.DECK_TOP_Y + float(pose["lift"]), 0.0))
 	for j: String in JOINTS:
 		var node: Node3D = _nodes[j]
 		if j == "Hips":
@@ -315,7 +365,7 @@ func _apply(pose: Dictionary) -> void:
 
 	var parent: Node3D = body.get_parent() as Node3D
 	var space: Transform3D = parent.global_transform if parent != null else Transform3D.IDENTITY
-	var space_q: Quaternion = space.basis.get_rotation_quaternion()
+	var space_q: Quaternion = space.basis.get_rotation_quaternion() * tr.get_rotation_quaternion()
 	var board_q: Quaternion = space_q * board_basis.get_rotation_quaternion()
 	var facing: Vector3 = body.global_basis * Vector3.FORWARD  ## the body's own -Z
 	var hips: Node3D = _nodes["Hips"]
@@ -326,7 +376,7 @@ func _apply(pose: Dictionary) -> void:
 		var s: String = side.left(1)
 		var hip: Node3D = _nodes[side + "UpperLeg"]
 		var out: Vector3 = (hip.global_position - hips.global_position).normalized()
-		var target: Vector3 = space * (pose["foot_" + s] as Vector3)
+		var target: Vector3 = space * (tilt_xf * (pose["foot_" + s] as Vector3))
 		if free > 0.0:
 			var hang: Vector3 = body.global_transform * Vector3((-1.0 if side == "Left" else 1.0) * 0.13,
 					PlaceholderSkater.HIP_HEIGHT + float(pose["hips_y"]) - 0.88 * (PlaceholderSkater.UPPER_LEG + PlaceholderSkater.LOWER_LEG), -0.08)
@@ -339,7 +389,7 @@ func _apply(pose: Dictionary) -> void:
 		var s: String = side.left(1)
 		var w: float = float(pose["grip_" + s])
 		if w > 0.01:
-			_solve_arm(side, space * (pose["hand_" + s] as Vector3), w, facing)
+			_solve_arm(side, space * (tilt_xf * (pose["hand_" + s] as Vector3)), w, facing)
 
 
 ## Two-bone IK for a leg: thigh and shin point at the knee and ankle, the knee bends toward `pole`.
@@ -468,9 +518,9 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 			"ollie":
 				_pose_ollie(pose, t, ext)
 			"air":
-				_pose_air(pose, t, ext)
+				_pose_air(pose, t, ext, float(ctx.get("vy", 0.0)))
 			"land":
-				_pose_land(pose, t, c, impact)
+				_pose_land(pose, t, c, impact, float(ctx.get("sketchy", 0.0)))
 				var after: float = t - land_time(impact)
 				if after > 0.0:
 					_idle_life(pose, after, ride_speed)
@@ -506,7 +556,23 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 	if CARVE_ANIMS.has(anim):
 		_carve(pose, carve)
 	_look(pose)
+	_vert_tilt(pose, ctx, ext)
 	return pose
+
+
+## Vert air (ctx "tilt_w" 0..1 ramps in and out as the skater enters and leaves vert air, "up_local" = world up in visual
+## space): the visual lies with the ramp, which left the rider reclining or upside down over the coping. The whole rider and
+## board turn about the hips toward world up (TILT_VERT of the way), so the body stays readable the THUG way and still
+## leans with the wall. The turn fades out as the legs reach for the landing (the board is aligning to the ramp then).
+static func _vert_tilt(pose: Dictionary, ctx: Dictionary, ext: float) -> void:
+	var w: float = clampf(float(ctx.get("tilt_w", 0.0)), 0.0, 1.0) * TILT_VERT * (1.0 - ext)
+	if w <= 0.001:
+		return
+	var up: Vector3 = ctx.get("up_local", Vector3.UP)
+	var axis: Vector3 = Vector3.UP.cross(up)
+	if axis.length() < 0.0001:
+		return
+	pose["tilt"] = axis.normalized() * rad_to_deg(Vector3.UP.angle_to(up)) * w
 
 
 ## How far the legs reach down for the landing (0 tucked, 1 extended) from the vertical speed: rising and at the apex
@@ -520,8 +586,9 @@ static func land_time(impact: float) -> float:
 	return LAND_TIME_MIN + LAND_TIME_PER_IMPACT * clampf(impact, 0.0, 1.0)
 
 
-## Crouch-equivalent knee bend of the landing absorb at time t: a quick compression (sine in, LAND_HIT of the
-## landing), then a spring back up with a small overshoot, exactly 0 after land_time(). Deeper for harder impacts.
+## Crouch-equivalent knee bend of the landing absorb at time t: a compression (sine in, LAND_HIT of the landing), the
+## knees held at the bottom a moment on a hard landing (the weight settling), then a spring back up with a small
+## overshoot, exactly 0 after land_time(). Deeper and longer for harder impacts.
 static func land_absorb(t: float, impact: float) -> float:
 	var im: float = clampf(impact, 0.0, 1.0)
 	var u: float = t / land_time(im)
@@ -530,7 +597,10 @@ static func land_absorb(t: float, impact: float) -> float:
 	var depth: float = clampf(LAND_DEPTH_MAX * pow(im, 1.3), 0.06, LAND_DEPTH_MAX)
 	if u < LAND_HIT:
 		return depth * sin(PI * 0.5 * u / LAND_HIT)
-	var s: float = (u - LAND_HIT) / (1.0 - LAND_HIT)
+	var hold: float = LAND_HOLD * im * im
+	if u < LAND_HIT + hold:
+		return depth
+	var s: float = (u - LAND_HIT - hold) / (1.0 - LAND_HIT - hold)
 	return depth * ((1.0 - s) * (1.0 - s) * (1.0 + 2.0 * s) - 0.12 * sin(PI * s) * s)
 
 
@@ -620,6 +690,7 @@ static func _blank() -> Dictionary:
 	pose["hand_R"] = Vector3.ZERO
 	pose["grip_L"] = 0.0
 	pose["grip_R"] = 0.0
+	pose["tilt"] = Vector3.ZERO  ## rotation vector (degrees) turning the whole rider and board in visual space about TILT_PIVOT
 	return pose
 
 
@@ -780,19 +851,38 @@ static func _pose_nollie(pose: Dictionary, t: float, ext: float = 0.0) -> void:
 	pose["fpitch_R"] = 14.0 * sin(PI * slide)
 
 
-## In the air the board stays up under tucked feet, then the legs extend for the landing.
-static func _pose_air(pose: Dictionary, t: float, ext: float = 0.0) -> void:
-	var tuck: float = (0.2 * exp(-1.6 * t) + 0.05) * (1.0 - 0.8 * ext)
-	pose["board_pos"] = Vector3(0.0, tuck, 0.0)
-	pose["hips_y"] = IDLE_HIPS - 0.02 * (1.0 - ext)
-	_curl(pose, 14.0 - 4.0 * ext)
-	pose["Head"] = Vector3(-6.0 * (1.0 - ext), 0.0, 0.0)
-	_arms(pose, Vector3(-10.0 + 25.0 * ext, 0.0, -50.0 + 15.0 * ext), Vector3(12.0 - 20.0 * ext, 0.0, 52.0 - 15.0 * ext), 25.0)
-	_feet_on_board(pose)
+## In the air (ctx "vy", t = seconds in the air anim): rising, the knees tuck and the board is pulled up under the feet
+## with the front arm leading and the back arm out wide; at the apex the pose holds and the arms float; falling, the
+## legs reach down, the board settles flat for the landing, the arms spread and the eyes pick out the spot.
+static func _pose_air(pose: Dictionary, t: float, ext: float = 0.0, vy: float = 0.0) -> void:
+	var rise: float = clampf(vy / 6.0, 0.0, 1.0)  ## 1 at the top of a pop, 0 from the apex on
+	var tuck: float = (1.0 - ext) * (AIR_PULL_APEX / AIR_PULL_RISE + (1.0 - AIR_PULL_APEX / AIR_PULL_RISE) * rise)
+	var settle: float = _smooth(t / 0.18)  ## the pull-up builds over the first moments (ollie hands the board over high)
+	var pull: float = lerpf(AIR_PULL_LAND, AIR_PULL_RISE, tuck)
+	# The nose lifts a little going up and dips toward the ground coming down.
+	var pitch: float = 7.0 * rise - 9.0 * ext
+	_board_turn(pose, Vector3(pitch, 0.0, 0.0), Vector3.ZERO)
+	pose["board_pos"] = Vector3(0.0, pull, 0.0)
+	pose["hips_y"] = IDLE_HIPS - 0.045 * tuck * settle + 0.015 * ext
+	pose["pitch"] = -2.0 * rise + 3.0 * ext
+	_curl(pose, 8.0 + 16.0 * tuck * settle)
+	# Eyes forward going up, then down onto the landing; a slow float in the arms keeps the pose alive.
+	pose["Head"] = Vector3(2.0 * rise - 12.0 * ext, 0.0, 0.0)
+	var drift: float = sin(t * 3.4)
+	var spread: float = 1.0 - 0.3 * ext
+	_arms(pose,
+			Vector3(-26.0 * tuck + 24.0 * ext + 4.0 * drift, 0.0, -48.0 * spread + 4.0 * drift),
+			Vector3(18.0 * tuck - 22.0 * ext - 3.0 * drift, 0.0, 54.0 * spread - 4.0 * drift),
+			22.0 + 14.0 * tuck)
+	_feet_on_board(pose, Vector3(0.0, 0.0, -0.03 * tuck), Vector3(0.0, 0.0, 0.03 * tuck))
+	pose["fpitch_L"] = 8.0 * tuck
+	pose["fpitch_R"] = -6.0 * tuck
 
 
-static func _pose_land(pose: Dictionary, t: float, c: float, impact: float = LAND_IMPACT_DEFAULT) -> void:
+static func _pose_land(pose: Dictionary, t: float, c: float, impact: float = LAND_IMPACT_DEFAULT, sketchy: float = 0.0) -> void:
+	var stagger: float = clampf(sketchy, 0.0, 1.0) * clampf(1.0 - t / SKETCHY_TIME, 0.0, 1.0)
 	var a: float = land_absorb(t, impact)
+	a = minf(a + 0.35 * stagger * (0.5 + 0.5 * sin(t * 18.0)), LAND_DEPTH_MAX)
 	_pose_idle(pose, maxf(c, a))
 	# Chest folds over the knees and the eyes drop to the board; the arms throw out to catch the balance, wider the
 	# harder the hit, and come back in as the legs spring up.
@@ -802,6 +892,18 @@ static func _pose_land(pose: Dictionary, t: float, c: float, impact: float = LAN
 	var arm: float = a * (0.6 + 0.6 * impact)
 	_arms(pose, Vector3(10.0 + 22.0 * arm, 0.0, -8.0 - 42.0 * arm), Vector3(-6.0 - 16.0 * arm, 0.0, 8.0 + 46.0 * arm),
 			14.0 + 22.0 * arm)
+	# The weight arrives low: hips sink back over the tail a little and the arms drop through the compression.
+	pose["Chest"] = (pose["Chest"] as Vector3) + Vector3(-8.0 * a * impact, 0.0, 0.0)
+	pose["LeftUpperArm"] = (pose["LeftUpperArm"] as Vector3) + Vector3(-18.0 * a * impact, 0.0, 10.0 * a * impact)
+	pose["RightUpperArm"] = (pose["RightUpperArm"] as Vector3) + Vector3(-18.0 * a * impact, 0.0, -10.0 * a * impact)
+	if stagger > 0.0:
+		# Caught it late: the arms windmill to find the balance and the body wobbles side to side while it settles.
+		var ph: float = t * 13.0
+		pose["lean"] = float(pose["lean"]) + 18.0 * stagger * sin(ph * 0.8)
+		pose["pitch"] = float(pose["pitch"]) + 6.0 * stagger * sin(ph * 0.55 + 1.0)
+		pose["LeftUpperArm"] = (pose["LeftUpperArm"] as Vector3) + Vector3(92.0 * stagger * sin(ph), 0.0, -34.0 * stagger)
+		pose["RightUpperArm"] = (pose["RightUpperArm"] as Vector3) + Vector3(92.0 * stagger * sin(ph + PI * 0.8), 0.0, 34.0 * stagger)
+		pose["Head"] = (pose["Head"] as Vector3) + Vector3(0.0, 0.0, 6.0 * stagger * sin(ph * 0.8))
 
 
 ## Flip tricks. The feet leave the deck right after the flick, the board spins under them (eased: quick off the
