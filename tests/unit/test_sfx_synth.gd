@@ -145,3 +145,15 @@ func test_landing_shape_scales_with_impact() -> void:
 	assert_true(float(hard[2]) > float(soft[2]) and float(hard[1]) < float(soft[1]), "harder: louder and lower")
 	assert_eq(SkateAudio.ambience_for("beach"), "surf")
 	assert_eq(SkateAudio.ambience_for("nonsense"), "crowd")
+
+
+func test_skid_loops_and_shape() -> void:
+	for st: AudioStreamWAV in [SfxSynth.skid_loop(), SfxSynth.skid_sand_loop()]:
+		_sfx_check_format(st, SfxSynth.RATE, "skid")
+		_sfx_check_loop(st, "skid")
+	assert_eq(SkateAudio.classify_surface(PackedStringArray(["Sand", "Park"])), "sand")
+	assert_eq(SkateAudio.classify_surface(PackedStringArray(["Ground", "Park"])), "concrete")
+	var slow: Vector2 = SkateAudio.skid_shape(2.0)
+	var fast: Vector2 = SkateAudio.skid_shape(20.0)
+	assert_true(fast.x > slow.x and fast.y > slow.y, "faster slide: louder and higher")
+	assert_true(fast.x <= SkateAudio.SKID_DB.y + 0.001, "capped at the top of the range")

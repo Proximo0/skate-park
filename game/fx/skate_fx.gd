@@ -25,6 +25,21 @@ const SPARK_OFFSET: Vector3 = Vector3(0.0, 0.0, 0.0)  ## under the board, betwee
 const TRAIL_OFFSET: Vector3 = Vector3(0.0, 0.12, 0.42)  ## board tail
 const STAR_OFFSET: Vector3 = Vector3(0.0, 0.0, 0.0)
 
+const DUST_MAX: int = 36
+const DUST_LIFE: float = 0.55
+const SKID_POOL: int = 56
+const SKID_LIFE: float = 7.0  ## s a skid mark lasts
+const SKID_FADE: float = 2.5  ## s of that spent fading out
+const SKID_STEP: float = 0.3  ## m between marks
+const SKID_LEN: float = 0.5
+const SKID_WIDTH: float = 0.42  ## the two wheel tracks of a board
+const DUST_WHEEL_Z: float = 0.34  ## Visual-local distance of the truck pairs from the board centre
+const DUST_COLORS: Dictionary = {
+	"concrete": Color(0.95, 0.95, 1.0, 0.5), "wood": Color(0.9, 0.8, 0.65, 0.5),
+	"sand": Color(0.95, 0.84, 0.58, 0.95)}
+const SKID_COLORS: Dictionary = {
+	"concrete": Color(0.1, 0.1, 0.12, 0.5), "wood": Color(0.15, 0.1, 0.07, 0.38),
+	"sand": Color(0.45, 0.36, 0.22, 0.5)}
 const STAR_COLOR: Color = Color(1.0, 0.86, 0.15, 1.0)
 ## Concrete is near white, so the dust is a cool light grey and the sketchy one a warmer tan to stay readable.
 const PUFF_CLEAN_COLOR: Color = Color(0.84, 0.87, 0.92, 1.0)
@@ -51,6 +66,15 @@ var _star_pop: float = 0.0
 var _lshake_t: float = 99.0  ## big-landing camera shake clock (s since the landing)
 var _lshake_amp: float = 0.0
 var _shake_cam: Camera3D
+var _dust: CPUParticles3D  ## wheel grit while powersliding
+var _dust_surface: String = "concrete"
+var _dust_probe: float = 0.0
+var _skid_marks: Array[MeshInstance3D] = []
+var _skid_next: int = 0
+var _skid_last: Vector3 = Vector3(INF, 0.0, 0.0)
+var _skid_mat: StandardMaterial3D
+var _skid_age: PackedFloat32Array = PackedFloat32Array()
+var _skid_alpha: PackedFloat32Array = PackedFloat32Array()
 
 
 ## Attaches the effects to the skater and connects to its landed and bailed signals. Safe to call once per skater.
@@ -101,6 +125,22 @@ func _build() -> void:
 	_burst.color_ramp = _gradient(
 		PackedColorArray([Color(1.0, 1.0, 0.9, 1.0), Color(1.0, 0.9, 0.4, 0.8), Color(1.0, 0.8, 0.3, 0.0)]),
 		PackedFloat32Array([0.0, 0.5, 1.0]))
+
+	_dust = _emitter("SlideDust", _quad(Vector2(0.9, 0.9)), particle_mat, DUST_MAX, DUST_LIFE)
+	_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	_dust.emission_box_extents = Vector3(0.25, 0.02, DUST_WHEEL_Z)
+	_dust.direction = Vector3(0.0, 0.6, 0.0)
+	_dust.spread = 55.0
+	_dust.initial_velocity_min = 0.6
+	_dust.initial_velocity_max = 1.3
+	_dust.damping_min = 1.5
+	_dust.damping_max = 2.5
+	_dust.gravity = Vector3(0.0, 0.25, 0.0)
+	_dust.color_ramp = _fade_gradient(Color.WHITE)
+	_dust.scale_amount_curve = _grow_curve()
+	_dust.scale_amount_min = 0.5
+	_dust.scale_amount_max = 1.1
+	_build_skid_marks()
 
 	_trail = _emitter("SpecialTrail", _quad(Vector2(0.14, 0.14)), particle_mat, TRAIL_AMOUNT, 0.55)
 	_trail.direction = Vector3.UP
@@ -207,6 +247,7 @@ func _process(delta: float) -> void:
 	var frame: Transform3D = _visual.global_transform if _visual != null else _skater.global_transform
 	var st: SkateState.State = _skater.state.state
 	_update_sparks(frame, st)
+	_update_slide(frame, delta)
 	_update_trail(frame, st)
 	_update_stars(frame, st, delta)
 	_update_ring(delta)
@@ -235,6 +276,132 @@ func _update_sparks(frame: Transform3D, st: SkateState.State) -> void:
 	_sparks.initial_velocity_min = 2.0 + 0.3 * spd
 	_sparks.initial_velocity_max = 3.5 + 0.5 * spd
 	_sparks.emitting = st == SkateState.State.GRIND and spd > 0.5
+
+
+## Powerslide grit from the wheels (a light grey puff on concrete, a bigger tan one on sand) and a short skid mark
+## laid every SKID_STEP m along the slide.
+func _update_slide(frame: Transform3D, delta: float) -> void:
+	_age_skid_marks(delta)
+	var sliding: bool = _skater.powersliding and _skater.state.state == SkateState.State.ROLLING
+	if sliding:
+		_dust_probe -= delta
+		if _dust_probe <= 0.0:
+			_dust_probe = 0.25
+			_dust_surface = _probe_surface_name()
+	else:
+		_dust_probe = 0.0
+		_skid_last = Vector3(INF, 0.0, 0.0)
+	var spd: float = _skater.speed
+	var sandy: bool = _dust_surface == "sand"
+	_dust.global_transform = Transform3D(frame.basis, frame.origin + frame.basis * Vector3(0.0, 0.05, 0.0))
+	var col: Color = DUST_COLORS.get(_dust_surface, DUST_COLORS["concrete"])
+	_dust.color = col
+	_dust.initial_velocity_max = (1.3 if not sandy else 2.2) + 0.12 * spd
+	_dust.scale_amount_max = 1.6 if sandy else 0.8
+	_dust.emitting = sliding and spd > 1.0
+	if sliding and spd > 1.5:
+		var pos: Vector3 = _skater.global_position
+		if _skid_last.x == INF:
+			_drop_skid_mark(pos)
+		else:
+			var gap: float = pos.distance_to(_skid_last)
+			var from: Vector3 = _skid_last
+			var n: int = mini(int(gap / SKID_STEP), 8)  ## a slow frame still lays an unbroken line
+			for i in range(1, n + 1):
+				_drop_skid_mark(from.lerp(pos, float(i) / float(n)))
+
+
+## The material of the ground under the skater: "concrete", "wood" or "sand" (from the collider's names).
+func _probe_surface_name() -> String:
+	if not _skater.is_inside_tree():
+		return "concrete"
+	var from: Vector3 = _skater.global_position + Vector3.UP * 0.3
+	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 1.2)
+	if _skater is CollisionObject3D:
+		q.exclude = [(_skater as CollisionObject3D).get_rid()]
+	var hit: Dictionary = _skater.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return "concrete"
+	var names := PackedStringArray()
+	var n: Node = hit["collider"] as Node
+	var depth: int = 0
+	while n != null and depth < 4:
+		names.append(str(n.name))
+		n = n.get_parent()
+		depth += 1
+	var s: String = SkateAudio.classify_surface(names)
+	return s if s == "wood" or s == "sand" else "concrete"
+
+
+func _build_skid_marks() -> void:
+	var img: Image = Image.create(32, 64, false, Image.FORMAT_RGBA8)
+	for y in range(64):
+		var along: float = float(y) / 63.0
+		var end_fade: float = clampf(minf(along, 1.0 - along) * 6.0, 0.0, 1.0)
+		for x in range(32):
+			var u: float = (float(x) + 0.5) / 32.0
+			var track: float = maxf(clampf(1.0 - absf(u - 0.22) / 0.14, 0.0, 1.0), clampf(1.0 - absf(u - 0.78) / 0.14, 0.0, 1.0))
+			img.set_pixel(x, y, Color(1, 1, 1, track * end_fade))
+	_skid_mat = _material(ImageTexture.create_from_image(img), BaseMaterial3D.BILLBOARD_DISABLED, Color.WHITE, false)
+	_skid_mat.render_priority = -1
+	var holder := Node3D.new()
+	holder.name = "SkidMarks"
+	holder.top_level = true
+	add_child(holder)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(SKID_WIDTH, SKID_LEN)
+	quad.orientation = PlaneMesh.FACE_Y
+	for i in range(SKID_POOL):
+		var m := MeshInstance3D.new()
+		m.name = "Skid%d" % i
+		m.mesh = quad
+		m.material_override = _skid_mat.duplicate()
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		m.visible = false
+		holder.add_child(m)
+		_skid_marks.append(m)
+		_skid_age.append(SKID_LIFE)
+		_skid_alpha.append(0.5)
+
+
+func _drop_skid_mark(pos: Vector3) -> void:
+	var from: Vector3 = pos + Vector3.UP * 0.3
+	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 1.0)
+	if _skater is CollisionObject3D:
+		q.exclude = [(_skater as CollisionObject3D).get_rid()]
+	var hit: Dictionary = _skater.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return
+	var up: Vector3 = hit["normal"]
+	var travel: Vector3 = _skater.velocity
+	travel = (travel - up * travel.dot(up))
+	if travel.length() < 0.1:
+		return
+	var fwd: Vector3 = travel.normalized()
+	var m: MeshInstance3D = _skid_marks[_skid_next]
+	var side: Vector3 = fwd.cross(up).normalized()
+	m.global_transform = Transform3D(Basis(side, up, -fwd).orthonormalized(), (hit["position"] as Vector3) + up * 0.015)
+	var mat: StandardMaterial3D = m.material_override as StandardMaterial3D
+	mat.albedo_color = SKID_COLORS.get(_dust_surface, SKID_COLORS["concrete"])
+	_skid_alpha[_skid_next] = mat.albedo_color.a
+	m.visible = true
+	_skid_age[_skid_next] = 0.0
+	_skid_next = (_skid_next + 1) % SKID_POOL
+	_skid_last = pos
+
+
+func _age_skid_marks(delta: float) -> void:
+	for i in range(_skid_marks.size()):
+		if _skid_age[i] >= SKID_LIFE:
+			continue
+		_skid_age[i] += delta
+		var m: MeshInstance3D = _skid_marks[i]
+		if _skid_age[i] >= SKID_LIFE:
+			m.visible = false
+			continue
+		var fade: float = clampf((SKID_LIFE - _skid_age[i]) / SKID_FADE, 0.0, 1.0)
+		var mat: StandardMaterial3D = m.material_override as StandardMaterial3D
+		mat.albedo_color.a = _skid_alpha[i] * fade
 
 
 func _update_trail(frame: Transform3D, st: SkateState.State) -> void:

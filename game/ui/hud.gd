@@ -34,6 +34,11 @@ const FAIL_FADE: float = 0.7
 const BANNER_TOP: float = 215.0  ## px (1080 layout) under the score chip, away from the centre readouts
 const TRACK_COLOUR := SkateThemeBuilder.CREAM
 const SPECIAL_GLOW_WIDTH: int = 6
+const NOLLIE_X: float = 0.34  ## stance tag: screen fractions, beside the skater's feet and clear of the trick string
+const NOLLIE_Y: float = 0.70
+const NOLLIE_TEXT: String = "NOLLIE"
+const NOLLIE_IN: float = 0.18
+const NOLLIE_OUT: float = 0.14
 
 var _skater: Skater
 var _shown_score: float = 0.0
@@ -70,6 +75,8 @@ var _bal_col: VBoxContainer
 var _bal_title: Label
 var _bal_view: HudBalanceView
 var _trick_pop: AnimeText
+var _nollie_tag: PanelContainer  ## THUG-style stance tag, shown while the skater is in nollie stance
+var _nollie_tween: Tween
 var _trick_tween: Tween
 var _banner: PanelContainer
 var _banner_label: Label
@@ -143,6 +150,7 @@ func _ready() -> void:
 	_build_special()
 	_build_balance()
 	_build_trick_pop()
+	_build_nollie_tag()
 	_build_banner()
 	_fx = Control.new()
 	_fx.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -190,6 +198,9 @@ func _connect_skater(s: Skater) -> void:
 		s.gap_hit.connect(_on_gap_hit)
 	if not s.ramp_snap_missed.is_connected(_on_ramp_snap_missed):
 		s.ramp_snap_missed.connect(_on_ramp_snap_missed)
+	if not s.nollie_changed.is_connected(_on_nollie_changed):
+		s.nollie_changed.connect(_on_nollie_changed)
+	_set_nollie_tag(s.nollie, false)
 
 
 func _disconnect_skater(s: Skater) -> void:
@@ -205,6 +216,8 @@ func _disconnect_skater(s: Skater) -> void:
 		s.gap_hit.disconnect(_on_gap_hit)
 	if s.ramp_snap_missed.is_connected(_on_ramp_snap_missed):
 		s.ramp_snap_missed.disconnect(_on_ramp_snap_missed)
+	if s.nollie_changed.is_connected(_on_nollie_changed):
+		s.nollie_changed.disconnect(_on_nollie_changed)
 
 
 # --- pure helpers (unit tested) -----------------------------------------------------------------------
@@ -595,6 +608,49 @@ func _build_trick_pop() -> void:
 	_trick_pop.modulate.a = 0.0
 	_anchor_point(_trick_pop, 0.5, TRICK_Y)
 	_root.add_child(_trick_pop)
+
+
+## A small navy chip with the stance in sunshine yellow, tilted a touch like the trick text. Hidden until nollie is on.
+func _build_nollie_tag() -> void:
+	_nollie_tag = PanelContainer.new()
+	_nollie_tag.theme_type_variation = SkateThemeBuilder.PNL_NAVY
+	_nollie_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_nollie_tag.add_child(UiStyle.label(NOLLIE_TEXT, UiStyle.SIZE_BODY, UiStyle.SUNSHINE))
+	_anchor_point(_nollie_tag, NOLLIE_X, NOLLIE_Y)
+	_nollie_tag.pivot_offset_ratio = Vector2(0.5, 0.5)
+	_nollie_tag.rotation_degrees = -3.0
+	_nollie_tag.modulate.a = 0.0
+	_nollie_tag.scale = Vector2(0.6, 0.6)
+	_nollie_tag.visible = false
+	_root.add_child(_nollie_tag)
+
+
+func _on_nollie_changed(on: bool) -> void:
+	_set_nollie_tag(on, true)
+
+
+## Pops the stance tag in (overshooting) or snaps it away; animate=false jumps straight to the end state.
+func _set_nollie_tag(on: bool, animate: bool) -> void:
+	if _nollie_tag == null:
+		return
+	if _nollie_tween != null and _nollie_tween.is_valid():
+		_nollie_tween.kill()
+	if not animate:
+		_nollie_tag.visible = on
+		_nollie_tag.modulate.a = 1.0 if on else 0.0
+		_nollie_tag.scale = Vector2.ONE if on else Vector2(0.6, 0.6)
+		return
+	_nollie_tween = create_tween()
+	if on:
+		_nollie_tag.visible = true
+		_nollie_tween.set_parallel(true)
+		_nollie_tween.tween_property(_nollie_tag, "modulate:a", 1.0, NOLLIE_IN * 0.6)
+		_nollie_tween.tween_property(_nollie_tag, "scale", Vector2.ONE, NOLLIE_IN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	else:
+		_nollie_tween.set_parallel(true)
+		_nollie_tween.tween_property(_nollie_tag, "modulate:a", 0.0, NOLLIE_OUT)
+		_nollie_tween.tween_property(_nollie_tag, "scale", Vector2(0.7, 0.7), NOLLIE_OUT)
+		_nollie_tween.chain().tween_callback(func() -> void: _nollie_tag.visible = false)
 
 
 func _build_banner() -> void:

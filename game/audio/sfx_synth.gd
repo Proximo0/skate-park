@@ -42,6 +42,38 @@ static func grind_loop() -> AudioStreamWAV:
 	return _to_stream(out, true)
 
 
+## Powerslide on pavement: urethane squeal (a wavering high tone pair, integer Hz so the loop is seamless) over a
+## band-passed grit bed that chatters as the wheels stick and slip.
+static func skid_loop() -> AudioStreamWAV:
+	var n: int = int(LOOP_SECONDS * RATE)
+	var rng := _rng(301)
+	var grit: PackedFloat32Array = _bandpass_periodic(_noise(n, rng), 700.0, 3800.0)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i: int in n:
+		var t: float = float(i) / RATE
+		var stick: float = 0.55 + 0.45 * sin(TAU * 13.0 * t) * sin(TAU * 5.0 * t + 0.6)
+		var wob: float = 6.0 * sin(TAU * 3.0 * t)
+		var squeal: float = 0.34 * sin(TAU * (1180.0 * t + wob / 3.0)) + 0.2 * sin(TAU * (1773.0 * t + wob / 2.0)) \
+				+ 0.08 * sin(TAU * 2364.0 * t)
+		out[i] = grit[i] * stick * 1.1 + squeal * (0.55 + 0.45 * sin(TAU * 4.0 * t + 1.1))
+	return _to_stream(out, true)
+
+
+## Powerslide on sand or dirt: no squeal, a soft wide hiss and a low drag.
+static func skid_sand_loop() -> AudioStreamWAV:
+	var n: int = int(LOOP_SECONDS * RATE)
+	var rng := _rng(302)
+	var hiss: PackedFloat32Array = _bandpass_periodic(_noise(n, rng), 250.0, 3000.0)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i: int in n:
+		var t: float = float(i) / RATE
+		var surge: float = 0.7 + 0.3 * sin(TAU * 6.0 * t)
+		out[i] = hiss[i] * surge + 0.18 * sin(TAU * 60.0 * t)
+	return _to_stream(out, true)
+
+
 ## Rolling on wood (ramps, decks, boardwalk): a hollow low drone with a regular "ka-thunk" over each plank gap.
 static func roll_wood_loop() -> AudioStreamWAV:
 	var n: int = int(LOOP_SECONDS * RATE)

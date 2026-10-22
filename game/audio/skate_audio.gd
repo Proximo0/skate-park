@@ -19,6 +19,11 @@ const LEVEL_AMBIENCE: Dictionary = {"practice": "crowd", "warehouse": "hum", "be
 const WOOD_WORDS: PackedStringArray = ["ramp", "wood", "deck", "pipe", "bank", "funbox", "kicker", "boardwalk", "bowl",
 		"quarter", "vert", "launch", "mega", "coping", "plank", "stage"]
 const METAL_WORDS: PackedStringArray = ["rail", "pole", "grate", "metal", "bar", "steel"]
+const SAND_WORDS: PackedStringArray = ["sand", "beach", "dirt", "dune", "gravel", "grass"]
+const SKID_DB: Vector2 = Vector2(-22.0, -6.0)
+const SKID_PITCH: Vector2 = Vector2(0.85, 1.25)
+const SKID_FADE_IN: float = 40.0  ## dB per second the skid swells at (an ease, so it never clicks)
+const SKID_FADE_OUT: float = 120.0
 const WOOD_GRIND_WORDS: PackedStringArray = ["coping", "wood", "plank", "slat"]
 const OLLIE_FRAMES: int = 3  ## frames to wait for anim "ollie" after the state flips to AIR
 
@@ -28,6 +33,10 @@ var _roll_wood: AudioStreamPlayer3D
 var _grind: AudioStreamPlayer3D
 var _grind_concrete: AudioStreamPlayer3D
 var _grind_wood: AudioStreamPlayer3D
+var _skid: AudioStreamPlayer3D
+var _skid_sand: AudioStreamPlayer3D
+var _skid_on: bool = false
+var _skid_db: float = -80.0
 var _ambience: AudioStreamPlayer
 var _surface: String = "concrete"  ## what the wheels are on: "concrete", "wood" (metal only ever applies to a grind)
 var _grind_surface: String = "metal"
@@ -55,16 +64,30 @@ func _build_streams() -> void:
 		"grind_concrete": SfxSynth.grind_concrete_loop(),
 		"grind_wood": SfxSynth.grind_wood_loop(),
 		"land_heavy": SfxSynth.land_heavy(),
+		"skid": SfxSynth.skid_loop(),
+		"skid_sand": SfxSynth.skid_sand_loop(),
 	}
 
 
-## Which surface a collider (or any of its ancestors' names, lower-cased) is: "wood", "metal" or "concrete". Pure.
+## Skid loop volume (dB) and pitch for a speed in m/s: silent-ish at a crawl, full by SPEED_FULL. Pure.
+static func skid_shape(speed: float) -> Vector2:
+	var t: float = clampf(speed / SPEED_FULL, 0.0, 1.0)
+	return Vector2(lerpf(SKID_DB.x, SKID_DB.y, t), lerpf(SKID_PITCH.x, SKID_PITCH.y, t))
+
+
+## Which surface a collider (or any of its ancestors' names, lower-cased) is: "sand", "wood", "metal" or "concrete".
+## Pure.
 static func classify_surface(names: PackedStringArray) -> String:
 	for n: String in names:
 		var l: String = n.to_lower()
 		for w: String in METAL_WORDS:
 			if l.contains(w):
 				return "metal"
+	for n: String in names:
+		var l: String = n.to_lower()
+		for w: String in SAND_WORDS:
+			if l.contains(w):
+				return "sand"
 	for n: String in names:
 		var l: String = n.to_lower()
 		for w: String in WOOD_WORDS:
@@ -107,7 +130,9 @@ func bind(skater: Skater) -> void:
 	_roll_wood = _make_player(_streams["roll_wood"], "RollWoodSfx")
 	_grind_concrete = _make_player(_streams["grind_concrete"], "GrindConcreteSfx")
 	_grind_wood = _make_player(_streams["grind_wood"], "GrindWoodSfx")
-	for p: AudioStreamPlayer3D in [_roll, _roll_wood, _grind, _grind_concrete, _grind_wood]:
+	_skid = _make_player(_streams["skid"], "SkidSfx")
+	_skid_sand = _make_player(_streams["skid_sand"], "SkidSandSfx")
+	for p: AudioStreamPlayer3D in [_roll, _roll_wood, _grind, _grind_concrete, _grind_wood, _skid, _skid_sand]:
 		p.play()
 		p.volume_db = SILENT_DB
 	_start_ambience()
@@ -116,6 +141,7 @@ func bind(skater: Skater) -> void:
 	_connect(skater.landed, _on_landed)
 	_connect(skater.bailed, _on_bailed)
 	_connect(skater.combo_landed, _on_combo_landed)
+	_connect(skater.powerslide_changed, _on_powerslide_changed)
 
 
 func _start_ambience() -> void:
@@ -152,7 +178,7 @@ func _probe_surface() -> void:
 		n = n.get_parent()
 		depth += 1
 	var s: String = classify_surface(names)
-	_surface = "wood" if s == "wood" else "concrete"
+	_surface = s if s == "wood" or s == "sand" else "concrete"
 
 
 func _process(delta: float) -> void:
@@ -174,6 +200,26 @@ func _process(delta: float) -> void:
 		else:
 			_ollie_frames -= 1
 	_update_loops(st)
+	_update_skid(delta)
+
+
+func _on_powerslide_changed(active: bool) -> void:
+	_skid_on = active
+	if active:
+		_probe_surface()
+
+
+## The skid loop swells in while the powerslide lasts and drops away when it ends; sand gets the hiss, not the squeal.
+func _update_skid(delta: float) -> void:
+	var shape: Vector2 = skid_shape(_skater.speed)
+	var target: float = shape.x if (_skid_on and _skater.powersliding) else SILENT_DB
+	var rate: float = SKID_FADE_IN if target > _skid_db else SKID_FADE_OUT
+	_skid_db = move_toward(_skid_db, target, rate * delta)
+	var sand: bool = _surface == "sand"
+	_skid.pitch_scale = shape.y
+	_skid_sand.pitch_scale = shape.y
+	_skid.volume_db = SILENT_DB if sand or _skid_db <= -60.0 else _skid_db
+	_skid_sand.volume_db = _skid_db + 2.0 if sand and _skid_db > -60.0 else SILENT_DB
 
 
 func _update_loops(st: int) -> void:
