@@ -15,6 +15,8 @@ const SETTLE_TIME: float = 0.1  ## after the onset, the overshoot settles over t
 const ONSET_OVERSHOOT: float = 0.12
 const REPAIR_TIME: float = 0.14
 const REPAIR_OVERSHOOT: float = 0.2
+const WRIST_SCALE: float = 0.78  ## a folded wrist reads as a cartoon fold, not a mitten pointing at the elbow
+const SHOULDER_TWIST: float = 0.8  ## the socket turn stays inside what the VRM shoulder mesh can twist without pinching
 
 
 ## 0..~1.1. onset_t: seconds since the injury hit (< 0: not yet). repair_t: seconds since the repair began (< 0: not
@@ -58,9 +60,9 @@ static func local_rotation(inj: Dictionary, w: float, cur_flex: float = 0.0) -> 
 			var wrong: float = a if joint.ends_with("LowerLeg") else -a
 			return Basis(Vector3.RIGHT, (wrong - cur_flex) * w)
 		"bend":  # wrist folded back over the forearm
-			return Basis(Vector3.RIGHT, -a * w) * Basis(Vector3.BACK, side * 0.25 * a * w)
+			return Basis(Vector3.RIGHT, -WRIST_SCALE * a * w) * Basis(Vector3.BACK, side * 0.25 * a * w)
 		"twist":  # shoulder out of its socket: the arm turned and swung back behind the body
-			return Basis(Vector3.RIGHT, -0.9 * a * w) * Basis(Vector3.UP, side * a * w)
+			return Basis(Vector3.RIGHT, -0.9 * a * w) * Basis(Vector3.UP, side * SHOULDER_TWIST * a * w)
 		"tilt":  # neck crick: the head cocked hard to one side and turned
 			return Basis(Vector3.BACK, side * a * w) * Basis(Vector3.UP, -side * 0.45 * a * w)
 	return Basis.IDENTITY

@@ -491,6 +491,16 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 				_pose_getup(pose, t)
 			"wallride":
 				_pose_wallride(pose, t)
+			"wallplant":
+				_pose_wallplant(pose, t)
+			"boneless":
+				_pose_boneless(pose, t)
+			"no_comply":
+				_pose_no_comply(pose, t)
+			"caveman":
+				_pose_caveman(pose, t, speed, phase)
+			"acid_drop":
+				_pose_acid_drop(pose, t, ext)
 			_:
 				_pose_idle(pose, c)
 	if CARVE_ANIMS.has(anim):
@@ -1328,6 +1338,144 @@ static func _pose_wallride(pose: Dictionary, t: float) -> void:
 	_curl(pose, 6.0 * k)
 	pose["Head"] = Vector3(10.0 * k, 0.0, -10.0 * k)
 	_arms(pose, Vector3(10.0, 0.0, -30.0 - 50.0 * k), Vector3(-20.0, 0.0, 30.0 + 70.0 * k), 25.0)
+
+
+## A stance-frame point (x toward the chest, y up from the ground, z along the board, -Z the nose) in visual space,
+## with the foot's ankle height added to y so the sole sits at that height.
+static func _sole_point(pose: Dictionary, x: float, y: float, z: float) -> Vector3:
+	return ground_point(pose, Vector3(x, PlaceholderSkater.ANKLE_HEIGHT + y, z))
+
+
+## Wallplant (anim "wallplant", about 0.5 s): riding at the wall, the front foot comes off the board and
+## plants flat on the wall (sole to the wall, toes up) with the knee folded and the body compressed in against it, the
+## back foot holding the board under the tail; then the leg drives straight, the body extends off the wall and the
+## foot drops back onto the board. The wall is ahead of the nose (-Z).
+static func _pose_wallplant(pose: Dictionary, t: float) -> void:
+	var load_k: float = _smooth(t / 0.12)  ## compress toward the wall
+	var plant: float = _smooth((t - 0.08) / 0.07) * (1.0 - _smooth((t - 0.3) / 0.08))  ## front sole on the wall
+	var drive: float = _smooth((t - 0.2) / 0.16)  ## leg straightens, body pushes off
+	var back: float = _smooth((t - 0.3) / 0.12)  ## foot returns to the board
+	var air: float = _smooth((t - 0.36) / 0.12)
+	_board_turn(pose, Vector3(10.0 * plant * (1.0 - air), 0.0, 0.0), TAIL_TIP)
+	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.0, 0.1 * load_k, 0.0)
+	pose["hips_y"] = IDLE_HIPS - 0.2 * load_k * (1.0 - drive) + 0.05 * drive - 0.04 * air
+	pose["lift"] = 0.12 * drive * (1.0 - air) + 0.06 * air
+	pose["pitch"] = 26.0 * load_k * (1.0 - drive) - 10.0 * drive * (1.0 - air)
+	pose["lean"] = 0.0
+	_curl(pose, 18.0 * load_k * (1.0 - drive) + 8.0 * air)
+	pose["Head"] = Vector3(-6.0 * load_k + 8.0 * drive * (1.0 - air), 0.0, 0.0)
+	# The front arm braces toward the wall, the back arm swings out for balance, both throw wide as the body leaves.
+	_arms(pose, Vector3(60.0 * load_k * (1.0 - drive) - 10.0 * drive, 0.0, -25.0 - 35.0 * drive),
+			Vector3(-25.0 * load_k + 20.0 * drive, 0.0, 22.0 + 50.0 * drive), 22.0 + 20.0 * load_k * (1.0 - drive))
+	var wall: Vector3 = _sole_point(pose, 0.0, 0.5, -0.56)
+	var deck: Vector3 = deck_point(pose, FRONT_FOOT + Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0))
+	var reach: Vector3 = deck.lerp(wall, _smooth(t / 0.12))
+	pose["foot_L"] = reach.lerp(deck, back) + Vector3(0.0, 0.1 * sin(PI * minf(t / 0.12, 1.0)) * (1.0 - plant), 0.0)
+	pose["fpitch_L"] = 78.0 * plant
+	pose["foot_R"] = deck_point(pose, BACK_FOOT + Vector3(0.0, 0.0, 0.03 * plant) + Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0))
+	pose["feet_on_board"] = 1.0 - 0.7 * plant
+
+
+## Boneless (anim "boneless", about 0.65 s): the front foot steps off the board onto the ground ahead of it
+## and takes the weight, the board lifts into the front hand (held on the toe edge) while the back leg trails, then
+## the rider hops off the planted foot and the board comes back under both feet.
+static func _pose_boneless(pose: Dictionary, t: float) -> void:
+	var step: float = _smooth(t / 0.1) * (1.0 - _smooth((t - 0.42) / 0.1))  ## front foot on the ground
+	var hold: float = _smooth((t - 0.06) / 0.14) * (1.0 - _smooth((t - 0.4) / 0.12))  ## board in the hand
+	var hop: float = sin(PI * clampf((t - 0.32) / 0.28, 0.0, 1.0))
+	_board_turn(pose, Vector3(-14.0 * hold, 0.0, -62.0 * hold), DECK_CENTER)
+	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.42 * hold, 0.3 * hold, -0.12 * hold)
+	pose["hips_y"] = IDLE_HIPS - 0.2 * step + 0.02 * hop
+	pose["lift"] = 0.24 * hop
+	pose["pitch"] = 16.0 * step * (1.0 - hop)
+	pose["lean"] = -8.0 * step
+	_curl(pose, 26.0 * step + 6.0 * hop)
+	pose["Head"] = Vector3(-8.0 * step, 0.0, 0.0)
+	var edge: Vector3 = Vector3(EDGE, 0.0, -0.1)
+	pose["hand_L"] = deck_point(pose, edge + Vector3(0.0, 0.01, 0.0))
+	pose["grip_L"] = hold
+	_arms(pose, Vector3.ZERO, Vector3(-30.0 * step + 40.0 * hop, 0.0, 28.0 + 40.0 * step), 24.0)
+	var ankle: Vector3 = Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)
+	var deck_l: Vector3 = deck_point(pose, FRONT_FOOT + ankle)
+	var ground: Vector3 = _sole_point(pose, 0.3, 0.0, -0.32)
+	pose["foot_L"] = deck_l.lerp(ground, step) + Vector3(0.0, 0.1 * sin(PI * clampf(t / 0.1, 0.0, 1.0)) * (1.0 - step), 0.0)
+	pose["foot_L"] = (pose["foot_L"] as Vector3) + Vector3(0.0, 0.25 * hop, 0.0)
+	var trail: Vector3 = _sole_point(pose, -0.06, 0.22, 0.34)
+	pose["foot_R"] = deck_point(pose, BACK_FOOT + ankle).lerp(trail, hold) + Vector3(0.0, 0.2 * hop, 0.0)
+	pose["fpitch_R"] = -28.0 * hold
+	pose["feet_on_board"] = 1.0 - 0.9 * maxf(step, hold)
+	pose["toe_L"] = lerpf(FRONT_TOE, 60.0, step)
+
+
+## No comply (anim "no_comply", about 0.6 s): the front foot steps off over the nose onto the ground and takes
+## the weight, the back foot pops the tail so the board flips up level in front of the rider, then the front foot
+## hops back up and onto it.
+static func _pose_no_comply(pose: Dictionary, t: float) -> void:
+	var step: float = _smooth(t / 0.1) * (1.0 - _smooth((t - 0.36) / 0.1))
+	var pop: float = _smooth((t - 0.1) / 0.06)
+	var level: float = _smooth((t - 0.16) / 0.14)
+	var rise: float = pop * (1.0 - _smooth((t - 0.42) / 0.12))
+	var pitch: float = 32.0 * pop * (1.0 - level)
+	_board_turn(pose, Vector3(pitch, 0.0, 0.0), TAIL_TIP)
+	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.0, 0.26 * rise, -0.05 * rise)
+	var snap: float = sin(PI * clampf((t - 0.08) / 0.14, 0.0, 1.0))
+	pose["hips_y"] = IDLE_HIPS - 0.2 * step * (1.0 - pop) - 0.07 * step * pop + 0.02 * snap
+	pose["pitch"] = 12.0 * step
+	pose["lean"] = -6.0 * step
+	_curl(pose, 16.0 * step + 8.0 * rise)
+	pose["Head"] = Vector3(-10.0 * step, 0.0, 0.0)
+	_arms(pose, Vector3(40.0 * step - 20.0 * snap, 0.0, -20.0 - 20.0 * step),
+			Vector3(-20.0 * step + 25.0 * snap, 0.0, 22.0 + 50.0 * snap), 24.0)
+	var ankle: Vector3 = Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)
+	var deck_l: Vector3 = deck_point(pose, FRONT_FOOT + ankle)
+	var ground: Vector3 = _sole_point(pose, 0.26, 0.0, -0.62)
+	var onto: float = _smooth((t - 0.38) / 0.14)  ## back up onto the deck
+	var foot: Vector3 = deck_l.lerp(ground, step)
+	pose["foot_L"] = foot + Vector3(0.0, 0.12 * sin(PI * clampf(t / 0.1, 0.0, 1.0)) * (1.0 - step) + 0.1 * sin(PI * onto), 0.0)
+	pose["foot_R"] = deck_point(pose, BACK_FOOT + Vector3(0.0, 0.0, 0.07 * (1.0 - level)) + ankle)
+	pose["feet_on_board"] = 1.0 - 0.8 * step
+	pose["toe_L"] = lerpf(FRONT_TOE, 70.0, step)
+
+
+## Caveman (anim "caveman", about 0.55 s): a running jump with the board held up in the back hand, then thrown
+## down ahead and landed on. The run eases into the ride stance as the board leaves the hand and drops under the feet.
+static func _pose_caveman(pose: Dictionary, t: float, speed: float, phase: float) -> void:
+	var run: Dictionary = _blank()
+	_pose_walk(run, phase, maxf(speed, 4.5))
+	_carry_board(run, 0.0, phase, 0.0)
+	run["board_pos"] = (run["board_pos"] as Vector3) + Vector3(0.0, 0.3, 0.0)  ## held up high for the jump
+	var jump: float = _smooth(t / 0.12)
+	var throw: float = _smooth((t - 0.16) / 0.2)
+	var land: Dictionary = _blank()
+	_pose_air(land, 0.2, 0.7)
+	_arms(land, Vector3(20.0, 0.0, -60.0), Vector3(-10.0, 0.0, 60.0), 20.0)
+	var out: Dictionary = _blend(run, land, throw)
+	var hump: float = sin(PI * clampf((t - 0.04) / 0.5, 0.0, 1.0))
+	out["lift"] = lerpf(float(run["lift"]), 0.0, throw) + 0.3 * hump * (1.0 - throw * 0.5)
+	out["board_pos"] = (out["board_pos"] as Vector3) + Vector3(0.0, 0.0, -0.3 * sin(PI * throw))
+	out["grip_R"] = float(run["grip_R"]) * (1.0 - _smooth((t - 0.2) / 0.08))
+	# Knees tucked up through the jump, then reaching for the board.
+	for side: String in ["L", "R"]:
+		out["foot_" + side] = (out["foot_" + side] as Vector3) + Vector3(0.0, 0.14 * jump * (1.0 - throw), 0.0)
+	for key: String in out.keys():
+		pose[key] = out[key]
+
+
+## Acid drop (anim "acid_drop", about 0.55 s): off the lip of a drop, tucked small with the knees up and the
+## arms forward, the board following the fall nose down then levelling out to meet the transition, and the knees
+## taking the hit as it lands.
+static func _pose_acid_drop(pose: Dictionary, t: float, ext: float = 0.0) -> void:
+	var tuck: float = _smooth(t / 0.12) * (1.0 - 0.6 * _smooth((t - 0.2) / 0.2))
+	var level: float = _smooth((t - 0.06) / 0.3)
+	_board_turn(pose, Vector3(-16.0 * _smooth(t / 0.08) * (1.0 - level), 0.0, 0.0), DECK_CENTER)
+	pose["board_pos"] = (pose["board_pos"] as Vector3) + Vector3(0.0, 0.16 * tuck * (1.0 - 0.8 * ext), 0.0)
+	var absorb: float = land_absorb(maxf(t - 0.34, 0.0), 0.6) if t > 0.34 else 0.0
+	pose["hips_y"] = IDLE_HIPS - 0.14 * tuck - CROUCH_DROP * absorb
+	pose["pitch"] = 8.0 * tuck * (1.0 - level) + 3.0 * absorb
+	_curl(pose, 20.0 * tuck + 12.0 * absorb)
+	pose["Head"] = Vector3(-8.0 * tuck * (1.0 - level), 0.0, 0.0)
+	_arms(pose, Vector3(35.0 * tuck + 10.0 * absorb, 0.0, -35.0 - 25.0 * absorb), Vector3(-5.0 * tuck, 0.0, 35.0 + 30.0 * absorb), 28.0)
+	_feet_on_board(pose)
 
 
 static func _board_turn(pose: Dictionary, euler_deg: Vector3, pivot: Vector3) -> void:

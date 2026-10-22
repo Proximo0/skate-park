@@ -4,8 +4,9 @@ extends TestCase
 
 const BRIEF_ANIMS: PackedStringArray = [
 	"idle_ride", "push", "crouch", "ollie", "air", "land", "revert", "bail_fall", "bail_getup", "wallride",
-	"manual_manual", "manual_nose_manual",
+	"manual_manual", "manual_nose_manual", "wallplant", "boneless", "no_comply", "caveman", "acid_drop",
 ]
+const MOVE_ANIMS: PackedStringArray = ["wallplant", "boneless", "no_comply", "caveman", "acid_drop"]
 const ANKLE_ON_DECK: float = PlaceholderSkater.DECK_TOP_Y + PlaceholderSkater.ANKLE_HEIGHT
 
 
@@ -353,3 +354,58 @@ func test_powerslide_turns_the_board_across_and_counter_rotates_the_shoulders() 
 	assert_true(float(p["body_yaw"]) < float(p["feet_yaw"]), "the body turns less than the feet")
 	assert_true((p["Chest"] as Vector3).y < -10.0, "shoulders counter-rotate")
 	assert_true(float(p["hips_y"]) < SkaterPoser.IDLE_HIPS - 0.1, "low stance")
+
+
+func test_thug2_move_poses_are_full_and_finite() -> void:
+	for a: String in MOVE_ANIMS:
+		for sw: bool in [false, true]:
+			for t: float in [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 1.0]:
+				var pose: Dictionary = SkaterPoser.pose_for(a, t, 0.3, 0.0, sw, 4.0, 0.3, {"vy": -3.0})
+				assert_true(_has_full_pose(pose), "full pose for %s at %f" % [a, t])
+				for k: String in ["foot_L", "foot_R", "board_pos", "board_rot"]:
+					assert_true((pose[k] as Vector3).is_finite(), "%s finite for %s at %f" % [k, a, t])
+
+
+func test_thug2_moves_end_back_on_the_deck() -> void:
+	for a: String in ["wallplant", "boneless", "no_comply", "acid_drop"]:
+		var end: Dictionary = SkaterPoser.pose_for(a, 1.5, 0.0, 0.0)
+		assert_near((end["foot_L"] as Vector3).y, ANKLE_ON_DECK + float((end["board_pos"] as Vector3).y), 0.001, a + " front foot on the deck at the end")
+		assert_near((end["foot_R"] as Vector3).y, ANKLE_ON_DECK + float((end["board_pos"] as Vector3).y), 0.001, a + " back foot on the deck at the end")
+		assert_near(float(end["grip_L"]) + float(end["grip_R"]), 0.0, 0.001, a + " hands free at the end")
+
+
+func test_wallplant_puts_a_foot_on_the_wall() -> void:
+	var mid: Dictionary = SkaterPoser.pose_for("wallplant", 0.2, 0.0, 0.0)
+	var foot: Vector3 = mid["foot_L"]
+	assert_true(foot.z < -0.45, "front foot reaches ahead of the nose to the wall")
+	assert_true(foot.y > 0.4, "planted well above the ground")
+	assert_true(float(mid["fpitch_L"]) > 60.0, "sole turned flat to the wall")
+	assert_true((mid["foot_R"] as Vector3).y > ANKLE_ON_DECK and (mid["foot_R"] as Vector3).y < 0.5, "back foot rides the lifted board")
+
+
+func test_boneless_plants_the_front_foot_and_grabs_the_board() -> void:
+	var mid: Dictionary = SkaterPoser.pose_for("boneless", 0.25, 0.0, 0.0)
+	assert_near((mid["foot_L"] as Vector3).y, PlaceholderSkater.ANKLE_HEIGHT, 0.001, "front foot on the ground")
+	assert_near(float(mid["grip_L"]), 1.0, 0.01, "front hand holds the board")
+	assert_true((mid["board_pos"] as Vector3).y > 0.2, "board lifted into the hand")
+
+
+func test_no_comply_front_foot_steps_off_ahead_of_the_nose() -> void:
+	var mid: Dictionary = SkaterPoser.pose_for("no_comply", 0.25, 0.0, 0.0)
+	assert_near((mid["foot_L"] as Vector3).y, PlaceholderSkater.ANKLE_HEIGHT, 0.001, "front foot on the ground")
+	assert_true((mid["foot_L"] as Vector3).z < -0.5, "past the nose")
+	var pop: Dictionary = SkaterPoser.pose_for("no_comply", 0.17, 0.0, 0.0)
+	assert_true((pop["board_rot"] as Vector3).x > 10.0, "tail snapped, nose up")
+
+
+func test_caveman_throws_the_board_down() -> void:
+	assert_near(float(SkaterPoser.pose_for("caveman", 0.0, 0.0, 0.0, false, 4.5)["grip_R"]), 1.0, 0.01, "board in hand at the start")
+	assert_near(float(SkaterPoser.pose_for("caveman", 0.6, 0.0, 0.0, false, 4.5)["grip_R"]), 0.0, 0.01, "board thrown by the end")
+
+
+func test_acid_drop_tucks_and_levels_the_board() -> void:
+	var early: Dictionary = SkaterPoser.pose_for("acid_drop", 0.08, 0.0, 0.0)
+	var late: Dictionary = SkaterPoser.pose_for("acid_drop", 0.4, 0.0, 0.0)
+	assert_true((early["board_rot"] as Vector3).x < -5.0, "board follows the fall nose down")
+	assert_true(absf((late["board_rot"] as Vector3).x) < 1.0, "levelled out to the transition")
+	assert_true(float(early["hips_y"]) < SkaterPoser.IDLE_HIPS - 0.08, "tucked, knees up")
