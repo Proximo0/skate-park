@@ -25,6 +25,18 @@ const SKID_PITCH: Vector2 = Vector2(0.85, 1.25)
 const SKID_FADE_IN: float = 40.0  ## dB per second the skid swells at (an ease, so it never clicks)
 const SKID_FADE_OUT: float = 120.0
 const WOOD_GRIND_WORDS: PackedStringArray = ["coping", "wood", "plank", "slat"]
+## Skater event name -> [stream, pitch, volume dB] for the one-shots of the newer moves (see event_sound).
+const EVENT_SOUNDS: Dictionary = {
+	"grind_switch": ["grind_switch", 1.0, -4.0],
+	"manual_switch": ["manual_switch", 1.0, -6.0],
+	"manual_pivot": ["manual_pivot", 1.0, -6.0],
+	"manual_revert": ["revert_whoosh", 1.1, -8.0],
+	"flatland": ["flatland", 1.0, -6.0],
+	"lip_pop": ["lip_pop", 1.0, -3.0],
+	"lip_revert": ["revert_whoosh", 0.9, -4.0],
+	"wall_revert": ["revert_whoosh", 0.8, -4.0],
+}
+const LINK_SOUND: Array = ["link", 1.0, -3.0]
 const OLLIE_FRAMES: int = 3  ## frames to wait for anim "ollie" after the state flips to AIR
 
 var _skater: Skater
@@ -38,6 +50,7 @@ var _skid_sand: AudioStreamPlayer3D
 var _skid_on: bool = false
 var _skid_db: float = -80.0
 var _ambience: AudioStreamPlayer
+var _music: MusicPlayer = null
 var _surface: String = "concrete"  ## what the wheels are on: "concrete", "wood" (metal only ever applies to a grind)
 var _grind_surface: String = "metal"
 var _surface_tick: int = 0
@@ -66,6 +79,13 @@ func _build_streams() -> void:
 		"land_heavy": SfxSynth.land_heavy(),
 		"skid": SfxSynth.skid_loop(),
 		"skid_sand": SfxSynth.skid_sand_loop(),
+		"grind_switch": SfxSynth.grind_switch(),
+		"manual_switch": SfxSynth.manual_switch(),
+		"manual_pivot": SfxSynth.manual_pivot(),
+		"flatland": SfxSynth.flatland(),
+		"lip_pop": SfxSynth.lip_pop(),
+		"revert_whoosh": SfxSynth.revert_whoosh(),
+		"link": SfxSynth.link(),
 	}
 
 
@@ -115,6 +135,13 @@ static func land_shape(impact: float) -> Array:
 	return ["land_heavy" if heavy else "land", lerpf(1.2, 0.8, k), lerpf(-16.0, 0.0, k)]
 
 
+## The one-shot ([stream, pitch, dB]) a skater event name plays, [] when it has none. "link:<id>" is a rail transfer. Pure.
+static func event_sound(event: String) -> Array:
+	if event.begins_with("link:"):
+		return LINK_SOUND
+	return EVENT_SOUNDS.get(event, [])
+
+
 ## Ambience bed for a level id ("crowd" when unknown). Pure.
 static func ambience_for(level_id: String) -> String:
 	return str(LEVEL_AMBIENCE.get(level_id, "crowd"))
@@ -142,6 +169,35 @@ func bind(skater: Skater) -> void:
 	_connect(skater.bailed, _on_bailed)
 	_connect(skater.combo_landed, _on_combo_landed)
 	_connect(skater.powerslide_changed, _on_powerslide_changed)
+	_connect(skater.physics_ticked, _on_tick)
+	_connect(skater.bailed, _duck_music)
+	_start_music()
+
+
+func _on_tick(frame: Dictionary) -> void:
+	for e: Variant in frame.get("events", []):
+		var snd: Array = event_sound(str(e))
+		if not snd.is_empty():
+			_play_once(str(snd[0]), float(snd[1]), float(snd[2]))
+
+
+## Background music for the level: silent in scripted runs and when the volume setting is off.
+func _start_music() -> void:
+	if Flags.is_scripted_run() or _music != null:
+		return
+	var host: Node = get_parent()
+	var lvl: String = ""
+	if host != null and host.get("level") != null:
+		lvl = str(host.get("level").get("level_id"))
+	_music = MusicPlayer.new()
+	_music.name = "Music"
+	_music.level_id = lvl
+	add_child(_music)
+
+
+func _duck_music() -> void:
+	if _music != null:
+		_music.duck(1.2)
 
 
 func _start_ambience() -> void:

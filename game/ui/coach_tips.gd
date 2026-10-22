@@ -10,10 +10,14 @@ const TIPS: Dictionary = {
 	"acid_drop": ["ACID DROP", "Revert in the air over a bank or quarter that falls away to drop in with speed."],
 	"powerslide": ["POWERSLIDE", "Revert while rolling to skid sideways and scrub speed."],
 	"nollie": ["NOLLIE", "Nose-first stance. Tap Nollie again to switch back."],
-	"grind_switch": ["GRIND SWITCH", "Ollie off a rail, then Grind at the next one to link grinds in one combo."],
+	"grind_switch": ["GRIND LINK", "Ollie off a rail, then Grind at the next one to link grinds in one combo."],
+	"rail_switch": ["SWITCH GRINDS", "On a rail, push the stick and press Grind to switch to the other grind. Hold Ollie to charge the pop."],
+	"manual_switch": ["MANUAL TRICKS", "In a manual, flick the stick to switch, spin to pivot, or Grab + stick for flatland."],
+	"manual_revert": ["MANUAL REVERT", "Revert in a manual to roll out of it with the combo still open."],
+	"lip_trick": ["LIP TRICKS", "On a lip or a wall, Flip, Grab or Revert to pop out with that trick."],
 }
 ## The order "TRY" nudges teach the moves the player has not found yet.
-const NUDGE_ORDER: PackedStringArray = ["boneless", "powerslide", "nollie", "grind_switch", "wallplant", "acid_drop"]
+const NUDGE_ORDER: PackedStringArray = ["boneless", "powerslide", "nollie", "grind_switch", "wallplant", "acid_drop", "rail_switch", "manual_switch", "lip_trick"]
 const NUDGE_EVERY: int = 3  ## landed combos between nudges
 const MIN_GAP: float = 18.0  ## s between tips
 const GRIND_LINK_WINDOW: float = 2.0  ## s between two grinds that counts as a link
@@ -54,6 +58,7 @@ func bind(skater: Skater, s: ProgressStore = null) -> void:
 	skater.combo_landed.connect(_on_combo_landed)
 	skater.powerslide_changed.connect(func(on: bool) -> void: if on: _offer("powerslide", false))
 	skater.nollie_changed.connect(func(on: bool) -> void: if on: _offer("nollie", false))
+	skater.physics_ticked.connect(_on_tick)
 
 
 func _ready() -> void:
@@ -93,6 +98,27 @@ func _process(delta: float) -> void:
 		elif st == SkateState.State.GRIND and _grind_gap > 0.0:
 			_offer("grind_switch", false)
 		_prev_state = st
+
+
+## The tip a skater event teaches ("" = none): the first time the player does the new move, it is named.
+static func tip_for_event(event: String) -> String:
+	match event:
+		"grind_switch":
+			return "rail_switch"
+		"manual_switch", "manual_pivot", "flatland":
+			return "manual_switch"
+		"manual_revert":
+			return "manual_revert"
+		"lip_pop", "lip_revert", "wall_revert":
+			return "lip_trick"
+	return ""
+
+
+func _on_tick(frame: Dictionary) -> void:
+	for e: Variant in frame.get("events", []):
+		var id: String = tip_for_event(str(e))
+		if id != "":
+			_offer(id, false)
 
 
 func _on_trick(trick: Dictionary) -> void:

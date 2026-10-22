@@ -14,6 +14,8 @@ static var bail_injuries: bool = true
 static var cam_distance: int = 1  ## 0 Near, 1 Normal, 2 Far (SkateCamera arm length)
 static var cam_fov: int = 1  ## 0 Narrow, 1 Normal, 2 Wide
 static var cam_shake: bool = true  ## landing weight: the dip and FOV punch
+static var music_volume: int = 50  ## percent, one of MUSIC_STEPS (0 is off)
+const MUSIC_STEPS: Array[int] = [0, 25, 50, 75, 100]
 const CAM_DISTANCE_NAMES: PackedStringArray = ["Near", "Normal", "Far"]
 const CAM_DISTANCE_SCALE: Array[float] = [0.85, 1.0, 1.25]
 const CAM_FOV_NAMES: PackedStringArray = ["Narrow", "Normal", "Wide"]
@@ -40,6 +42,7 @@ static func ensure_loaded() -> void:
 		cam_distance = clampi(int((data as Dictionary).get("cam_distance", 1)), 0, 2)
 		cam_fov = clampi(int((data as Dictionary).get("cam_fov", 1)), 0, 2)
 		cam_shake = bool((data as Dictionary).get("cam_shake", true))
+		music_volume = clampi(int((data as Dictionary).get("music_volume", 50)), 0, 100)
 
 
 static func hair_on() -> bool:
@@ -101,7 +104,7 @@ static func save() -> void:
 	var f: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify({"hair_physics": hair_physics, "body_physics": body_physics, "body_level": body_strength,
-				"bail_injuries": bail_injuries, "cam_distance": cam_distance, "cam_fov": cam_fov, "cam_shake": cam_shake}))
+				"bail_injuries": bail_injuries, "cam_distance": cam_distance, "cam_fov": cam_fov, "cam_shake": cam_shake, "music_volume": music_volume}))
 
 
 static func cam_distance_scale() -> float:
@@ -136,4 +139,24 @@ static func set_cam_fov(level: int) -> void:
 static func set_cam_shake(on: bool) -> void:
 	ensure_loaded()
 	cam_shake = on
+	save()
+
+
+## Music volume as 0..1.
+static func music_scale() -> float:
+	ensure_loaded()
+	return float(music_volume) / 100.0
+
+
+## The next music volume in the Off > 25 > 50 > 75 > 100 > Off cycle (the pause menu's button).
+static func next_music_volume(pct: int) -> int:
+	for step: int in MUSIC_STEPS:
+		if step > pct:
+			return step
+	return 0
+
+
+static func set_music_volume(pct: int) -> void:
+	ensure_loaded()
+	music_volume = clampi(pct, 0, 100)
 	save()

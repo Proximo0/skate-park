@@ -34,6 +34,12 @@ const FAIL_FADE: float = 0.7
 const BANNER_TOP: float = 215.0  ## px (1080 layout) under the score chip, away from the centre readouts
 const TRACK_COLOUR := SkateThemeBuilder.CREAM
 const SPECIAL_GLOW_WIDTH: int = 6
+const TRICK_ALT_Y: PackedFloat32Array = [0.765, 0.30, 0.17]  ## the string's bottom home, then clear spots above the action
+const TRICK_RIDER_HALF_W: float = 0.16  ## screen-width fraction the rider's rect is padded to either side
+const TRICK_TEXT_H: float = 0.14  ## screen-height fraction the trick string covers
+const LINK_X: float = 0.74  ## the LINK flourish sits right of the trick string
+const LINK_SIZE: int = 40
+const LINK_TIME: float = 0.9
 const NOLLIE_X: float = 0.34  ## stance tag: screen fractions, beside the skater's feet and clear of the trick string
 const NOLLIE_Y: float = 0.70
 const NOLLIE_TEXT: String = "NOLLIE"
@@ -87,6 +93,7 @@ var _banner_tween: Tween
 var _banner_queue: PackedStringArray = PackedStringArray()
 var _banner_busy: bool = false
 var _trick_hold_left: float = 0.0
+var _trick_y: float = TRICK_Y  ## where the trick string is right now (eases between the TRICK_ALT_Y spots)
 var _trick_shown: bool = false
 var _land_result: String = "clean"
 var _land_points: int = -1
@@ -208,6 +215,8 @@ func _connect_skater(s: Skater) -> void:
 		s.ramp_snap_missed.connect(_on_ramp_snap_missed)
 	if not s.nollie_changed.is_connected(_on_nollie_changed):
 		s.nollie_changed.connect(_on_nollie_changed)
+	if not s.physics_ticked.is_connected(_on_tick):
+		s.physics_ticked.connect(_on_tick)
 	_set_nollie_tag(s.nollie, false)
 
 
@@ -226,6 +235,8 @@ func _disconnect_skater(s: Skater) -> void:
 		s.ramp_snap_missed.disconnect(_on_ramp_snap_missed)
 	if s.nollie_changed.is_connected(_on_nollie_changed):
 		s.nollie_changed.disconnect(_on_nollie_changed)
+	if s.physics_ticked.is_connected(_on_tick):
+		s.physics_ticked.disconnect(_on_tick)
 
 
 # --- pure helpers (unit tested) -----------------------------------------------------------------------
@@ -291,6 +302,37 @@ func _process(delta: float) -> void:
 	_update_special()
 	_update_balance()
 	_update_trick_hold(delta)
+	_update_trick_anchor(delta)
+
+
+## Pure: the first spot of `spots` (screen-height fractions, text centre) whose text band stays clear of the rider's
+## band [rider_top, rider_bottom] (also fractions), padded. The last spot when none is clear.
+static func trick_spot(spots: PackedFloat32Array, rider_top: float, rider_bottom: float, text_h: float) -> float:
+	for y: float in spots:
+		if y + text_h * 0.5 < rider_top - 0.02 or y - text_h * 0.5 > rider_bottom - 0.03:
+			return y
+	return spots[spots.size() - 1]
+
+
+## Keeps the trick string off the rider: when the rider (projected to the screen) is in the string's band, the string
+## moves up to a clear spot (vert airs frame the rider low and tall).
+func _update_trick_anchor(delta: float) -> void:
+	if not _trick_shown or _trick_pop == null:
+		return
+	var cam: Camera3D = get_viewport().get_camera_3d()
+	var vs: Vector2 = get_viewport().get_visible_rect().size
+	var target: float = TRICK_Y
+	if cam != null and vs.y > 0.0 and _skater.is_inside_tree():
+		var p: Vector3 = _skater.global_position
+		var top: Vector3 = p + Vector3.UP * 1.9
+		if not (cam.is_position_behind(p) or cam.is_position_behind(top)):
+			var a: Vector2 = cam.unproject_position(top) / vs
+			var b: Vector2 = cam.unproject_position(p) / vs
+			if absf(a.x - 0.5) < TRICK_RIDER_HALF_W + 0.2:
+				target = trick_spot(TRICK_ALT_Y, minf(a.y, b.y), maxf(a.y, b.y), TRICK_TEXT_H)
+	_trick_y = lerpf(_trick_y, target, 1.0 - exp(-14.0 * delta))
+	_trick_pop.anchor_top = _trick_y
+	_trick_pop.anchor_bottom = _trick_y
 
 
 ## The big trick text holds while the skater is still in the air, then fades TRICK_HOLD after touchdown.
@@ -633,6 +675,28 @@ func _build_nollie_tag() -> void:
 	_root.add_child(_nollie_tag)
 
 
+## Skater events the HUD reacts to: a rail transfer ("link:<id>") flashes a LINK chip beside the trick string.
+func _on_tick(frame: Dictionary) -> void:
+	for e: Variant in frame.get("events", []):
+		if str(e).begins_with("link:"):
+			_flash_link()
+
+
+## A small teal LINK tag that kicks in beside the trick string and slides off up and to the right. Never over the rider.
+func _flash_link() -> void:
+	var lbl: AnimeText = AnimeText.new("LINK!", LINK_SIZE, UiStyle.LIME)
+	lbl.tilt_degrees = 6.0
+	lbl.impact_lines = false
+	_anchor_point(lbl, LINK_X, _trick_y)
+	_fx.add_child(lbl)
+	lbl.pop("LINK!")
+	var move := lbl.create_tween().set_parallel(true)
+	move.tween_property(lbl, "offset_top", -60.0, LINK_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	move.tween_property(lbl, "offset_bottom", -60.0, LINK_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	move.tween_property(lbl, "modulate:a", 0.0, LINK_TIME * 0.45).set_delay(LINK_TIME * 0.55)
+	move.finished.connect(lbl.queue_free)
+
+
 func _on_nollie_changed(on: bool) -> void:
 	_set_nollie_tag(on, true)
 
@@ -795,6 +859,7 @@ func _pop_trick(text: String) -> void:
 	_trick_pop.pop(_pop_text)
 	_trick_shown = true
 	_trick_hold_left = TRICK_HOLD
+	_trick_y = TRICK_Y
 
 
 ## A word that floats up from the combo area and fades. Wobbly text rocks side to side.

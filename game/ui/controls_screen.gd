@@ -9,11 +9,12 @@ signal closed
 const CTRL_ROW_FONT: int = 28
 const CTRL_BUTTON_INK := Color("#C8382B")  ## coral deep enough to read on cream
 const CTRL_KEY_INK := Color("#00758F")  ## teal deep enough to read on cream
-const CTRL_BACK_MIN := Vector2(320, 72)
+const CTRL_TIP_FONT: int = 23
+const CTRL_BACK_MIN := Vector2(320, 60)
 const CTRL_COLUMN_GAP := 48
 const CTRL_NAME_MIN := 200
 const CTRL_BUTTON_MIN := 330
-const CTRL_TIP_WIDTH := 580  ## three equal tip cards across the screen
+const CTRL_TIP_WIDTH := 400  ## three equal tip cards across the screen
 
 ## [heading, [[label, action], ...]]. "move" stands for the four move_* actions. Balance rides the move stick.
 ## Pick shows the ollie binding (Cross, Space): the menus accept it as well. Chorded actions (Controls.CHORDS) show
@@ -28,10 +29,13 @@ const CTRL_SECTIONS := [
 const CTRL_TIPS := [
 	"Hold Cross to crouch, let go to ollie.",
 	"Up then Down for a manual. Balance on the back wheels.",
-	"Get close to a rail or ledge and press Triangle to grind.",
+	"Triangle near a rail to grind. Ollie to the next rail and Triangle to link.",
 	"Square flips, Circle grabs. Full special meter: Down-Up + Square.",
 	"Up, Up + Ollie: boneless. Up + Ollie: no comply. Ollie at a wall: wallplant.",
 	"Revert while rolling to powerslide, or in the air over a bank to acid drop.",
+	"On a rail: Triangle + stick switches the grind. Hold Ollie to charge the pop.",
+	"In a manual: flick the stick to switch, spin to pivot, Revert to roll out, Grab + stick for flatland.",
+	"On a wall or a lip: Flip, Grab or Revert pops you out with that trick.",
 ]
 
 var _back: Button
@@ -143,23 +147,24 @@ func _row(text: String, action: String) -> HBoxContainer:
 
 func _tips() -> VBoxContainer:
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
+	box.add_theme_constant_override("separation", 4)
 	box.add_child(UiStyle.label("HOW TO", UiStyle.SIZE_BODY, UiStyle.SUNSHINE))
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 24)
-	grid.add_theme_constant_override("v_separation", 16)
+	grid.add_theme_constant_override("v_separation", 8)
 	box.add_child(grid)
 	for i: int in CTRL_TIPS.size():
 		var card: PanelContainer = MenuKit.panel(SkateThemeBuilder.PNL_TEAL)
 		card.custom_minimum_size = Vector2(CTRL_TIP_WIDTH, 0)
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid.add_child(card)
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 16)
 		card.add_child(row)
 		row.add_child(UiStyle.label(str(i + 1), UiStyle.SIZE_BIG, UiStyle.WHITE))
 		var tip_text: String = CTRL_TIPS[i]
-		var tip := MenuKit.text(tip_text, CTRL_ROW_FONT)
+		var tip := MenuKit.text(tip_text, CTRL_TIP_FONT)
 		tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(tip)

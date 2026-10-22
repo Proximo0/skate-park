@@ -221,6 +221,72 @@ static func combo_land() -> AudioStreamWAV:
 	return _to_stream(out, false)
 
 
+## Grind switch: a metallic tick and a quick upward chirp as the board shifts onto the other trucks, about 0.14 s.
+static func grind_switch() -> AudioStreamWAV:
+	var out := _buffer(0.14)
+	_add_tone(out, 0.0, 0.12, 900.0, 1500.0, 0.55, 0.04, 0.3)
+	_add_tone(out, 0.0, 0.05, 2400.0, 2100.0, 0.3, 0.012)
+	var rng := _rng(601)
+	_add_noise(out, 0.0, 0.02, 0.6, 0.005, rng, 6000.0)
+	return _to_stream(out, false)
+
+
+## Manual switch: two soft wheel clicks, one low and one a step up, about 0.12 s.
+static func manual_switch() -> AudioStreamWAV:
+	var out := _buffer(0.12)
+	_add_tone(out, 0.0, 0.05, 300.0, 240.0, 0.7, 0.02)
+	_add_tone(out, 0.05, 0.07, 420.0, 340.0, 0.7, 0.025)
+	var rng := _rng(602)
+	_add_noise(out, 0.0, 0.01, 0.3, 0.003, rng, 3000.0)
+	_add_noise(out, 0.05, 0.01, 0.3, 0.003, rng, 3000.0)
+	return _to_stream(out, false)
+
+
+## Manual pivot: a spin whoosh (noise that swells and fades) with a wheel chirp, about 0.3 s.
+static func manual_pivot() -> AudioStreamWAV:
+	var out := _buffer(0.3)
+	var rng := _rng(603)
+	_add_noise(out, 0.0, 0.3, 0.9, 0.09, rng, 1800.0)
+	_add_tone(out, 0.0, 0.25, 500.0, 900.0, 0.3, 0.1)
+	return _to_stream(out, false)
+
+
+## Flatland: a bright two-note blip (E6 up to A6), cheerful and short, about 0.2 s.
+static func flatland() -> AudioStreamWAV:
+	var out := _buffer(0.2)
+	_add_tone(out, 0.0, 0.1, 1318.5, 1318.5, 0.7, 0.05, 0.2)
+	_add_tone(out, 0.07, 0.13, 1760.0, 1760.0, 0.8, 0.06, 0.2)
+	return _to_stream(out, false)
+
+
+## Pop out of a lip stall: a hollow coping knock then a pop, about 0.18 s.
+static func lip_pop() -> AudioStreamWAV:
+	var out := _buffer(0.18)
+	_add_tone(out, 0.0, 0.1, 190.0, 110.0, 0.9, 0.04, 0.3)
+	_add_tone(out, 0.03, 0.1, 520.0, 700.0, 0.6, 0.03, 0.2)
+	var rng := _rng(605)
+	_add_noise(out, 0.0, 0.015, 0.5, 0.004, rng, 4500.0)
+	return _to_stream(out, false)
+
+
+## Revert off a lip or a wall: a short cloth-and-wheels whoosh with a clack, about 0.26 s.
+static func revert_whoosh() -> AudioStreamWAV:
+	var out := _buffer(0.26)
+	var rng := _rng(606)
+	_add_noise(out, 0.0, 0.26, 0.8, 0.07, rng, 2400.0)
+	_add_tone(out, 0.12, 0.1, 240.0, 160.0, 0.6, 0.04)
+	return _to_stream(out, false)
+
+
+## Rail transfer / link: a quick bright rising sparkle (C6 E6 G6 C7), about 0.3 s.
+static func link() -> AudioStreamWAV:
+	var out := _buffer(0.32)
+	var notes: Array[float] = [1046.5, 1318.5, 1568.0, 2093.0]
+	for i: int in notes.size():
+		_add_tone(out, 0.045 * float(i), 0.2, notes[i], notes[i], 0.6, 0.07, 0.15)
+	return _to_stream(out, false)
+
+
 ## Menu move: a short soft tick.
 static func ui_move() -> AudioStreamWAV:
 	var out := _buffer(0.04)

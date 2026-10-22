@@ -130,9 +130,18 @@ func _build() -> void:
 	cam_shake_btn.pressed.connect(_on_cam_shake.bind(cam_shake_btn))
 	cam_row.add_child(cam_shake_btn)
 
-	_controls_button = _pause_button("Controls", SkateThemeBuilder.BTN_TEAL)
+	# Controls and the music volume share a row, for the same reason.
+	var last_row := HBoxContainer.new()
+	last_row.name = "ControlsRow"
+	last_row.add_theme_constant_override("separation", 6)
+	col.add_child(last_row)
+	_controls_button = _pause_button("Controls", SkateThemeBuilder.BTN_TEAL, Vector2(PAUSE_TOGGLE_MIN.x * 0.5 - 3.0, 64), 28)
 	_controls_button.pressed.connect(_on_controls_pressed)
-	col.add_child(_controls_button)
+	last_row.add_child(_controls_button)
+	var music_btn := _pause_button(_music_text(), SkateThemeBuilder.BTN_TEAL, Vector2(PAUSE_TOGGLE_MIN.x * 0.5 - 3.0, 64), 24)
+	music_btn.name = "MusicVolume"
+	music_btn.pressed.connect(_on_music_volume.bind(music_btn))
+	last_row.add_child(music_btn)
 
 	var quit := _pause_button("Quit to Title", SkateThemeBuilder.BTN_CREAM)
 	quit.pressed.connect(_on_quit_pressed)
@@ -141,7 +150,7 @@ func _build() -> void:
 	# Up and down wrap around the buttons.
 	var buttons: Array[Button] = [_resume_button, restart, _level_button]
 	buttons.append_array(drops)
-	buttons.append_array([hair_btn, body_btn, injury_btn, cam_dist_btn, cam_fov_btn, cam_shake_btn, _controls_button, quit])
+	buttons.append_array([hair_btn, body_btn, injury_btn, cam_dist_btn, cam_fov_btn, cam_shake_btn, _controls_button, music_btn, quit])
 	var n: int = buttons.size()
 	for i: int in n:
 		var b: Button = buttons[i]
@@ -250,6 +259,16 @@ func _on_injuries_toggle(b: Button) -> void:
 	var on: bool = not GameSettings.injuries_on()
 	GameSettings.set_injuries(on)
 	_set_toggle_text(b, "Bail injuries", on)
+
+
+static func _music_text() -> String:
+	var v: int = GameSettings.music_volume
+	return "Music: Off" if v <= 0 else "Music: %d%%" % v
+
+
+func _on_music_volume(b: Button) -> void:
+	GameSettings.set_music_volume(GameSettings.next_music_volume(GameSettings.music_volume))
+	b.text = _music_text()
 
 
 func _on_cam_distance(b: Button) -> void:
