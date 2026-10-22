@@ -155,7 +155,8 @@ func _terrace() -> void:
 		_bt.box(Vector3(s * 26.3, t - 0.05, r.end.y - 0.15), Vector3(1.4, 0.1, 0.34), DtKit.GRANITE)
 		# the side drop: a zone off each side edge, and one on the plaza below
 		DtKit.zone(_rails, "terrace_edge", Vector3(s * 27.0 - 0.6 if s > 0.0 else -27.6, t - 0.2, r.position.y + 1.0), Vector3(1.2, 2.2, r.size.y - 1.0))
-		DtKit.zone(_rails, "terrace_floor", Vector3(s * 33.0 - 3.0, DtPlan.P, r.position.y - 1.0), Vector3(6.0, 1.6, r.size.y + 4.0))
+		# 15 m deep (x 30..45): a fast ollie off the 2.5 m edge (13 to 15 m/s since the roll_friction/bend changes) lands 9 to 11 m out and used to overshoot the old 6 m zone
+		DtKit.zone(_rails, "terrace_floor", Vector3(30.0 if s > 0.0 else -45.0, DtPlan.P, r.position.y - 1.0), Vector3(15.0, 1.6, r.size.y + 4.0))
 	# planters with trees and flag poles on the terrace
 	for s: float in [-1.0, 1.0]:
 		tree_spots.append(DtKit.planter(_bt, _sb, _rails, Vector3(s * 20.0, 0.0, -19.5), 3.2, 3.2, 0.6, t))
