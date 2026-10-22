@@ -1,0 +1,29 @@
+{
+	"gaps": [
+		{"id": "front_steps", "name": "Front Steps", "points": 500, "start_zone": "front_top", "end_zone": "front_bottom", "require": "AIR", "max_time": 3.0},
+		{"id": "front_rail", "name": "Front Rail", "points": 600, "start_zone": "front_top", "end_zone": "front_bottom", "require": "GRIND", "max_time": 6.0},
+		{"id": "back_steps", "name": "Back Door Eight", "points": 500, "start_zone": "back_top", "end_zone": "back_bottom", "require": "AIR", "max_time": 3.0},
+		{"id": "back_rail", "name": "Back Door Rail", "points": 600, "start_zone": "back_top", "end_zone": "back_bottom", "require": "GRIND", "max_time": 6.0},
+		{"id": "leap_of_faith", "name": "Leap of Faith", "points": 2500, "start_zone": "leap_top", "end_zone": "leap_land", "require": "AIR", "max_time": 4.0},
+		{"id": "double_kink", "name": "Double Kink", "points": 1500, "start_zone": "dbl_rail_top", "end_zone": "dbl_rail_end", "require": "GRIND", "max_time": 8.0},
+		{"id": "ada_rail", "name": "ADA Rail", "points": 900, "start_zone": "ada_top", "end_zone": "ada_bottom", "require": "GRIND", "max_time": 10.0},
+		{"id": "balcony_rail", "name": "Hall Pass Rail", "points": 1000, "start_zone": "balc_w", "end_zone": "balc_e", "require": "GRIND", "max_time": 14.0},
+		{"id": "lunch_roof", "name": "Lunch Roof", "points": 750, "start_zone": "lunch_kick", "end_zone": "lunch_roof", "require": "AIR", "max_time": 3.0},
+		{"id": "planter_hop", "name": "Planter Hop", "points": 250, "start_zone": "planter_a", "end_zone": "planter_b", "require": "AIR", "max_time": 3.0},
+		{"id": "planter_hop_2", "name": "Planter Hop Again", "points": 250, "start_zone": "planter_b", "end_zone": "planter_c", "require": "AIR", "max_time": 3.0},
+		{"id": "detention_manual", "name": "Detention Manual", "points": 400, "start_zone": "pad_a", "end_zone": "pad_b", "require": "MANUAL", "max_time": 8.0},
+		{"id": "fountain_hop", "name": "Fountain Hop", "points": 800, "start_zone": "fount_w", "end_zone": "fount_mid", "require": "AIR", "max_time": 3.0},
+		{"id": "rim_job", "name": "Rim Ride", "points": 500, "start_zone": "fount_w", "end_zone": "fount_e", "require": "GRIND", "max_time": 8.0},
+		{"id": "bleacher_bomb", "name": "Bleacher Bomb", "points": 750, "start_zone": "edge_bleach", "end_zone": "field_land", "require": "AIR", "max_time": 4.0},
+		{"id": "bank_drop", "name": "Bank Drop", "points": 500, "start_zone": "edge_bank", "end_zone": "field_land", "require": "AIR", "max_time": 4.0},
+		{"id": "west_bank_drop", "name": "Back Forty Drop", "points": 500, "start_zone": "edge_bank_w", "end_zone": "field_land", "require": "AIR", "max_time": 4.0},
+		{"id": "field_steps", "name": "Twelve to the Field", "points": 900, "start_zone": "fstairs_top", "end_zone": "fstairs_bottom", "require": "AIR", "max_time": 3.5},
+		{"id": "field_rail", "name": "Field Rail", "points": 1000, "start_zone": "fstairs_top", "end_zone": "fstairs_bottom", "require": "GRIND", "max_time": 6.0},
+		{"id": "wall_of_fame", "name": "Wall of Fame", "points": 600, "start_zone": "wall_a", "end_zone": "wall_b", "require": "WALLRIDE", "max_time": 4.0},
+		{"id": "up_on_the_roof", "name": "Up on the Roof", "points": 1000, "start_zone": "annex_up", "end_zone": "gym_roof", "require": "", "max_time": 15.0},
+		{"id": "gym_roof_drop", "name": "Gym Roof Drop", "points": 2000, "start_zone": "gym_edge", "end_zone": "gym_land", "require": "AIR", "max_time": 4.0},
+		{"id": "dock_rail", "name": "Loading Dock Rail", "points": 700, "start_zone": "dock_rail_top", "end_zone": "dock_rail_end", "require": "GRIND", "max_time": 10.0},
+		{"id": "senior_steps", "name": "Senior Steps Ollie Up", "points": 400, "start_zone": "senior_low", "end_zone": "senior_top", "require": "AIR", "max_time": 3.0},
+		{"id": "terrace_drop", "name": "Terrace Drop", "points": 400, "start_zone": "terrace_e", "end_zone": "terrace_drop", "require": "AIR", "max_time": 3.0}
+	]
+}

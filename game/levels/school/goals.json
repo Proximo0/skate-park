@@ -1,0 +1,17 @@
+{
+	"run_seconds": 120,
+	"goals": [
+		{"id": "high_score_15k", "title": "High Score: 15,000", "description": "Land 15,000 points in one 2-minute session.", "type": "high_score", "target": 15000},
+		{"id": "pro_score_40k", "title": "Pro Score: 40,000", "description": "Land 40,000 points in one 2-minute session.", "type": "high_score", "target": 40000},
+		{"id": "sick_score_90k", "title": "Sick Score: 90,000", "description": "Land 90,000 points in one 2-minute session.", "type": "high_score", "target": 90000},
+		{"id": "combo_8k", "title": "Combo: 8,000", "description": "Land a single combo worth 8,000 points.", "type": "combo", "target": 8000},
+		{"id": "collect_skate", "title": "Collect S-K-A-T-E", "description": "S on the front steps, K over the fountain, A and T on the ADA ramp, E on the field bank.", "type": "collect", "items": ["S", "K", "A", "T", "E"]},
+		{"id": "lost_books", "title": "Return the 5 Lost Textbooks", "description": "Five textbooks were left all over campus. Bring them back.", "type": "collect", "items": ["book", "book", "book", "book", "book"]},
+		{"id": "leap_of_faith", "title": "Leap of Faith", "description": "Jump off the second-floor balcony and grab the L coin in the air.", "type": "collect", "items": ["L"]},
+		{"id": "secret_tape", "title": "Secret Tape", "description": "Somebody left a tape on the gym roof. Find a way up.", "type": "collect", "items": ["tape"]},
+		{"id": "gap_hunter_10", "title": "Gap Hunter: 10 gaps", "description": "Find 10 gaps around campus.", "type": "gaps", "target": 10},
+		{"id": "rail_rat_4", "title": "Rail Rat: 4 second grind", "description": "Grind one rail for 4 seconds in one go.", "type": "grind_time", "target": 4},
+		{"id": "detention_5", "title": "Detention: manual 5 seconds", "description": "Hold one manual for 5 seconds.", "type": "manual_time", "target": 5},
+		{"id": "kickflip_steps", "title": "Kickflip the Front Steps", "description": "Land a Kickflip.", "type": "trick", "trick": "kickflip"}
+	]
+}
