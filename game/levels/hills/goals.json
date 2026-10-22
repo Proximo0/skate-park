@@ -1,0 +1,100 @@
+{
+	"run_seconds": 120,
+	"goals": [
+		{
+			"id": "hills_score_15k",
+			"title": "High Score: 15,000",
+			"description": "Land 15,000 points in one 2-minute run on the Hills.",
+			"type": "high_score",
+			"target": 15000
+		},
+		{
+			"id": "hills_score_40k",
+			"title": "Pro Score: 40,000",
+			"description": "Land 40,000 points in one run.",
+			"type": "high_score",
+			"target": 40000
+		},
+		{
+			"id": "hills_score_90k",
+			"title": "Sick Score: 90,000",
+			"description": "Land 90,000 points in one run.",
+			"type": "high_score",
+			"target": 90000
+		},
+		{
+			"id": "hills_combo_8k",
+			"title": "Golden Hour Combo: 8,000",
+			"description": "Land one combo worth 8,000 points.",
+			"type": "combo",
+			"target": 8000
+		},
+		{
+			"id": "hills_skate",
+			"title": "Collect S-K-A-T-E",
+			"description": "S tops Hillcrest Drive, K is over a back yard fence, A rides the ditch, T floats over the spillway quarter pipe, E waits at the bottom of Canyon Road.",
+			"type": "collect",
+			"items": [
+				"S",
+				"K",
+				"A",
+				"T",
+				"E"
+			]
+		},
+		{
+			"id": "hills_pizza",
+			"title": "Five Slices",
+			"description": "Grab the five pizza slices: two in Summit Court, one on the terrace wall, one over the funbox, one on the overlook rail.",
+			"type": "collect",
+			"items": [
+				"pizza",
+				"pizza",
+				"pizza",
+				"pizza",
+				"pizza"
+			]
+		},
+		{
+			"id": "hills_pool_hopper",
+			"title": "Pool Hopper",
+			"description": "Grab the 1, 2 and 3 coins over the three back yard pools on Pool Row.",
+			"type": "collect",
+			"items": [
+				"1",
+				"2",
+				"3"
+			]
+		},
+		{
+			"id": "hills_secret_tape",
+			"title": "Secret Tape",
+			"description": "Find the tape in a hidden back yard pool somewhere near the park.",
+			"type": "collect",
+			"items": [
+				"tape"
+			]
+		},
+		{
+			"id": "hills_gap_hunter",
+			"title": "Gap Hunter: 10 gaps",
+			"description": "Find 10 different gaps around the Hills.",
+			"type": "gaps",
+			"target": 10
+		},
+		{
+			"id": "hills_grind_5",
+			"title": "Million Dollar Grind",
+			"description": "Grind for 5 seconds in one go (the overlook rail is long).",
+			"type": "grind_time",
+			"target": 5
+		},
+		{
+			"id": "hills_manual_5",
+			"title": "Cul-de-sac Manual: 5 seconds",
+			"description": "Hold one manual for 5 seconds.",
+			"type": "manual_time",
+			"target": 5
+		}
+	]
+}
