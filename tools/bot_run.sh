@@ -19,7 +19,7 @@ if [[ " $* " == *" --list "* ]]; then exit 0; fi
 # banked points per line (landed_total), then the run total
 echo "$out" | sed -nE 's/^BOT ([^ ]+) (DONE|FAIL) .* (landed_total=[0-9]+).*/BOTLANDED \1 \3/p'
 echo "$out" | sed -nE 's/^BOT score=.* (landed_total=[0-9]+)$/BOTLANDED total \1/p'
-if ! echo "$out" | grep -q '^BOT score='; then
+if ! grep -q '^BOT score=' <<<"$out"; then  # here-string: echo | grep -q dies of SIGPIPE under pipefail on big output
   echo "BOT crash scene ended without printing its score (crash, script error or timeout)"
   exit 1
 fi

@@ -25,3 +25,4 @@ The full build guide is a Claude Doc: https://claude.ai/artifact/WtmrkVRtizP8oJB
 | Workers: A worker reported "sims and bot skipped as instructed" when the brief asked for them. | The lead reruns check_all and the bot before every commit of park, camera or physics-adjacent files. |
 | Character remade six more times (code lofts, Blender, Houdini, polish passes) and still read as a placeholder | Never sculpt humanoids in code. Start from a creator-made or licensed model (VRoid/VRM), standard humanoid bone names, test asset-site downloads on day one. See character_creation_lessons.md round two |
 | Unit tests passed in the working tree but failed in CI | Other workers' uncommitted edits hide failures. Run the full suite in a clean `git worktree` of HEAD before committing |
+| `tools/bot_run.sh` reported a false "crash" on big outputs | Under `set -o pipefail`, `echo "$out" \| grep -q` fails when grep exits early (SIGPIPE). Use a here-string: `grep -q pat <<<"$out"` |
