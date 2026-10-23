@@ -52,6 +52,26 @@ var coach_tips_enabled: bool = not Flags.is_scripted_run()
 var _coach: CoachTips = null
 var _shown_score: float = 0.0
 var _time: float = 0.0
+var _focus_rect: ColorRect = null  ## full-screen grade while focus slow-mo is on (vignette, cool tint, desaturation)
+var _focus_mat: ShaderMaterial = null
+var _focus_tween: Tween = null
+const FOCUS_INK := Color("#B58CFF")  ## the special meter's fill while focus drains it
+const FOCUS_GRADE: String = """
+shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear;
+uniform float amount : hint_range(0.0, 1.0) = 0.0;
+uniform vec4 tint : source_color = vec4(0.45, 0.35, 0.95, 1.0);
+void fragment() {
+	vec3 c = texture(screen_tex, SCREEN_UV).rgb;
+	float g = dot(c, vec3(0.299, 0.587, 0.114));
+	vec3 graded = mix(c, vec3(g), 0.45 * amount);
+	graded = mix(graded, graded * vec3(0.82, 0.88, 1.12), amount);
+	vec2 d = (UV - 0.5) * vec2(1.25, 1.0);
+	float v = smoothstep(0.28, 0.78, length(d));
+	graded = mix(graded, tint.rgb * 0.55, v * 0.55 * amount);
+	COLOR = vec4(graded, 1.0);
+}
+"""
 var _vertical_balance: bool = false
 
 var _root: Control
@@ -162,6 +182,7 @@ func _ready() -> void:
 	_build_trick_pop()
 	_build_nollie_tag()
 	_build_banner()
+	_build_focus_grade()
 	_fx = Control.new()
 	_fx.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -217,6 +238,8 @@ func _connect_skater(s: Skater) -> void:
 		s.nollie_changed.connect(_on_nollie_changed)
 	if not s.physics_ticked.is_connected(_on_tick):
 		s.physics_ticked.connect(_on_tick)
+	if not s.focus_changed.is_connected(_on_focus_changed):
+		s.focus_changed.connect(_on_focus_changed)
 	_set_nollie_tag(s.nollie, false)
 
 
@@ -237,6 +260,8 @@ func _disconnect_skater(s: Skater) -> void:
 		s.nollie_changed.disconnect(_on_nollie_changed)
 	if s.physics_ticked.is_connected(_on_tick):
 		s.physics_ticked.disconnect(_on_tick)
+	if s.focus_changed.is_connected(_on_focus_changed):
+		s.focus_changed.disconnect(_on_focus_changed)
 
 
 # --- pure helpers (unit tested) -----------------------------------------------------------------------
@@ -382,11 +407,48 @@ func _update_combo(combo: Combo) -> void:
 			create_tween().tween_property(_combo_mult, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
+## The focus grade sits under the HUD widgets: it eases in and out in real time (the engine clock is slowed).
+func _build_focus_grade() -> void:
+	_focus_rect = ColorRect.new()
+	_focus_rect.name = "FocusGrade"
+	_focus_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_focus_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sh := Shader.new()
+	sh.code = FOCUS_GRADE
+	_focus_mat = ShaderMaterial.new()
+	_focus_mat.shader = sh
+	_focus_mat.set_shader_parameter("amount", 0.0)
+	_focus_rect.material = _focus_mat
+	_focus_rect.visible = false
+	add_child(_focus_rect)
+	move_child(_focus_rect, 0)
+
+
+func _on_focus_changed(on: bool) -> void:
+	if _focus_rect == null:
+		return
+	if _focus_tween != null:
+		_focus_tween.kill()
+	if on:
+		_focus_rect.visible = true
+	_focus_tween = create_tween().set_ignore_time_scale(true)
+	_focus_tween.tween_method(func(a: float) -> void: _focus_mat.set_shader_parameter("amount", a),
+			float(_focus_mat.get_shader_parameter("amount")), 1.0 if on else 0.0, 0.35)
+	if not on:
+		_focus_tween.tween_callback(func() -> void: _focus_rect.visible = false)
+
+
 func _update_special() -> void:
 	var meter: SpecialMeter = _skater.special
 	_special_fill.anchor_top = 1.0 - clampf(meter.value, 0.0, 1.0)
 	var pulse: float = 0.5 + 0.5 * sin(_time * 8.0)
-	if meter.is_special():
+	if _skater.focus.active:
+		# Focus drains the meter: the fill turns violet and shrinks, the caption says what is running.
+		_fill_style.bg_color = FOCUS_INK.lerp(UiStyle.WHITE, pulse * 0.2)
+		_special_glow.visible = true
+		_special_glow.modulate.a = 0.25 + 0.4 * pulse
+		_special_title.text = "FOCUS"
+	elif meter.is_special():
 		_fill_style.bg_color = UiStyle.SUNSHINE.lerp(UiStyle.WHITE, pulse * 0.25)
 		_special_glow.visible = true
 		_special_glow.modulate.a = 0.35 + 0.65 * pulse

@@ -22,23 +22,32 @@ const CTRL_TIP_WIDTH := 400  ## three equal tip cards across the screen
 const CTRL_SECTIONS := [
 	["Riding", [["Move", "move"], ["Ollie", "ollie"], ["Ramp snap", "ramp_snap"]]],
 	["Tricks", [["Flip", "flip"], ["Grab", "grab"], ["Spin left", "spin_left"], ["Spin right", "spin_right"], ["Revert", "revert"], ["Nollie", "nollie"]]],
-	["Grinds and Balance", [["Grind", "grind"], ["Balance", "move"]]],
+	["Grinds and Balance", [["Grind", "grind"], ["Balance", "move"], ["Focus", "focus"]]],
 	["Menus", [["Pick", "ollie"], ["Pause", "pause"], ["Restart run", "restart"]]],
 ]
 
+## Twelve tips, six to a page (More tips flips the page): the grid never outgrows the 1280x720 screen.
 const CTRL_TIPS := [
-	"Hold Cross to crouch, let go to ollie.",
-	"Up then Down for a manual. Balance on the back wheels.",
-	"Triangle near a rail to grind. Ollie to the next rail and Triangle to link.",
+	"Hold Cross to crouch, let go to ollie. Up then Down for a manual: balance on the back wheels.",
+	"Triangle near a rail to grind. Ollie to the next rail and Triangle to link. Triangle + stick switches the grind.",
 	"Square flips, Circle grabs. Full special meter: Down-Up + Square.",
 	"Up, Up + Ollie: boneless. Up + Ollie: no comply. Ollie at a wall: wallplant.",
 	"Revert while rolling to powerslide, or in the air over a bank to acid drop.",
-	"On a rail: Triangle + stick switches the grind. Hold Ollie to charge the pop.",
 	"In a manual: flick the stick to switch, spin to pivot, Revert to roll out, Grab + stick for flatland.",
 	"On a wall or a lip: Flip, Grab or Revert pops you out with that trick.",
+	"Natas spin: Grind in the air over a post to land on it, then hit the spin buttons to spin.",
+	"Sticker slap: Ollie beside a wall while riding along it to slap a sticker on it.",
+	"Bert slide: Revert on a bank to drag a hand and carve around it.",
+	"Skitch: Grab behind a moving car to hang on and get towed.",
+	"Focus: with a full special meter press F / R3 (the right stick) for slow motion. It drains the meter.",
 ]
+const CTRL_TIPS_PER_PAGE: int = 6
 
 var _back: Button
+var _more: Button
+var _page: int = 0
+var _tip_numbers: Array[Label] = []
+var _tip_texts: Array[Label] = []
 
 
 func _ready() -> void:
@@ -51,7 +60,23 @@ func _ready() -> void:
 ## Shows the screen and focuses Back.
 func open_screen() -> void:
 	visible = true
-	_back.grab_focus()
+	show_page(0)
+	if _back != null:
+		_back.grab_focus()
+
+
+## Tips page `page` (wraps around the last one).
+func show_page(page: int) -> void:
+	var pages: int = ceili(float(CTRL_TIPS.size()) / CTRL_TIPS_PER_PAGE)
+	_page = posmod(page, pages)
+	for i: int in _tip_texts.size():
+		var idx: int = _page * CTRL_TIPS_PER_PAGE + i
+		var has: bool = idx < CTRL_TIPS.size()
+		_tip_numbers[i].get_parent().get_parent().visible = has
+		_tip_numbers[i].text = str(idx + 1)
+		_tip_texts[i].text = str(CTRL_TIPS[idx]) if has else ""
+	if _more != null:
+		_more.text = "More tips  %d/%d" % [_page + 1, pages]
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -105,7 +130,9 @@ func _build() -> void:
 
 	main.add_child(_tips())
 
-	var back_row := CenterContainer.new()
+	var back_row := HBoxContainer.new()
+	back_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	back_row.add_theme_constant_override("separation", 32)
 	main.add_child(back_row)
 	_back = Button.new()
 	_back.text = "Back"
@@ -113,6 +140,12 @@ func _build() -> void:
 	_back.theme_type_variation = SkateThemeBuilder.BTN_SUN
 	_back.pressed.connect(func() -> void: closed.emit())
 	back_row.add_child(_back)
+	_more = Button.new()
+	_more.custom_minimum_size = CTRL_BACK_MIN
+	_more.theme_type_variation = SkateThemeBuilder.BTN_SUN
+	_more.pressed.connect(func() -> void: show_page(_page + 1))
+	back_row.add_child(_more)
+	show_page(0)
 
 
 ## One column of sections; each section is a heading and its action rows.
@@ -154,7 +187,7 @@ func _tips() -> VBoxContainer:
 	grid.add_theme_constant_override("h_separation", 24)
 	grid.add_theme_constant_override("v_separation", 8)
 	box.add_child(grid)
-	for i: int in CTRL_TIPS.size():
+	for i: int in CTRL_TIPS_PER_PAGE:
 		var card: PanelContainer = MenuKit.panel(SkateThemeBuilder.PNL_TEAL)
 		card.custom_minimum_size = Vector2(CTRL_TIP_WIDTH, 0)
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -162,9 +195,11 @@ func _tips() -> VBoxContainer:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 16)
 		card.add_child(row)
-		row.add_child(UiStyle.label(str(i + 1), UiStyle.SIZE_BIG, UiStyle.WHITE))
-		var tip_text: String = CTRL_TIPS[i]
-		var tip := MenuKit.text(tip_text, CTRL_TIP_FONT)
+		var number: Label = UiStyle.label(str(i + 1), UiStyle.SIZE_BIG, UiStyle.WHITE)
+		row.add_child(number)
+		_tip_numbers.append(number)
+		var tip := MenuKit.text("", CTRL_TIP_FONT)
+		_tip_texts.append(tip)
 		tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(tip)
@@ -242,6 +277,10 @@ func _button_name(b: int) -> String:
 			return "L1 / LB"
 		JOY_BUTTON_RIGHT_SHOULDER:
 			return "R1 / RB"
+		JOY_BUTTON_RIGHT_STICK:
+			return "R3 / RS click"
+		JOY_BUTTON_LEFT_STICK:
+			return "L3 / LS click"
 		JOY_BUTTON_START:
 			return "Start / Menu"
 		JOY_BUTTON_BACK:

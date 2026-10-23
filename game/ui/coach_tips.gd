@@ -14,10 +14,15 @@ const TIPS: Dictionary = {
 	"rail_switch": ["SWITCH GRINDS", "On a rail, push the stick and press Grind to switch to the other grind. Hold Ollie to charge the pop."],
 	"manual_switch": ["MANUAL TRICKS", "In a manual, flick the stick to switch, spin to pivot, or Grab + stick for flatland."],
 	"manual_revert": ["MANUAL REVERT", "Revert in a manual to roll out of it with the combo still open."],
+	"natas": ["NATAS SPIN", "Grind in the air over a post to land on it, then use the spin buttons to spin. Ollie to pop off."],
+	"sticker_slap": ["STICKER SLAP", "Ollie beside a wall while riding along it to slap a sticker on it."],
+	"bert_slide": ["BERT SLIDE", "Revert on a bank to drag a hand and carve around it."],
+	"skitch": ["SKITCH", "Grab behind a moving car to hang on and get towed. Ollie to let go."],
+	"focus": ["FOCUS", "With a full special meter, press F or R3 for slow motion. It drains the meter."],
 	"lip_trick": ["LIP TRICKS", "On a lip or a wall, Flip, Grab or Revert to pop out with that trick."],
 }
 ## The order "TRY" nudges teach the moves the player has not found yet.
-const NUDGE_ORDER: PackedStringArray = ["boneless", "powerslide", "nollie", "grind_switch", "wallplant", "acid_drop", "rail_switch", "manual_switch", "lip_trick"]
+const NUDGE_ORDER: PackedStringArray = ["boneless", "powerslide", "nollie", "grind_switch", "wallplant", "acid_drop", "rail_switch", "manual_switch", "lip_trick", "natas", "sticker_slap", "bert_slide", "skitch", "focus"]
 const NUDGE_EVERY: int = 3  ## landed combos between nudges
 const MIN_GAP: float = 18.0  ## s between tips
 const GRIND_LINK_WINDOW: float = 2.0  ## s between two grinds that counts as a link
@@ -111,6 +116,16 @@ static func tip_for_event(event: String) -> String:
 			return "manual_revert"
 		"lip_pop", "lip_revert", "wall_revert":
 			return "lip_trick"
+		"natas":
+			return "natas"
+		"sticker_slap":
+			return "sticker_slap"
+		"bert_slide":
+			return "bert_slide"
+		"skitch":
+			return "skitch"
+		"focus_on":
+			return "focus"
 	return ""
 
 

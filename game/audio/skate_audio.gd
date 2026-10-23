@@ -35,7 +35,16 @@ const EVENT_SOUNDS: Dictionary = {
 	"lip_pop": ["lip_pop", 1.0, -3.0],
 	"lip_revert": ["revert_whoosh", 0.9, -4.0],
 	"wall_revert": ["revert_whoosh", 0.8, -4.0],
+	"natas_180": ["revert_whoosh", 1.35, -3.0],
+	"natas_pop": ["lip_pop", 1.1, -3.0],
+	"sticker_slap": ["slap", 1.0, -2.0],
+	"bert_slide": ["revert_whoosh", 0.7, -5.0],
+	"focus_on": ["focus_on", 1.0, -4.0],
+	"focus_off": ["focus_off", 1.0, -4.0],
 }
+const BERT_DB: Vector2 = Vector2(-20.0, -5.0)
+const TOW_DB: Vector2 = Vector2(-26.0, -10.0)
+const FOCUS_LOWPASS_HZ: float = 2400.0  ## the master low-pass while focus slow-mo is on (muffled, underwater feel)
 const LINK_SOUND: Array = ["link", 1.0, -3.0]
 const OLLIE_FRAMES: int = 3  ## frames to wait for anim "ollie" after the state flips to AIR
 
@@ -47,6 +56,12 @@ var _grind_concrete: AudioStreamPlayer3D
 var _grind_wood: AudioStreamPlayer3D
 var _skid: AudioStreamPlayer3D
 var _skid_sand: AudioStreamPlayer3D
+var _bert: AudioStreamPlayer3D
+var _tow: AudioStreamPlayer3D
+var _bert_db: float = -80.0
+var _tow_db: float = -80.0
+var _focus_fx: AudioEffectLowPassFilter = null
+var _focus_bus_idx: int = -1
 var _skid_on: bool = false
 var _skid_db: float = -80.0
 var _ambience: AudioStreamPlayer
@@ -86,6 +101,11 @@ func _build_streams() -> void:
 		"lip_pop": SfxSynth.lip_pop(),
 		"revert_whoosh": SfxSynth.revert_whoosh(),
 		"link": SfxSynth.link(),
+		"bert": SfxSynth.bert_loop(),
+		"tow": SfxSynth.tow_loop(),
+		"slap": SfxSynth.slap(),
+		"focus_on": SfxSynth.focus_swoop(true),
+		"focus_off": SfxSynth.focus_swoop(false),
 	}
 
 
@@ -159,7 +179,9 @@ func bind(skater: Skater) -> void:
 	_grind_wood = _make_player(_streams["grind_wood"], "GrindWoodSfx")
 	_skid = _make_player(_streams["skid"], "SkidSfx")
 	_skid_sand = _make_player(_streams["skid_sand"], "SkidSandSfx")
-	for p: AudioStreamPlayer3D in [_roll, _roll_wood, _grind, _grind_concrete, _grind_wood, _skid, _skid_sand]:
+	_bert = _make_player(_streams["bert"], "BertSfx")
+	_tow = _make_player(_streams["tow"], "TowSfx")
+	for p: AudioStreamPlayer3D in [_roll, _roll_wood, _grind, _grind_concrete, _grind_wood, _skid, _skid_sand, _bert, _tow]:
 		p.play()
 		p.volume_db = SILENT_DB
 	_start_ambience()
@@ -169,6 +191,7 @@ func bind(skater: Skater) -> void:
 	_connect(skater.bailed, _on_bailed)
 	_connect(skater.combo_landed, _on_combo_landed)
 	_connect(skater.powerslide_changed, _on_powerslide_changed)
+	_connect(skater.focus_changed, _on_focus_changed)
 	_connect(skater.physics_ticked, _on_tick)
 	_connect(skater.bailed, _duck_music)
 	_start_music()
@@ -257,6 +280,7 @@ func _process(delta: float) -> void:
 			_ollie_frames -= 1
 	_update_loops(st)
 	_update_skid(delta)
+	_update_extras(delta)
 
 
 func _on_powerslide_changed(active: bool) -> void:
@@ -276,6 +300,38 @@ func _update_skid(delta: float) -> void:
 	_skid_sand.pitch_scale = shape.y
 	_skid.volume_db = SILENT_DB if sand or _skid_db <= -60.0 else _skid_db
 	_skid_sand.volume_db = _skid_db + 2.0 if sand and _skid_db > -60.0 else SILENT_DB
+
+
+## Bert scrape and skitch tow loops: fade in while the move lasts, out when it ends (like the skid).
+func _update_extras(delta: float) -> void:
+	var t: float = clampf(_skater.speed / SPEED_FULL, 0.0, 1.0)
+	var bert_target: float = lerpf(BERT_DB.x, BERT_DB.y, t) if _skater.berting else SILENT_DB
+	_bert_db = move_toward(_bert_db, bert_target, (SKID_FADE_IN if bert_target > _bert_db else SKID_FADE_OUT) * delta)
+	_bert.volume_db = SILENT_DB if _bert_db <= -60.0 else _bert_db
+	_bert.pitch_scale = lerpf(0.8, 1.15, t)
+	var skitching: bool = _skater.get("_skitch_car") != null
+	var tow_target: float = lerpf(TOW_DB.x, TOW_DB.y, t) if skitching else SILENT_DB
+	_tow_db = move_toward(_tow_db, tow_target, (SKID_FADE_IN if tow_target > _tow_db else SKID_FADE_OUT) * delta)
+	_tow.volume_db = SILENT_DB if _tow_db <= -60.0 else _tow_db
+	_tow.pitch_scale = lerpf(0.85, 1.3, t)
+
+
+## Focus slow-mo: the engine clock already slows every sound (Engine.time_scale drives the audio speed); on top of
+## that the master bus gets a low-pass so the world sounds muffled and far, and it is taken off again when focus ends.
+func _on_focus_changed(on: bool) -> void:
+	if _focus_fx == null:
+		_focus_fx = AudioEffectLowPassFilter.new()
+		_focus_fx.cutoff_hz = FOCUS_LOWPASS_HZ
+		AudioServer.add_bus_effect(0, _focus_fx)
+		_focus_bus_idx = AudioServer.get_bus_effect_count(0) - 1
+	if _focus_bus_idx >= 0 and _focus_bus_idx < AudioServer.get_bus_effect_count(0):
+		AudioServer.set_bus_effect_enabled(0, _focus_bus_idx, on)
+
+
+func _exit_tree() -> void:
+	if _focus_fx != null and _focus_bus_idx >= 0 and _focus_bus_idx < AudioServer.get_bus_effect_count(0):
+		AudioServer.remove_bus_effect(0, _focus_bus_idx)
+		_focus_fx = null
 
 
 func _update_loops(st: int) -> void:

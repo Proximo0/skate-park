@@ -287,6 +287,58 @@ static func link() -> AudioStreamWAV:
 	return _to_stream(out, false)
 
 
+## Bert slide: a hand and shoe dragging on a bank. Rougher than the powerslide: no squeal, a low scuffing drag with
+## coarse stick-slip chatter over a gritty mid band.
+static func bert_loop() -> AudioStreamWAV:
+	var n: int = int(LOOP_SECONDS * RATE)
+	var rng := _rng(311)
+	var grit: PackedFloat32Array = _bandpass_periodic(_noise(n, rng), 300.0, 2600.0)
+	var drag: PackedFloat32Array = _lowpass_periodic(_noise(n, rng), 260.0)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i: int in n:
+		var t: float = float(i) / RATE
+		var chatter: float = 0.45 + 0.55 * absf(sin(TAU * 11.0 * t) * sin(TAU * 7.0 * t + 0.4))
+		out[i] = grit[i] * chatter * 1.1 + drag[i] * 1.6 * (0.7 + 0.3 * sin(TAU * 3.0 * t))
+	return _to_stream(out, true)
+
+
+## Skitch tow: a small engine idling ahead (a low rough buzz with a firing wobble) under the wheels' rumble.
+static func tow_loop() -> AudioStreamWAV:
+	var n: int = int(LOOP_SECONDS * RATE)
+	var rng := _rng(321)
+	var tex: PackedFloat32Array = _lowpass_periodic(_noise(n, rng), 500.0)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i: int in n:
+		var t: float = float(i) / RATE
+		var fire: float = 0.7 + 0.3 * sin(TAU * 24.0 * t)
+		var eng: float = 0.55 * sin(TAU * 48.0 * t) + 0.35 * sin(TAU * 96.0 * t) + 0.2 * sin(TAU * 144.0 * t) \
+				+ 0.08 * sin(TAU * 240.0 * t)
+		out[i] = eng * fire + 0.6 * tex[i]
+	return _to_stream(out, true)
+
+
+## Sticker slap: a flat palm-and-sole smack on the wall, about 0.16 s.
+static func slap() -> AudioStreamWAV:
+	var out := _buffer(0.16)
+	var rng := _rng(607)
+	_add_noise(out, 0.0, 0.1, 1.0, 0.018, rng, 5200.0)
+	_add_tone(out, 0.0, 0.14, 260.0, 110.0, 0.8, 0.04, 0.3)
+	return _to_stream(out, false)
+
+
+## Focus on: a falling, slowing swoop. Focus off: the same rising back.
+static func focus_swoop(on: bool) -> AudioStreamWAV:
+	var out := _buffer(0.45)
+	var rng := _rng(608 if on else 609)
+	var f0: float = 900.0 if on else 220.0
+	var f1: float = 220.0 if on else 900.0
+	_add_tone(out, 0.0, 0.4, f0, f1, 0.7, 0.2, 0.2)
+	_add_noise(out, 0.0, 0.4, 0.35, 0.12, rng, 1800.0 if on else 3000.0)
+	return _to_stream(out, false)
+
+
 ## Menu move: a short soft tick.
 static func ui_move() -> AudioStreamWAV:
 	var out := _buffer(0.04)

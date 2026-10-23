@@ -282,7 +282,8 @@ func _update_sparks(frame: Transform3D, st: SkateState.State) -> void:
 ## laid every SKID_STEP m along the slide.
 func _update_slide(frame: Transform3D, delta: float) -> void:
 	_age_skid_marks(delta)
-	var sliding: bool = _skater.powersliding and _skater.state.state == SkateState.State.ROLLING
+	var bert: bool = _skater.berting and _skater.state.state == SkateState.State.ROLLING
+	var sliding: bool = (_skater.powersliding or bert) and _skater.state.state == SkateState.State.ROLLING
 	if sliding:
 		_dust_probe -= delta
 		if _dust_probe <= 0.0:
@@ -297,9 +298,9 @@ func _update_slide(frame: Transform3D, delta: float) -> void:
 	var col: Color = DUST_COLORS.get(_dust_surface, DUST_COLORS["concrete"])
 	_dust.color = col
 	_dust.initial_velocity_max = (1.3 if not sandy else 2.2) + 0.12 * spd
-	_dust.scale_amount_max = 1.6 if sandy else 0.8
+	_dust.scale_amount_max = 1.6 if sandy else (1.2 if bert else 0.8)  ## a bert slide drags more grit than a skid
 	_dust.emitting = sliding and spd > 1.0
-	if sliding and spd > 1.5:
+	if sliding and not bert and spd > 1.5:
 		var pos: Vector3 = _skater.global_position
 		if _skid_last.x == INF:
 			_drop_skid_mark(pos)
