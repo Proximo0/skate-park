@@ -34,6 +34,8 @@ var _intro: Tween
 var drop_in_spots: Dictionary = {"mega": "Mega Ramp", "loop": "Loop"}
 var current_level: String = LevelRegistry.DEFAULT_ID
 var _level_button: Button
+var _replay_button: Button = null
+var _replaying: bool = false
 var _level_select: LevelSelect = null
 
 
@@ -91,11 +93,36 @@ func _build() -> void:
 	_level_button.pressed.connect(_on_change_level_pressed)
 	col.add_child(_level_button)
 
+	_replay_button = _pause_button("Replay", SkateThemeBuilder.BTN_TEAL, PAUSE_TOGGLE_MIN, PAUSE_TOGGLE_FONT)
+	_replay_button.name = "ReplayButton"
+	_replay_button.pressed.connect(_on_replay_pressed)
+	_replay_button.visible = false
+	col.add_child(_replay_button)
+
 	var drops: Array[Button] = []
+	# Two spots stack full width; three or more go in a two-column grid under a caption so the menu still fits 720p.
+	var grid_mode: bool = drop_in_spots.size() > 2
+	var holder: Container = col
+	if grid_mode:
+		var cap := UiStyle.label("DROP IN", 20, UiStyle.SUNSHINE, false)
+		cap.name = "DropInCaption"
+		cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		col.add_child(cap)
+		var grid := GridContainer.new()
+		grid.name = "DropInGrid"
+		grid.columns = 2
+		grid.add_theme_constant_override("h_separation", 6)
+		grid.add_theme_constant_override("v_separation", 6)
+		col.add_child(grid)
+		holder = grid
 	for spot: Variant in drop_in_spots:
-		var drop := _pause_button("Drop In: %s" % str(drop_in_spots[spot]), SkateThemeBuilder.BTN_CORAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
+		var drop: Button
+		if grid_mode:
+			drop = _pause_button(str(drop_in_spots[spot]), SkateThemeBuilder.BTN_CORAL, Vector2(PAUSE_BUTTON_MIN.x / 2.0 - 3.0, 52), 22)
+		else:
+			drop = _pause_button("Drop In: %s" % str(drop_in_spots[spot]), SkateThemeBuilder.BTN_CORAL, PAUSE_DROP_IN_MIN, PAUSE_DROP_IN_FONT)
 		drop.pressed.connect(_on_drop_in_pressed.bind(str(spot)))
-		col.add_child(drop)
+		holder.add_child(drop)
 		drops.append(drop)
 
 	var hair_btn := _pause_button("", SkateThemeBuilder.BTN_TEAL, PAUSE_TOGGLE_MIN, PAUSE_TOGGLE_FONT)
@@ -156,14 +183,21 @@ func _build() -> void:
 	col.add_child(quit)
 
 	# Up and down wrap around the buttons.
-	var buttons: Array[Button] = [_resume_button, restart, _level_button]
+	var buttons: Array[Button] = [_resume_button, restart, _level_button, _replay_button]
 	buttons.append_array(drops)
 	buttons.append_array([hair_btn, body_btn, injury_btn, cam_dist_btn, cam_fov_btn, cam_shake_btn, _controls_button, _settings_button, music_btn, quit])
 	var n: int = buttons.size()
 	for i: int in n:
 		var b: Button = buttons[i]
-		b.focus_neighbor_top = buttons[(i - 1 + n) % n].get_path()
-		b.focus_neighbor_bottom = buttons[(i + 1) % n].get_path()
+		# The Replay button hides when there is no clip; focus skips it then.
+		var up: int = (i - 1 + n) % n
+		var down: int = (i + 1) % n
+		if buttons[up] == _replay_button:
+			up = (up - 1 + n) % n
+		if buttons[down] == _replay_button:
+			down = (down + 1) % n
+		b.focus_neighbor_top = buttons[up].get_path()
+		b.focus_neighbor_bottom = buttons[down].get_path()
 
 	_controls_screen = ControlsScreen.new()
 	_controls_screen.visible = false
@@ -176,7 +210,7 @@ func _build() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _controls_open or _settings_open or _level_select != null:
+	if _controls_open or _settings_open or _level_select != null or _replaying:
 		return  # the controls screen and the level select handle their own close
 	if visible:
 		if event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel") or _pause_is_circle(event):
@@ -208,6 +242,7 @@ func open_menu() -> void:
 	_settings_open = false
 	_settings_screen.visible = false
 	_panel.visible = true
+	_replay_button.visible = replay_available()
 	get_tree().paused = true
 	_backdrop.modulate.a = 0.0
 	_panel.scale = Vector2(0.9, 0.9)
@@ -235,6 +270,36 @@ func _hide_menu() -> void:
 	_settings_screen.visible = false
 	visible = false
 	get_tree().paused = false
+
+
+## True when the game's ReplayDirector has enough recorded to replay the last seconds.
+func replay_available() -> bool:
+	if not is_inside_tree():
+		return false
+	var dir: ReplayDirector = ReplayDirector.find(get_tree())
+	return dir != null and not dir.active and dir.buffer != null and dir.buffer.size() >= 10
+
+
+## Replay: the menu steps aside (the tree stays paused), the last seconds play, the menu comes back.
+func _on_replay_pressed() -> void:
+	var dir: ReplayDirector = ReplayDirector.find(get_tree())
+	if dir == null or not replay_available():
+		return
+	var secs: float = ReplayDirector.REPLAY_SECONDS
+	var c: ReplayBuffer = dir.buffer.last_seconds(secs)
+	var title: String = "LAST %d SECONDS" % int(round(minf(secs, dir.buffer.duration())))
+	_panel.visible = false
+	_backdrop.visible = false
+	_replaying = true
+	if not dir.play_clip(c, title, _back_from_replay):
+		_back_from_replay()
+
+
+func _back_from_replay() -> void:
+	_replaying = false
+	_backdrop.visible = true
+	_panel.visible = true
+	_replay_button.grab_focus()
 
 
 func _on_restart_pressed() -> void:

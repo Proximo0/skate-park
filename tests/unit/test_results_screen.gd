@@ -77,3 +77,22 @@ func test_coach_tip_shows_once_and_is_saved() -> void:
 	assert_eq(CoachTips.tip_for_trick("kickflip"), "")
 	assert_eq(CoachTips.next_nudge(store.tip_seen), "powerslide", "boneless is known, next is powerslide")
 	tips.free()
+
+
+func test_results_screen_pro_medal_line() -> void:
+	var d: Dictionary = {"level_name": "T", "score": 1, "best_combo": 1, "pro_name": "Pool Row", "pro_medal": 3, "pro_medal_run": 3, "pro_medal_name": "Gold medal"}
+	assert_eq(ResultsScreen.pro_line(d), "PRO Pool Row: Gold medal")
+	var r: ResultsScreen = ResultsScreen.new().setup(d)
+	_tree().root.add_child(r)
+	assert_true(r.find_child("ProLine", true, false) != null, "pro line shown")
+	assert_true(r.find_child("NewMedal", true, false) != null, "new medal sticker shown")
+	r.free()
+	d["pro_medal_run"] = 0
+	var r2: ResultsScreen = ResultsScreen.new().setup(d)
+	_tree().root.add_child(r2)
+	assert_true(r2.find_child("NewMedal", true, false) == null, "no sticker without a new medal")
+	r2.free()
+	var r3: ResultsScreen = ResultsScreen.new().setup({"level_name": "T"})
+	_tree().root.add_child(r3)
+	assert_true(r3.find_child("ProRow", true, false) == null, "no row without a pro challenge")
+	r3.free()

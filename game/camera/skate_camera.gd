@@ -270,6 +270,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		_mouse_orbit += (event as InputEventMouseMotion).relative
 
 
+## One tick of orbit input as (yaw, pitch) change: stick and mouse, times the sensitivity setting, vertical flipped when inverted.
+static func orbit_move(stick: Vector2, mouse: Vector2, delta: float, sens: float, invert_y: bool) -> Vector2:
+	var m := Vector2(stick.x * ORBIT_STICK_RATE * delta, stick.y * ORBIT_STICK_RATE * 0.5 * delta) + mouse * ORBIT_MOUSE_SENS
+	m *= sens
+	if invert_y:
+		m.y = -m.y
+	return m
+
+
 ## Right stick / right-button mouse orbit: moves the orbit angles while held, swings back behind after the release.
 func _orbit_step(delta: float) -> void:
 	var stick := Vector2.ZERO
@@ -280,7 +289,7 @@ func _orbit_step(delta: float) -> void:
 				stick = v
 	if stick.length() < 0.25:
 		stick = Vector2.ZERO
-	var move := Vector2(stick.x * ORBIT_STICK_RATE * delta, stick.y * ORBIT_STICK_RATE * 0.5 * delta) + _mouse_orbit * ORBIT_MOUSE_SENS
+	var move: Vector2 = orbit_move(stick, _mouse_orbit, delta, GameSettings.cam_sens_scale(), GameSettings.cam_invert_y())
 	_mouse_orbit = Vector2.ZERO
 	if move != Vector2.ZERO:
 		_orbit_idle = 0.0

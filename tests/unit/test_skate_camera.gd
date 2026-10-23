@@ -219,3 +219,15 @@ func test_pitch_limited_keeps_the_heading_over_the_top() -> void:
 func test_pitch_limited_leaves_a_level_view() -> void:
 	var look := Vector3(1, -1, -6)
 	_cam_vec_near(SkateCamera.pitch_limited(Vector3.ZERO, look, Vector3(0, 0, -1)), look, "gentle pitch untouched")
+
+
+func test_orbit_move_scales_and_inverts() -> void:
+	var base: Vector2 = SkateCamera.orbit_move(Vector2(1, 0.5), Vector2(10, 4), 0.1, 1.0, false)
+	var fast: Vector2 = SkateCamera.orbit_move(Vector2(1, 0.5), Vector2(10, 4), 0.1, 2.0, false)
+	var inv: Vector2 = SkateCamera.orbit_move(Vector2(1, 0.5), Vector2(10, 4), 0.1, 1.0, true)
+	assert_true(base.x > 0.0 and base.y > 0.0, "default moves both axes")
+	assert_near(fast.x, base.x * 2.0, 0.0001, "sensitivity scales yaw")
+	assert_near(fast.y, base.y * 2.0, 0.0001, "sensitivity scales pitch")
+	assert_near(inv.x, base.x, 0.0001, "invert leaves yaw")
+	assert_near(inv.y, -base.y, 0.0001, "invert flips pitch")
+	assert_eq(SkateCamera.orbit_move(Vector2.ZERO, Vector2.ZERO, 0.1, 1.5, true), Vector2.ZERO)

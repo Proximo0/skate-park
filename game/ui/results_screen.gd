@@ -121,6 +121,9 @@ func _build() -> void:
 		"Best %s" % Hud.format_points(int(data.get("best_combo_ever", 0))), UiStyle.LIME)
 
 	col.add_child(_goals_block())
+	var pro: Control = _pro_row()
+	if pro != null:
+		col.add_child(pro)
 
 	var bar := HBoxContainer.new()
 	bar.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -265,6 +268,45 @@ func _goals_block() -> Control:
 		u.custom_minimum_size = Vector2(900, 0)
 		box.add_child(u)
 	return box
+
+
+## "PRO Pool Row: Gold medal" with a medal disc, plus a NEW MEDAL sticker when this run raised it. Null without a pro challenge.
+static func pro_line(d: Dictionary) -> String:
+	var best: int = int(d.get("pro_medal", 0))
+	var tier: String = "No medal" if best <= 0 else (ProgressStore.MEDAL_NAMES[clampi(best, 1, 3) - 1] + " medal")
+	return "PRO %s: %s" % [str(d.get("pro_name", "")), tier]
+
+
+func _pro_row() -> Control:
+	if str(data.get("pro_name", "")) == "":
+		return null
+	var row := HBoxContainer.new()
+	row.name = "ProRow"
+	row.add_theme_constant_override("separation", 12)
+	var disc := LevelSelect.MedalDisc.new()
+	disc.name = "Medal"
+	disc.medal = int(data.get("pro_medal", 0))
+	row.add_child(disc)
+	var l := UiStyle.label(pro_line(data), UiStyle.SIZE_SMALL - 2, UiStyle.SUNSHINE, false)
+	l.name = "ProLine"
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(l)
+	if int(data.get("pro_medal_run", 0)) > 0:
+		var tag := Label.new()
+		tag.text = "NEW MEDAL"
+		tag.name = "NewMedal"
+		tag.add_theme_font_override("font", SkateThemeBuilder.heading_font())
+		tag.add_theme_font_size_override("font_size", 22)
+		tag.add_theme_color_override("font_color", SkateThemeBuilder.NAVY)
+		var st: StyleBoxFlat = SkateThemeBuilder.sticker(SkateThemeBuilder.SUN, 12, 4)
+		st.content_margin_left = 12.0
+		st.content_margin_right = 12.0
+		st.content_margin_top = 2.0
+		st.content_margin_bottom = 3.0
+		tag.add_theme_stylebox_override("normal", st)
+		tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(tag)
+	return row
 
 
 func _button(text: String, variation: StringName, sig: Signal) -> Button:
