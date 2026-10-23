@@ -31,7 +31,7 @@ static func build(width: float = 10.0, flat: float = 6.0, radius: float = 3.5, h
 	var floor_mi := MeshInstance3D.new()
 	floor_mi.name = "Floor"
 	floor_mi.mesh = floor_mesh
-	floor_mi.material_override = Toon.material(PieceKit.RAMP_WOOD)
+	floor_mi.material_override = ParkSurface.material(PieceKit.RAMP_WOOD)
 	floor_mi.position = Vector3(width * 0.5, 0.005, deck + radius + flat * 0.5)
 	root.add_child(floor_mi)
 	# two painted stripes across the flat bottom (decorative, no collision)

@@ -30,7 +30,7 @@ static func body(mesh: Mesh, color: Color, node_name: String = "Body", two_sided
 	var mi := MeshInstance3D.new()
 	mi.name = "Mesh"
 	mi.mesh = mesh
-	mi.material_override = Toon.material(color)
+	mi.material_override = Toon.material(color) if _is_metal(color) else ParkSurface.material(color)
 	sb.add_child(mi)
 	var cs := CollisionShape3D.new()
 	cs.name = "Collision"
@@ -39,6 +39,10 @@ static func body(mesh: Mesh, color: Color, node_name: String = "Body", two_sided
 	cs.shape = shape
 	sb.add_child(cs)
 	return sb
+
+
+static func _is_metal(color: Color) -> bool:
+	return color == METAL or color == COPING
 
 
 ## A box body positioned by its minimum corner and size (handy for platforms, ledges, decks).
@@ -135,16 +139,36 @@ static func extrude_profile(profile: PackedVector2Array, width: float) -> ArrayM
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var n: int = profile.size()
+	# Metric surface coordinates for ParkSurface: arc length along the profile, measured from the lip (the highest vertex,
+	# furthest toward +z among ties), and the distance to the lip either way round the loop.
+	var arc := PackedFloat32Array()
+	arc.resize(n + 1)
+	var lip: int = 0
+	for i: int in n:
+		var p0: Vector2 = profile[i]
+		arc[i + 1] = arc[i] + p0.distance_to(profile[(i + 1) % n])
+		var best: Vector2 = profile[lip]
+		if p0.x > best.x + 0.001 or (absf(p0.x - best.x) <= 0.001 and p0.y > best.y):
+			lip = i
+	var total: float = arc[n]
 	for i: int in n:
 		var p: Vector2 = profile[i]
 		var q: Vector2 = profile[(i + 1) % n]
+		var sp: float = arc[i] - arc[lip]
+		var sq: float = arc[i + 1] - arc[lip]
 		var a := Vector3(0, p.x, p.y)
 		var b := Vector3(0, q.x, q.y)
 		var c := Vector3(width, q.x, q.y)
 		var d := Vector3(width, p.x, p.y)
-		st.add_vertex(a); st.add_vertex(b); st.add_vertex(c)
-		st.add_vertex(a); st.add_vertex(c); st.add_vertex(d)
-	# end caps (fan; profiles are kept convex or fan-safe from vertex 0)
+		var dp: float = minf(absf(sp), total - absf(sp))
+		var dq: float = minf(absf(sq), total - absf(sq))
+		for k: Array in [[a, 0.0, sp, dp], [b, 0.0, sq, dq], [c, width, sq, dq], [a, 0.0, sp, dp], [c, width, sq, dq], [d, width, sp, dp]]:
+			st.set_uv(Vector2(k[1] as float, k[2] as float))
+			st.set_uv2(Vector2(k[3] as float, 1.0))
+			st.add_vertex(k[0] as Vector3)
+	# end caps (fan; profiles are kept convex or fan-safe from vertex 0): no metric coordinates, so no seams
+	st.set_uv(Vector2.ZERO)
+	st.set_uv2(Vector2.ZERO)
 	for i: int in range(1, n - 1):
 		st.add_vertex(Vector3(0, profile[0].x, profile[0].y))
 		st.add_vertex(Vector3(0, profile[i + 1].x, profile[i + 1].y))

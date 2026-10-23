@@ -337,7 +337,7 @@ static func shade_by_height(sb: StaticBody3D, color: Color, top_y: float, base_m
 	var out := ArrayMesh.new()
 	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mi.mesh = out
-	mi.material_override = Toon.material_vc(color)
+	mi.material_override = ParkSurface.material(color, true)
 	return sb
 
 
