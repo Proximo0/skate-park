@@ -16,7 +16,12 @@ const JITTER_Y_MIN: float = 0.012  ## peak-to-peak metres worth reporting (1.2 c
 const JITTER_Y_STEP_MAX: float = 0.05  ## a bigger tick-to-tick height change is a step or a teleport, not jitter
 const JITTER_Y_MAX: float = 0.15  ## a bigger peak-to-peak over the window is terrain, not jitter
 ## Events that legitimately change energy, or move the skater, so a window holding one is not judged.
-const EXCUSE_EVENTS: Array[String] = ["bail", "respawn", "grind", "grind_end", "lip", "wallride", "ollie", "dismount", "mount"]
+const EXCUSE_EVENTS: Array[String] = [
+	"bail", "respawn", "grind", "grind_end", "lip", "wallride", "ollie", "dismount", "mount",
+	# THUG2 moves: each one deliberately kills, turns or hands over speed (a foot on a wall, a skid, a tow, a post)
+	"wallplant", "wallplant_push", "sticker_slap", "powerslide", "powerslide_end", "bert_slide", "bert_end", "skitch", "skitch_off",
+	"natas", "natas_pop", "boneless_plant", "no_comply_plant", "ledge_stall", "acid_drop_land", "manual_pivot", "caveman",
+]
 
 var line_name: String = ""
 var gravity: float = 18.0
@@ -31,6 +36,7 @@ var max_speed_seen: float = 0.0
 var max_height: float = -1000.0
 var landings: Dictionary = {"clean": 0, "sketchy": 0, "bail": 0}
 var gaps: Array[String] = []
+var seen: Dictionary = {}  ## every skater event and every scored trick id this line produced (name -> count), for the line's `moves` check
 var airtime_ticks: int = 0
 var frames: Array = []  ## recorded debug dicts (only when record is true)
 var record: bool = false
@@ -39,6 +45,7 @@ var snaps: Array[float] = []  ## grind / lip entry jumps (by design: the visual 
 var route_faults: Array[String] = []  ## stops that look like the bot's own routing, not the physics
 var wall_hits: int = 0
 var head_on_log: Array[String] = []  ## where the bot ran square into a wall (a routing fault, listed as BOTINFO)
+var towed: bool = false  ## set by the runner while the skater hangs on a car's bumper (a skitch: the car sets the speed)
 var snapping_now: bool = false  ## set by the runner while the skater is inside a ramp snap (a guided arc: its speed and energy are scripted, not physics)
 var wall_test: bool = false  ## set by the driver while a deliberate head-on wall test runs: its slam is INFO, not an issue
 var wall_test_results: Array[String] = []
@@ -83,6 +90,11 @@ func reset_history() -> void:
 	_air_run = 0
 
 
+## A trick the skater scored (Skater.trick_started): its id counts as seen, so a line can ask for "boneless" or "natas_spin".
+func on_trick(id: String) -> void:
+	seen[id] = int(seen.get(id, 0)) + 1
+
+
 func on_gap(gap_name: String) -> void:
 	gaps.append(gap_name)
 
@@ -96,6 +108,7 @@ func feed(f: Dictionary, moving_intent: bool, bot_teleported: bool, hit: Diction
 	var evs: Array[String] = []
 	for e: Variant in f["events"]:
 		evs.append(str(e))
+		seen[str(e)] = int(seen.get(str(e), 0)) + 1
 	if record:
 		frames.append(_encode(f))
 	if bot_teleported:
@@ -144,7 +157,7 @@ func feed(f: Dictionary, moving_intent: bool, bot_teleported: bool, hit: Diction
 			_issue("bail", pos, tick, why_bail)
 	# --- build this tick's lite record
 	var excuse: bool = state in ["BAIL", "GRIND", "LIP", "WALLRIDE"] or bool(f["braking"]) or bool(f.get("powerslide", false)) \
-		or bool(f.get("bert", false)) or snapping_now
+		or bool(f.get("bert", false)) or snapping_now or towed
 	for e: String in evs:
 		if EXCUSE_EVENTS.has(e) or e.begins_with("land:"):
 			excuse = true

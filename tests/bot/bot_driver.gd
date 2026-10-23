@@ -8,11 +8,14 @@ extends RefCounted
 ##   p: Vector3 (x, z matter)   spd: target speed (push below it)   r: reach radius (default 2.0)
 ##   act: action started when the waypoint is reached (it runs while the bot steers on to the next waypoint):
 ##        "ollie" {h: hold ticks, flip, grab, revert}   "air" {flip, grab, revert, wait: s}  (waits for takeoff)
-##        "grind" {exit: "ride"|"ollie", end: Vector3, hold: s}   "manual" {dur: s, exit: "ollie"|"none"}
+##        "grind" {exit: "ride"|"ollie", end: Vector3, hold: s, steps (a script over the grind), after: {steps, len} (a script from the pop)}   "manual" {dur: s, exit: "ollie"|"none"}
 ##        "revert"   "wait" {s}   "snap" (Q + E together: the ramp snap; the driver then lets go until it has finished)
+##        "script" {steps: [...], len: ticks, nopush}  timed raw inputs (see _script_overlay): THUG2 moves and links (boneless,
+##        powerslide, wallplant, natas, skitch, ...). A step: {from: "reach"|<state name>, at, dur, sx, sy, press, held, near: [x, z, r]}
 ##   pump: hold forward on transitions   brake: allow braking above spd   tmo: seconds before the waypoint is skipped
 ##   tp: {pos, dir, speed}: teleport there (a segment start); the waypoint is consumed at once.
 ##   drop: "mega"|"loop": the pause-menu drop-in, then the waypoint is consumed.
+##   tp {car: true, gap, near: Vector3}: set down behind the traffic car nearest `near`, `gap` m behind its rear bumper, at its speed.
 
 const UPV: Vector3 = Vector3.UP
 const KP_STEER: float = 2.2
@@ -122,11 +125,14 @@ func step(delta: float) -> void:
 			_grind_exit(d)
 		"MANUAL":
 			manual_ticks += 1
-			_stick.y = _balance_stick(false)
+			if sk.balance_kind == "skitch":
+				_stick.x = _balance_stick(true)  # a skitch balances sideways, like a grind
+			else:
+				_stick.y = _balance_stick(false)
 			_manual_hold()
 		"LIP":
 			_stick.x = _balance_stick(true)
-			if int(_act.get("lip_t", 0)) > 40:
+			if int(_act.get("lip_t", 0)) > 40 and str(_act.get("kind", "")) != "script":
 				_pressed.append("ollie")
 				_held.append("ollie")
 			_act["lip_t"] = int(_act.get("lip_t", 0)) + 1
@@ -136,8 +142,72 @@ func step(delta: float) -> void:
 			pass
 		_:
 			_ground_input(d, delta)
+	_script_overlay(st)
 	_prev_state = st
 	sk.set_input(_stick, _pressed, _held)
+
+
+## The raw inputs of a "script" action, laid over what the state's own rules chose this tick. A step is active while
+## `from` + `at` <= ticks < from + at + dur, where ticks count from the waypoint's reach ("reach", the default) or from the
+## first tick the skater was in that state since (e.g. "AIR", "LIP", "MANUAL", "GRIND"); `near` [x, z, r] also needs the
+## skater within r metres (horizontal) of x, z. sx / sy replace the stick, press fires on the step's first active tick,
+## held is down every active tick. `ny` [lo, hi] also needs the floor normal's y in that range (a bank), `gd` [lo, hi] the
+## height over whatever is straight below (a drop under the board). `nopush` zeroes the auto push on the ground (an up tap is a move's input). The script
+## ends `len` ticks after the reach.
+func _script_overlay(st: String) -> void:
+	if not _act.has("steps"):
+		return
+	var t: int = int(_act.get("st", 0))
+	_act["st"] = t + 1
+	if not _act.has("anchors"):
+		_act["anchors"] = {}
+		_act["fired"] = {}
+	var anchors: Dictionary = _act["anchors"]
+	var fired: Dictionary = _act["fired"]
+	if not anchors.has(st):
+		anchors[st] = t
+	if bool(_act.get("nopush", false)) and st == "ROLLING":
+		_stick.y = 0.0
+	var pos: Vector3 = sk.global_position
+	var steps: Array = _act["steps"]
+	for si: int in steps.size():
+		var step: Dictionary = steps[si]
+		var from: String = str(step.get("from", "reach"))
+		var base: int = 0 if from == "reach" else int(anchors.get(from, -1))
+		if base < 0:
+			continue
+		var rel: int = t - base - int(step.get("at", 0))
+		if rel < 0 or rel >= int(step.get("dur", 1)):
+			continue
+		if step.has("near"):
+			var nr: Array = step["near"]
+			if Vector2(pos.x - float(nr[0]), pos.z - float(nr[1])).length() > float(nr[2]):
+				continue
+		if step.has("ny"):
+			var ny: float = (sk.debug["floor_normal"] as Vector3).y if sk.debug.has("floor_normal") else 1.0
+			if ny < float((step["ny"] as Array)[0]) or ny > float((step["ny"] as Array)[1]):
+				continue
+		if step.has("spd") and (sk.speed < float((step["spd"] as Array)[0]) or sk.speed > float((step["spd"] as Array)[1])):
+			continue
+		if step.has("gd"):
+			var gd: float = _ground_dist(sk.debug)
+			if gd < float((step["gd"] as Array)[0]) or gd > float((step["gd"] as Array)[1]):
+				continue
+		if step.has("sx"):
+			_stick.x = float(step["sx"])
+		if step.has("sy"):
+			_stick.y = float(step["sy"])
+		if not fired.has(si):
+			fired[si] = true
+			for b: Variant in step.get("press", []):
+				_pressed.append(str(b))
+				_held.append(str(b))  # a press is down on its own tick
+		for b: Variant in step.get("held", []):
+			_held.append(str(b))
+	if OS.get_environment("BOT_TRACE") != "":
+		print("TRACE t=%d st=%s stick=%s pressed=%s held=%s pos=%s v=%s ny=%.2f spd=%.1f" % [t, st, _stick, _pressed, _held, sk.global_position, sk.velocity, (sk.debug["floor_normal"] as Vector3).y, sk.speed])
+	if str(_act.get("kind", "")) == "script" and t + 1 >= int(_act.get("len", 60)):
+		_act = {}
 
 
 ## Gives up on a segment when pinned in place (the detectors report why); the bot is not meant to sit there for ever.
@@ -198,6 +268,8 @@ func _consume_special(pos: Vector3) -> bool:
 				notes.append("tp_forced_with_combo_open")
 			_tp_wait = 0
 			var tp: Dictionary = wp["tp"]
+			if bool(tp.get("car", false)):
+				tp = _tp_behind_car(tp)
 			teleport(tp["pos"], tp["dir"], float(tp.get("speed", 0.0)))
 			_next(true)
 			_prev_p = tp["pos"]
@@ -213,6 +285,31 @@ func _consume_special(pos: Vector3) -> bool:
 	if idx >= wps.size():
 		finished = true
 	return true
+
+
+## A teleport spec {car, gap, near}: behind the traffic car nearest `near` (its rear bumper + gap), facing its way, at its speed.
+func _tp_behind_car(spec: Dictionary) -> Dictionary:
+	var hint: Vector3 = spec.get("near", sk.global_position)
+	var best: Node3D = null
+	var best_d: float = INF
+	for n: Node in sk.get_tree().root.find_children("*", "TrafficCar", true, false):
+		var car: Node3D = n as Node3D
+		var d: float = Vector2(car.global_position.x - hint.x, car.global_position.z - hint.z).length()
+		if d < best_d:
+			best_d = d
+			best = car
+	if best == null:
+		notes.append("no_traffic_car")
+		return {"pos": spec.get("pos", hint), "dir": Vector3(0, 0, -1), "speed": 0.0}
+	var b: Basis = best.global_transform.basis
+	var fwd: Vector3 = Vector3(-b.z.x, 0.0, -b.z.z).normalized()
+	var rear_z: float = 2.1
+	var model: Variant = best.get("model")
+	if model is CarModel:
+		rear_z = (model as CarModel).aabb.end.z
+	var rear: Vector3 = best.global_transform * Vector3(0.0, 0.0, rear_z)
+	var pos: Vector3 = rear - fwd * float(spec.get("gap", 1.2))
+	return {"pos": Vector3(pos.x, best.global_position.y + 0.2, pos.z), "dir": fwd, "speed": float(best.get("speed"))}
 
 
 func teleport(pos: Vector3, dir: Vector3, speed: float) -> void:
@@ -420,6 +517,8 @@ func _reach(wp: Dictionary, d: Dictionary) -> void:
 			a["phase"] = 0
 		"wait":
 			a["s"] = float(wp.get("s", 1.0))
+		"script":
+			pass
 	_act = a
 	_want_revert = bool(wp.get("revert", false))
 
@@ -533,6 +632,8 @@ func _manual_sequence() -> void:
 
 
 func _manual_hold() -> void:
+	if str(_act.get("kind", "")) == "script":
+		return  # a script rides the manual itself
 	if str(_act.get("kind", "")) == "manual":
 		_act["mt"] = int(_act.get("mt", 0)) + 1
 		var done: bool = float(int(_act["mt"])) / 60.0 >= float(_act.get("dur", 2.0))
@@ -578,7 +679,12 @@ func _grind_exit(d: Dictionary) -> void:
 		if done:
 			_pressed.append("ollie")
 			_held.append("ollie")
-			_act = {}
+			if _act.has("after"):
+				# the moves that follow the pop (a rail transfer's catch on the next rail): a script from this tick
+				var after: Dictionary = _act["after"]
+				_act = {"kind": "script", "steps": after.get("steps", []), "len": int(after.get("len", 90))}
+			else:
+				_act = {}
 
 
 func _balance_stick(horizontal: bool) -> float:

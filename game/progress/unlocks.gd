@@ -159,14 +159,9 @@ static func apply_specials(db: TrickDB, equipped: PackedStringArray) -> int:
 	var named: PackedStringArray = []
 	for e: Dictionary in special_entries():
 		named.append(str(e["id"]))
-	var tricks: Array[Dictionary] = db._tricks
-	var removed: int = 0
-	var i: int = tricks.size() - 1
-	while i >= 0:
-		var t: Dictionary = tricks[i]
+	var allowed: Array = []
+	for t: Dictionary in db.by_kind("special"):
 		var id: String = str(t.get("id", ""))
-		if str(t.get("kind", "")) == "special" and named.has(id) and not equipped.has(id):
-			tricks.remove_at(i)
-			removed += 1
-		i -= 1
-	return removed
+		if not named.has(id) or equipped.has(id):
+			allowed.append(id)
+	return db.restrict_specials(allowed)

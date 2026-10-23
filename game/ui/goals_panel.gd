@@ -107,10 +107,19 @@ func bind(g: Goals, now: Callable) -> void:
 		_skater.combo_bailed.connect(func(_text: String) -> void: goals.on_combo_bailed())
 		_skater.gaps.gap_completed.connect(_on_gap_completed)
 		if not Flags.is_scripted_run():
-			Unlocks.apply_specials(_skater.db, store.equipped_specials())
+			_restrict_specials(store.equipped_specials())
 	_sync_rewards()
 	_spawn_pickups()
 	_begin_run()
+
+
+## Takes the gated specials the player has not equipped out of the skater's table (ungated specials stay).
+func _restrict_specials(equipped: PackedStringArray) -> void:
+	var allowed: Array = Array(_skater.db.ids())
+	for e: Dictionary in Unlocks.special_entries():
+		if not equipped.has(str(e["id"])):
+			allowed.erase(str(e["id"]))
+	_skater.db.restrict_specials(allowed)
 
 
 ## The skater finished a real gap (not a link bonus): feed the gap goals.

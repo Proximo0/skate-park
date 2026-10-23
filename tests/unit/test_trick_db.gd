@@ -202,3 +202,34 @@ func test_thug2_extras_in_the_table() -> void:
 	assert_true(int(db.find_move("natas_spin").get("points_per_sec", 0)) > 0, "a natas pays while held")
 	assert_true(int(db.find_move("skitch").get("points_per_sec", 0)) > 0, "a skitch pays while towed")
 	assert_eq(int(db.find_move("sticker_slap").get("points_per_sec", 0)), 0, "a sticker slap is a tap")
+
+
+func test_restrict_specials_keeps_only_the_allowed() -> void:
+	var db: TrickDB = _db()
+	var before: int = db.by_kind("special").size()
+	assert_eq(before, 4)
+	var removed: int = db.restrict_specials(["rocket_launch"])
+	assert_eq(removed, 3)
+	assert_eq(db.by_kind("special").size(), 1)
+	assert_false(db.find_sequence(["S", "N"], "flip").is_empty(), "the allowed special still triggers")
+	assert_true(db.find_sequence(["E", "W"], "grab").is_empty(), "a restricted one cannot")
+	assert_false(db.get_trick("pizza_spinner").is_empty(), "by id it is still known")
+	assert_eq(db.by_kind("flip").size(), _db().by_kind("flip").size(), "other kinds are untouched")
+
+
+func test_restrict_specials_empty_removes_all_and_unknown_ids_are_ignored() -> void:
+	var db: TrickDB = _db()
+	assert_eq(db.restrict_specials(["not_a_trick"]), 4)
+	assert_eq(db.by_kind("special").size(), 0)
+	assert_eq(db.restrict_specials([]), 0, "nothing left to remove")
+
+
+func test_clear_specials_restriction_restores_the_table() -> void:
+	var db: TrickDB = _db()
+	var n: int = db.ids().size()
+	db.restrict_specials([])
+	assert_eq(db.ids().size(), n - 4)
+	assert_eq(db.clear_specials_restriction(), 4)
+	assert_eq(db.ids().size(), n)
+	assert_false(db.find_sequence(["E", "W"], "grab").is_empty(), "restored specials trigger again")
+	assert_eq(db.clear_specials_restriction(), 0, "clearing twice is a no-op")

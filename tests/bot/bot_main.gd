@@ -2,6 +2,7 @@ extends Node
 ## The play-bot: skates the REAL park (res://game/main.tscn) along scripted routes the way a player would, and reports
 ## everything that feels broken. Run it with tools/bot_run.sh (see docs/play_bot.md).
 ## Args (after --): --tune=<preset.json>  --only=<line or prefix>  --record  --list
+## Env: BOT_EVENTS=1 prints `BOTSEEN <line> <events and trick ids>`; BOT_WPS=1 prints each line's waypoints; BOT_TRACE=1 prints a TRACE per tick of a scripted action.
 ## Output: `BOT <line> DONE|FAIL ...`, `BOTISSUE <kind> <line> pos=.. tick=.. detail`, `BOT score=<0-100> issues=N`,
 ## /tmp/bot/report.json and (with --record) /tmp/bot/<line>.json flight-recorder files for lines with problems.
 
@@ -12,7 +13,7 @@ const TAIL_TICKS: int = 45  ## ticks after the last waypoint, so the final landi
 const PENALTY: Dictionary = {
 	"bail": 5.0, "snag": 4.0, "hard_stop": 4.0, "stuck": 8.0, "respawn": 15.0, "below_kill_plane": 15.0,
 	"jitter_normal": 2.0, "jitter_y": 2.0, "floor_flicker": 2.0, "teleport": 3.0, "overspeed": 6.0, "nan": 20.0,
-	"grind_miss": 3.0, "action_miss": 2.0, "wp_timeout": 3.0, "gap_miss": 3.0,
+	"grind_miss": 3.0, "action_miss": 2.0, "wp_timeout": 3.0, "gap_miss": 3.0, "move_miss": 3.0,
 }
 const FAIL_PENALTY: float = 5.0
 
@@ -97,6 +98,7 @@ func _line_names() -> Array[String]:
 	base.append_array(BotLines.names() if _route.is_empty() else LevelRoute.line_names(_route))
 	if not _no_auto:
 		base.append_array(BotAuto.NAMES)  ## drop-ins, roll-offs and the big drop, found from the level's own geometry (bot_auto.gd)
+		base.append_array(BotMoves.MOVE_NAMES)  ## the THUG2 move set (bot_moves.gd): natas, sticker slap, bert, skitch, wallplant, ...
 	return base
 
 
@@ -158,8 +160,9 @@ func _begin_line() -> void:
 func _start_run() -> void:
 	var park: Node3D = _main.get("park") as Node3D
 	var line_name: String = str(_line["name"])
-	if BotAuto.NAMES.has(line_name):
-		_line = BotAuto.build(line_name, park as Level, _sk.get_world_3d().direct_space_state)
+	if BotAuto.NAMES.has(line_name) or BotMoves.MOVE_NAMES.has(line_name):
+		var space: PhysicsDirectSpaceState3D = _sk.get_world_3d().direct_space_state
+		_line = BotAuto.build(line_name, park as Level, space) if BotAuto.NAMES.has(line_name) else BotMoves.build_move(line_name, park as Level, space)
 		if _line.is_empty():
 			print("BOTINFO skip %s: no candidate on this level" % line_name)
 			_main.queue_free()
@@ -172,12 +175,21 @@ func _start_run() -> void:
 		_line = lines.build(str(_line["name"]))
 	else:
 		_line = LevelRoute.line(_route, str(_line["name"]))
+	if OS.get_environment("BOT_WPS") != "":
+		for w: Variant in _line["wps"]:
+			var wd: Dictionary = w
+			var keep: Dictionary = {}
+			for k: Variant in wd:
+				if str(k) != "steps":
+					keep[k] = wd[k]
+			print("WP ", keep)
 	var tune: PhysicsTuning = PhysicsTuning.shared()
 	_det = BotDetectors.new(str(_line["name"]), tune, _record)
 	_driver = BotDriver.new(_sk, park, _line["wps"])
 	_snapshots = {}
 	_sk.physics_ticked.connect(_on_tick)
 	_sk.gap_hit.connect(func(n: String, _p: int) -> void: _det.on_gap(n))
+	_sk.trick_started.connect(func(t: Dictionary) -> void: _det.on_trick(str(t.get("id", ""))))
 	_line_ticks = 0
 	_tail = 0
 	_fail_reason = ""
@@ -191,6 +203,7 @@ func _on_tick(f: Dictionary) -> void:
 		_snapshots[str(int(f["tick"]))] = var_to_str(_sk.snapshot())
 	_det.wall_test = _driver.wall_test
 	_det.snapping_now = _sk.snapping()
+	_det.towed = _sk.balance_kind == "skitch"
 	_det.feed(f, _driver.moving_intent, _driver.teleported, _hit_info())
 	for e: Variant in f["events"]:
 		if str(e).begins_with("land:"):
@@ -244,6 +257,11 @@ func _end_line(reason: String) -> void:
 		elif not d.gaps.has(str(g)) and reason == "":
 			d.issues.append({"kind": "gap_miss", "line": d.line_name, "pos": pos, "tick": tick, "detail": "gap '%s' was attempted but not completed (see gaps.json: its zones and required state)" % str(g)})
 			d.counts["gap_miss"] = int(d.counts.get("gap_miss", 0)) + 1
+	# moves the line is meant to pull off (trick ids or skater events) that never fired
+	for m: Variant in _line.get("moves", []):
+		if not d.seen.has(str(m)) and reason == "":
+			d.issues.append({"kind": "move_miss", "line": d.line_name, "pos": pos, "tick": tick, "detail": "move '%s' was attempted but never happened (no such trick id or skater event; see the line's moves list)" % str(m)})
+			d.counts["move_miss"] = int(d.counts.get("move_miss", 0)) + 1
 	var ok: bool = reason == "" and (drv.skipped.is_empty() or soft) and not d.counts.has("respawn") and not d.counts.has("below_kill_plane") and not d.counts.has("nan")
 	if reason != "":
 		_fail_reason = reason
@@ -293,6 +311,17 @@ func _end_line(reason: String) -> void:
 	print("BOT %s %s t=%.1f bails=%d snags=%d gaps=[%s] max_speed=%.1f max_h=%.1f grind=%.1fs manual=%.1fs landings=%s landed_total=%d %s" % [
 		d.line_name, "DONE" if ok else "FAIL", t_sec, d.bails, d.snags, ",".join(d.gaps), d.max_speed_seen, d.max_height,
 		float(drv.grind_ticks) / 60.0, float(drv.manual_ticks) / 60.0, _land_str(d.landings), landed, " ".join(notes)])
+	var wanted: Array[String] = []
+	for m: Variant in _line.get("moves", []):
+		wanted.append("%s%s" % [str(m), "" if d.seen.has(str(m)) else "(MISSING)"])
+	if not wanted.is_empty():
+		print("BOTMOVES %s %s" % [d.line_name, " ".join(wanted)])
+	if OS.get_environment("BOT_EVENTS") != "":
+		var evn: Array[String] = []
+		for k: Variant in d.seen:
+			evn.append(str(k))
+		evn.sort()
+		print("BOTSEEN %s %s" % [d.line_name, " ".join(evn)])
 	for iss: Dictionary in d.issues:
 		var p: Vector3 = iss["pos"]
 		print("BOTISSUE %s %s pos=(%.1f,%.1f,%.1f) tick=%d %s" % [iss["kind"], iss["line"], p.x, p.y, p.z, int(iss["tick"]), iss["detail"]])

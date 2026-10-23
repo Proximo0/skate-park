@@ -120,7 +120,9 @@ func _lip_spots() -> Array:
 	cands.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if absf(float(a["drop"]) - float(b["drop"])) > 0.01:
 			return float(a["drop"]) > float(b["drop"])
-		return str(a["name"]) < str(b["name"]))
+		var ma: Vector3 = a["mid"]  ## ties by position (node names carry run-dependent @NNN ids)
+		var mb: Vector3 = b["mid"]
+		return ma.x < mb.x if absf(ma.x - mb.x) > 0.01 else ma.z < mb.z)
 	var picked: Array = []
 	for c: Dictionary in cands:
 		var far: bool = true

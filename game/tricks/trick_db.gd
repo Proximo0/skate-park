@@ -38,6 +38,7 @@ const NEUTRAL_BUTTONS: PackedStringArray = ["flip", "grab", "grind"]
 var _tricks: Array[Dictionary] = []
 var _by_id: Dictionary = {}
 var _by_key: Dictionary = {}
+var _held_specials: Array[Dictionary] = []  ## specials taken out by restrict_specials(), kept for clear_specials_restriction()
 
 
 static func load_default() -> TrickDB:
@@ -161,6 +162,31 @@ func by_kind(kind: String) -> Array[Dictionary]:
 	return out
 
 
+## Keeps only the specials whose id is in `allowed`; every other kind "special" is taken out of the lookups (find_sequence
+## and by_kind no longer see it; get_trick still does). Returns how many were removed. Calling it again narrows from what
+## is left; clear_specials_restriction() puts them back.
+func restrict_specials(allowed: Array) -> int:
+	var removed: int = 0
+	var i: int = _tricks.size() - 1
+	while i >= 0:
+		var t: Dictionary = _tricks[i]
+		if str(t.get("kind", "")) == "special" and not allowed.has(str(t.get("id", ""))):
+			_held_specials.append(t)
+			_tricks.remove_at(i)
+			removed += 1
+		i -= 1
+	return removed
+
+
+## Undoes restrict_specials(): the removed specials come back (at the end of the table). Returns how many.
+func clear_specials_restriction() -> int:
+	var back: int = _held_specials.size()
+	for t: Dictionary in _held_specials:
+		_tricks.append(t)
+	_held_specials.clear()
+	return back
+
+
 func ids() -> PackedStringArray:
 	var out: PackedStringArray = []
 	for t: Dictionary in _tricks:
@@ -172,6 +198,7 @@ func _load_list(list: Array) -> void:
 	_tricks.clear()
 	_by_id.clear()
 	_by_key.clear()
+	_held_specials.clear()
 	for item: Variant in list:
 		if typeof(item) != TYPE_DICTIONARY:
 			push_error("TrickDB: non-object entry in tricks")
