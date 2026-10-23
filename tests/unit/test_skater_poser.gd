@@ -614,3 +614,67 @@ func test_ledge_stalls_sit_near_flat_on_the_edge_at_standing_height() -> void:
 	assert_true((ns["board_rot"] as Vector3).x < -10.0, "nose stall: tail up")
 	assert_true((blunt["board_rot"] as Vector3).x > 20.0, "blunt: nose up on the tail")
 	assert_true((smith["board_rot"] as Vector3).z < -10.0 and (feeble["board_rot"] as Vector3).z > 10.0, "smith and feeble roll opposite ways")
+
+
+const ROUND8_ANIMS: PackedStringArray = ["natas_spin", "sticker_slap", "bert_slide", "skitch"]
+
+
+func test_round8_moves_have_their_own_full_finite_poses() -> void:
+	var idle: Dictionary = SkaterPoser.pose_for("idle_ride", 0.3, 0.0, 0.0)
+	for a: String in ROUND8_ANIMS:
+		assert_eq(SkaterPoser.pose_branch(a), "other:" + a, "exact id " + a)
+		for sw: bool in [false, true]:
+			for side: float in [1.0, -1.0]:
+				for t: float in [0.0, 0.1, 0.3, 0.6, 2.0]:
+					var ctx: Dictionary = {"wall_side": side, "uphill_side": side, "vy": 2.0}
+					var pose: Dictionary = SkaterPoser.pose_for(a, t, 0.3, 0.4, sw, 4.0, 0.3, ctx)
+					assert_true(_has_full_pose(pose), "full pose for %s at %f" % [a, t])
+					for k: String in ["foot_L", "foot_R", "hand_L", "hand_R", "board_pos", "board_rot"]:
+						assert_true((pose[k] as Vector3).is_finite(), "%s finite for %s" % [k, a])
+		var mid: Dictionary = SkaterPoser.pose_for(a, 0.3, 0.3, 0.0, false, 4.0, 0.3, {"wall_side": 1.0, "uphill_side": 1.0})
+		assert_true(float(mid["hips_y"]) < float(idle["hips_y"]) - 0.01 or a == "sticker_slap", a + " is not the idle pose")
+
+
+func test_natas_crouches_over_the_post_with_a_hand_on_it() -> void:
+	var p: Dictionary = SkaterPoser.pose_for("natas_spin", 0.4, 0.0, 0.0)
+	assert_true(float(p["hips_y"]) < SkaterPoser.IDLE_HIPS - 0.3, "deep crouch")
+	assert_near(float(p["grip_L"]) + float(p["grip_R"]), 1.0, 0.01, "exactly one hand down")
+	var hand: Vector3 = p["hand_L"] if float(p["grip_L"]) > 0.5 else p["hand_R"]
+	assert_true(hand.y < 0.2 and absf(hand.x) < 0.3 and absf(hand.z) < 0.2, "hand on the board's edge over the post")
+	assert_near(float((p["board_pos"] as Vector3).y), 0.0, 0.001, "board sits on the post top")
+
+
+func test_sticker_slap_kicks_a_foot_out_toward_the_wall_and_returns() -> void:
+	for side: float in [1.0, -1.0]:
+		var mid: Dictionary = SkaterPoser.pose_for("sticker_slap", 0.15, 0.0, 0.0, false, 6.0, 0.0, {"wall_side": side, "vy": 1.0})
+		var foot: Vector3 = mid["foot_L"]
+		assert_true(foot.x * side > 0.4, "foot out on the wall side %f" % side)
+		assert_true(foot.y > 0.25, "foot lifted off the board")
+		assert_true(float(mid["fpitch_L"]) > 40.0, "sole turned to the wall")
+		assert_true(float(mid["grip_L"]) + float(mid["grip_R"]) > 0.5, "an arm braces the wall")
+	var start: Dictionary = SkaterPoser.pose_for("sticker_slap", 0.0, 0.0, 0.0, false, 6.0, 0.0, {"wall_side": 1.0})
+	assert_true(float(start["feet_on_board"]) > 0.95, "both feet on the board before the tap")
+	var done: Dictionary = SkaterPoser.pose_for("sticker_slap", 0.3, 0.0, 0.0, false, 6.0, 0.0, {"wall_side": 1.0})
+	assert_true(float(done["feet_on_board"]) > 0.95, "and back on it when the slap ends")
+
+
+func test_bert_slide_puts_the_uphill_hand_down_and_leans_into_the_bank() -> void:
+	for side: float in [1.0, -1.0]:
+		var p: Dictionary = SkaterPoser.pose_for("bert_slide", 0.3, 0.0, 0.0, false, 6.0, 0.0, {"uphill_side": side})
+		var down: Vector3 = p["hand_L"] if float(p["grip_L"]) > 0.5 else p["hand_R"]
+		assert_true(down.y < 0.1, "hand on the surface")
+		assert_true(down.x * side > 0.2, "on the uphill side %f" % side)
+		assert_true(float(p["lean"]) * side > 20.0, "leaning into the bank")
+		assert_true(float(p["hips_y"]) < SkaterPoser.IDLE_HIPS - 0.25, "low body")
+		assert_true(absf((p["board_rot"] as Vector3).y) > 10.0, "board swung round under the feet")
+
+
+func test_skitch_holds_the_bumper_ahead_with_the_lead_hand() -> void:
+	for sw: bool in [false, true]:
+		var p: Dictionary = SkaterPoser.pose_for("skitch", 0.4, 0.0, 0.0, sw)
+		var lead: String = "R" if sw else "L"
+		var other: String = "L" if sw else "R"
+		assert_near(float(p["grip_" + lead]), 1.0, 0.01, "lead hand grips")
+		assert_near(float(p["grip_" + other]), 0.0, 0.01, "other arm free")
+		assert_true((p["hand_" + lead] as Vector3).z < -0.4, "hand ahead of the nose side")
+		assert_true(float(p["pitch"]) > 15.0, "leaning toward the car")

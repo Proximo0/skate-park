@@ -172,6 +172,7 @@ var _rest: Dictionary = {}  ## joint name -> Vector3 rest rotation (radians)
 var _current: Dictionary = {}
 var _has_pose: bool = false
 var _preview_t: float = 0.0
+var _wall_side_cache: float = 0.0
 var _air_t: float = 0.0  ## seconds the skater has been in the AIR state
 var _tilt_s: float = 0.0  ## smoothed vert-air tilt weight 0..1
 var _pivot_clock: float = 99.0  ## seconds since the skater's manual pivot (switch stance flipped inside a manual)
@@ -304,7 +305,48 @@ func _skater_ctx(delta: float) -> Dictionary:
 	ctx["stagger_left"] = float(skater.get("stagger"))
 	ctx["stagger_time"] = float(tn.get("stagger_time")) if tn != null else STAGGER_TIME_DEFAULT
 	ctx["ledge"] = bool(skater.get("lip_on_ledge"))
+	var cur: String = str(skater.get("anim"))
+	if cur == "sticker_slap":
+		ctx["wall_side"] = _wall_side()
+	else:
+		_wall_side_cache = 0.0
+	if cur == "bert_slide":
+		ctx["uphill_side"] = _uphill_side()
 	return ctx
+
+
+## Which side of the rider (visual +X = right of travel, -1 left) the wall of a sticker slap is on: a ray out each way from
+## the body, the nearer hit wins; remembered for the length of the slap so the pose does not flip.
+func _wall_side() -> float:
+	if _wall_side_cache != 0.0:
+		return _wall_side_cache
+	var side: float = 1.0
+	var parent: Node3D = body.get_parent() as Node3D
+	var sk: Node3D = skater as Node3D
+	if parent != null and sk != null and sk.is_inside_tree():
+		var space: PhysicsDirectSpaceState3D = sk.get_world_3d().direct_space_state
+		var from: Vector3 = sk.global_position + Vector3.UP * 0.9
+		var best: float = INF
+		for sgn: float in [1.0, -1.0]:
+			var q: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(from, from + parent.global_basis.x.normalized() * sgn * 2.0)
+			q.exclude = [sk.get_rid()]
+			var hit: Dictionary = space.intersect_ray(q)
+			if not hit.is_empty() and from.distance_to(hit["position"] as Vector3) < best:
+				best = from.distance_to(hit["position"] as Vector3)
+				side = sgn
+	_wall_side_cache = side
+	return side
+
+
+## The uphill side of a bank under a bert slide, in visual X (+1 right of travel): against the fall line of the floor.
+func _uphill_side() -> float:
+	var parent: Node3D = body.get_parent() as Node3D
+	var n: Variant = skater.get("_floor_normal")
+	if parent == null or not (n is Vector3):
+		return 1.0
+	var down: Vector3 = Vector3.DOWN.slide(n as Vector3)
+	var local: Vector3 = parent.global_basis.inverse() * down
+	return -1.0 if local.x > 0.0 else 1.0
 
 
 ## True while the skater's state machine is in AIR (the anim name can lag behind, see _process).
@@ -574,6 +616,14 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 				_pose_caveman(pose, t, speed, phase)
 			"acid_drop":
 				_pose_acid_drop(pose, t, ext)
+			"natas_spin":
+				_pose_natas(pose, t, b)
+			"sticker_slap":
+				_pose_sticker(pose, t, float(ctx.get("wall_side", 1.0)), float(ctx.get("vy", 0.0)))
+			"bert_slide":
+				_pose_bert(pose, t, float(ctx.get("uphill_side", 1.0)))
+			"skitch":
+				_pose_skitch(pose, t, b)
 			_:
 				_pose_idle(pose, c)
 	if CARVE_ANIMS.has(anim):
@@ -2047,6 +2097,106 @@ static func _pose_acid_drop(pose: Dictionary, t: float, ext: float = 0.0) -> voi
 	pose["Head"] = Vector3(-8.0 * tuck * (1.0 - level), 0.0, 0.0)
 	_arms(pose, Vector3(35.0 * tuck + 10.0 * absorb, 0.0, -35.0 - 25.0 * absorb), Vector3(-5.0 * tuck, 0.0, 35.0 + 30.0 * absorb), 28.0)
 	_feet_on_board(pose)
+
+
+## Natas spin (anim "natas_spin", looped while the skater turns on the post): the board balanced on the post top, the rider
+## folded right down over it, front hand dropped to touch the post's top beside the deck and the free arm out for balance,
+## the knees bent deep. The balance meter rocks the board and the body.
+static func _pose_natas(pose: Dictionary, t: float, b: float) -> void:
+	var k: float = _smooth(t / 0.12)
+	var sway: float = sin(t * 5.0)
+	_board_turn(pose, Vector3(2.0 * b, 0.0, 5.0 * b + 1.5 * sway * k), Vector3.ZERO)
+	pose["hips_y"] = IDLE_HIPS - 0.44 * k
+	pose["pitch"] = 34.0 * k
+	pose["lean"] = 4.0 * b
+	_curl(pose, 8.0 + 44.0 * k)
+	pose["Head"] = Vector3(-24.0 * k, 0.0, 0.0)
+	var sx: float = cos(deg_to_rad(float(pose["feet_yaw"])))  ## +1 regular, -1 switch: the chest side in travel space
+	var reach: Vector3 = Vector3(0.18 * sx, 0.1, -0.02 * sx)
+	var down: String = "L" if sx > 0.0 else "R"  ## the arm toward the nose
+	pose["hand_" + down] = _board_point(pose, reach)
+	pose["grip_" + down] = k
+	var spread: Vector3 = Vector3(-18.0 * k + 6.0 * sway, 0.0, 28.0 + 50.0 * k + 12.0 * b)
+	if down == "L":
+		pose["RightUpperArm"] = spread
+	else:
+		pose["LeftUpperArm"] = Vector3(spread.x, 0.0, -spread.z)
+	pose["LeftLowerArm" if down == "R" else "RightLowerArm"] = Vector3(22.0 + 12.0 * k, 0.0, 0.0)
+	_feet_on_board(pose, Vector3(0.0, 0.0, 0.02), Vector3(0.0, 0.0, -0.02))
+
+
+## Sticker slap (anim "sticker_slap", 0.3 s, ctx "wall_side"): in the air beside a wall, the rider tips away from it and
+## kicks the near foot out flat onto the wall, the wall-side arm braced against it and the other thrown out, then
+## the foot comes back under the body for the air pose.
+static func _pose_sticker(pose: Dictionary, t: float, side: float, vy: float) -> void:
+	_pose_air(pose, t + 0.2, 0.0, vy)
+	var u: float = clampf(t / 0.3, 0.0, 1.0)
+	var slap: float = sin(PI * _smooth(u)) ## 0 -> 1 at the touch -> 0
+	var held: float = _smooth(slap * 1.4)
+	var wall_x: float = 0.56 * side
+	var ankle: Vector3 = Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)
+	var sx: float = cos(deg_to_rad(float(pose["feet_yaw"])))
+	pose["lean"] = float(pose["lean"]) + 14.0 * side * sx * held
+	pose["hips_y"] = float(pose["hips_y"]) - 0.05 * held
+	var deck: Vector3 = deck_point(pose, FRONT_FOOT + ankle)
+	var out: Vector3 = _board_point(pose, Vector3(wall_x, 0.34, -0.12) + ankle)
+	pose["foot_L"] = deck.lerp(out, held)
+	pose["fpitch_L"] = 8.0 + 70.0 * held
+	pose["feet_on_board"] = 1.0 - held
+	var near: String = "L" if side * sx > 0.0 else "R"
+	var far: String = "R" if near == "L" else "L"
+	pose["hand_" + near] = _board_point(pose, Vector3(wall_x * 1.02, 0.92, -0.2))
+	pose["grip_" + near] = held * 0.85
+	var spread: Vector3 = Vector3(-30.0, 0.0, -70.0) if far == "L" else Vector3(-30.0, 0.0, 70.0)
+	pose["LeftUpperArm" if far == "L" else "RightUpperArm"] = spread * (0.4 + 0.6 * held) + (pose["LeftUpperArm" if far == "L" else "RightUpperArm"] as Vector3) * (1.0 - held)
+	pose["Head"] = (pose["Head"] as Vector3) + Vector3(-6.0 * held, 0.0, 0.0)
+
+
+## Bert slide (anim "bert_slide", ctx "uphill_side"): hard carve on a bank with the uphill hand planted on the surface, the
+## body dropped low and leaning into the bank, the board kicked round under the feet as it scrubs speed.
+static func _pose_bert(pose: Dictionary, t: float, uphill: float) -> void:
+	var k: float = _smooth(t / 0.12)
+	var slide: float = _smooth(t / 0.2)
+	var yaw: float = 26.0 * slide * uphill + 3.0 * sin(t * 9.0) * slide
+	pose["body_yaw"] = float(pose["body_yaw"]) + yaw * 0.5
+	pose["feet_yaw"] = float(pose["feet_yaw"]) + yaw * 0.8
+	_board_turn(pose, Vector3(0.0, yaw, -7.0 * uphill * slide), Vector3.ZERO)
+	pose["hips_y"] = IDLE_HIPS - 0.36 * k
+	pose["pitch"] = 10.0 * k
+	var sx: float = cos(deg_to_rad(float(pose["feet_yaw"])))
+	pose["lean"] = 36.0 * k * uphill * sx
+	_curl(pose, 8.0 + 30.0 * k)
+	pose["Head"] = Vector3(-8.0 * k, 0.0, 0.0)
+	var down: String = "L" if uphill * sx > 0.0 else "R"
+	var up: String = "R" if down == "L" else "L"
+	pose["hand_" + down] = ground_point(pose, Vector3.ZERO) + Vector3(0.36 * uphill, 0.03, -0.02 + 0.04 * sin(t * 11.0))
+	pose["grip_" + down] = k
+	var free: Vector3 = Vector3(-10.0 * k, 0.0, 55.0 + 25.0 * k) if up == "R" else Vector3(-10.0 * k, 0.0, -55.0 - 25.0 * k)
+	pose["RightUpperArm" if up == "R" else "LeftUpperArm"] = free
+	pose["LeftLowerArm" if up == "L" else "RightLowerArm"] = Vector3(24.0, 0.0, 0.0)
+	_feet_on_board(pose)
+
+
+## Skitch (anim "skitch", balance "skitch"): crouched behind the car with the lead hand out holding the bumper ahead, the
+## other arm out wide to balance, the body leaning forward over the board; the balance meter rocks the free arm and the board.
+static func _pose_skitch(pose: Dictionary, t: float, b: float) -> void:
+	var k: float = _smooth(t / 0.15)
+	var sway: float = sin(t * 7.0)
+	_board_turn(pose, Vector3(0.0, 0.0, 4.0 * b), Vector3.ZERO)
+	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * (0.35 + 0.9 * k)
+	pose["pitch"] = 22.0 * k
+	pose["lean"] = 5.0 * b
+	_curl(pose, 8.0 + 12.0 * k)
+	pose["Head"] = Vector3(-10.0 * k, 0.0, 0.0)
+	var sx: float = cos(deg_to_rad(float(pose["feet_yaw"])))
+	var lead: String = "L" if sx > 0.0 else "R"  ## the arm toward the nose
+	var free: String = "R" if lead == "L" else "L"
+	pose["hand_" + lead] = _board_point(pose, Vector3(0.05 * sx, 0.56, -0.5))
+	pose["grip_" + lead] = k
+	var spread: float = (65.0 + 30.0 * b * (1.0 if free == "R" else -1.0)) * (1.0 if free == "R" else -1.0)
+	pose["RightUpperArm" if free == "R" else "LeftUpperArm"] = Vector3(-10.0, 0.0, spread * k + 4.0 * sway * (1.0 if free == "R" else -1.0))
+	pose["RightLowerArm" if free == "R" else "LeftLowerArm"] = Vector3(20.0, 0.0, 0.0)
+	_feet_on_board(pose, Vector3(0.0, 0.0, -0.02), Vector3(0.0, 0.0, 0.03))
 
 
 static func _board_turn(pose: Dictionary, euler_deg: Vector3, pivot: Vector3) -> void:
