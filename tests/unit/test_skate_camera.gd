@@ -186,3 +186,36 @@ func test_camera_settings_scales() -> void:
 	assert_eq(GameSettings.CAM_FOV_OFFSET[1], 0.0)
 	assert_true(GameSettings.CAM_DISTANCE_SCALE[0] < 1.0 and GameSettings.CAM_DISTANCE_SCALE[2] > 1.0)
 	assert_true(GameSettings.CAM_FOV_OFFSET[0] < 0.0 and GameSettings.CAM_FOV_OFFSET[2] > 0.0)
+
+
+func test_framed_look_keeps_a_rider_in_frame_unchanged() -> void:
+	var look := Vector3(0, 0, -10)
+	_cam_vec_near(SkateCamera.framed_look(Vector3.ZERO, look, Vector3(0, 0.3, -5), 70.0), look, "rider near the centre")
+
+
+func test_framed_look_turns_toward_a_rider_leaving_the_frame() -> void:
+	# rider 4 m ahead and 3 m up (37 deg above the view): the view turns up until the whole rider fits
+	var rider := Vector3(0, 3, -4)
+	var shown: Vector3 = SkateCamera.framed_look(Vector3.ZERO, Vector3(0, 0, -4), rider, 70.0)
+	var off: float = shown.angle_to(rider)
+	var limit: float = deg_to_rad(35.0) - atan(SkateCamera.RIDER_HALF / rider.length()) - SkateCamera.FRAME_MARGIN
+	assert_near(off, limit, 0.01, "rider sits at the clamp angle")
+	assert_true(shown.y > 0.0, "the view tilted up toward the rider")
+
+
+func test_pitch_limited_caps_a_straight_down_view() -> void:
+	var shown: Vector3 = SkateCamera.pitch_limited(Vector3.ZERO, Vector3(0, -10, -0.5), Vector3(0, 0, -1))
+	var pitch: float = asin(shown.normalized().y)
+	assert_near(pitch, -SkateCamera.PITCH_MIN, 0.001, "capped at PITCH_MIN")
+	assert_true(shown.z < 0.0, "keeps the heading")
+
+
+func test_pitch_limited_keeps_the_heading_over_the_top() -> void:
+	# the look point slipped just behind the camera (past straight down): the view keeps facing -Z, never flips round
+	var shown: Vector3 = SkateCamera.pitch_limited(Vector3.ZERO, Vector3(0, -10, 0.3), Vector3(0, 0, -1), SkateCamera.PITCH_HARD)
+	assert_true(shown.z < 0.0, "heading kept (z %.2f)" % shown.z)
+
+
+func test_pitch_limited_leaves_a_level_view() -> void:
+	var look := Vector3(1, -1, -6)
+	_cam_vec_near(SkateCamera.pitch_limited(Vector3.ZERO, look, Vector3(0, 0, -1)), look, "gentle pitch untouched")
