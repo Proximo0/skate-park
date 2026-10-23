@@ -22,6 +22,7 @@ const ON_TRANSITION_NY: float = 0.97  ## grounded on a floor steeper than this (
 const HANG_TIME: float = 0.3  ## tail hooked on the coping
 const STOMP_TIME: float = 0.2  ## front foot stomps the nose down (the board pitches about the rear wheels on the coping)
 const TIP_TIME: float = 0.32  ## the board rolls over the coping onto the wall: wheels on it the whole way, no hop
+const TIP_FALL_START: float = 0.3  ## share of TIP_TIME the nose turns down before the body starts to fall
 const DECK_GLIDE_MAX: float = 2.5  ## m: already on the deck this close behind the coping, the skater glides over, no hop
 const DECK_GLIDE_RISE: float = 0.35  ## m the deck may sit above or below the skater for a glide
 const CAMERA_HOLD: float = 1.0  ## s at most the chase camera stays up over the coping watching the drop (Skater.camera_hold)
@@ -169,6 +170,19 @@ static func tip_pose(c0: Vector3, c1: Vector3, lip: Vector3, n: Vector3, turn: f
 	var swung: Vector3 = lip + (c0 - lip).rotated(axis, ang * k)
 	var swung_end: Vector3 = lip + (c0 - lip).rotated(axis, ang)
 	return [swung + (c1 - swung_end) * f, Vector3.UP.rotated(axis, ang * k).normalized()]
+
+
+## Length of the path tip_pose carries the sphere centre along from c0 to c1 (its swing about the coping and the
+## slide onto the wall together), sampled.
+static func tip_path_length(c0: Vector3, c1: Vector3, lip: Vector3, n: Vector3) -> float:
+	var total: float = 0.0
+	var prev: Vector3 = c0
+	for i: int in range(1, 17):
+		var x: float = float(i) / 16.0
+		var p: Vector3 = tip_pose(c0, c1, lip, n, x, x)[0]
+		total += prev.distance_to(p)
+		prev = p
+	return maxf(total, c0.distance_to(c1))
 
 
 ## The camera's perch for a drop-in at coping `lip` facing down the ramp along `inward`: up over the coping, a little

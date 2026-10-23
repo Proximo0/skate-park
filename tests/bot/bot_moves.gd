@@ -655,7 +655,9 @@ func _ledge_line(line_name: String) -> Dictionary:
 				{"tp": {"pos": gs + Vector3.UP * 0.1, "dir": -n, "speed": 3.5}},
 				{"p": mid + n * 3.0, "r": 1.0, "spd": 3.5, "tmo": 6.0},
 				{"p": mid + n * 1.7, "r": 0.5, "spd": 3.5, "act": "script", "steps": steps, "len": 200, "nopush": true, "tmo": 6.0},
-				{"p": mid + n * 30.0, "r": 2.0, "spd": 4.0, "tmo": 4.0},  ## the stall drops back off the side it came from; the wait lets it land
+				## the stall drops off either side of the ledge; done once it is down and rolling near it (a far target behind a
+				## rider who dropped off the back made it U-turn over whatever lay there)
+				{"p": mid, "r": 3.5, "spd": 3.0, "tmo": 4.0},
 			]
 			return {"name": line_name, "limit": 30.0, "soft": true, "expect": [], "moves": ["ledge_stall"], "wps": wps,
 				"note": "ledge=%s" % String(rl["name"])}

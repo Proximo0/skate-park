@@ -64,25 +64,32 @@
 		"why": "A foot drag from 8 m/s takes a real skater about 6 to 8 m. The game brakes a little harder so stopping for a trick spot feels controllable; below 3 m it feels like hitting a wall."
 	},
 	"turn_radius_4ms": {
-		"target": 2.0,
-		"min_ok": 1.3,
-		"max_ok": 3.0,
+		"target": 2.5,
+		"min_ok": 1.5,
+		"max_ok": 3.2,
 		"unit": "m",
-		"why": "A real carve at walking-plus speed is 2 to 4 m; a kick turn is tighter. Tight low-speed turning lets the player line up rails and ramps in a small park."
+		"why": "A real carve at walking-plus speed is 2 to 4 m; a kick turn is tighter. Round 10: the crawl turn rate fades to the carving rate by a jog (exp(-v/1.2)), so a 4 m/s carve is about 2.2 to 2.5 m: tight enough to line up rails in a small park, no longer a pivot on a pin."
 	},
 	"turn_radius_8ms": {
 		"target": 4.5,
-		"min_ok": 3.0,
-		"max_ok": 6.5,
+		"min_ok": 3.8,
+		"max_ok": 6.0,
 		"unit": "m",
-		"why": "A real carve at 8 m/s needs 8 to 12 m. THUG-style steering is much sharper; around 4 to 5 m lets the player thread a street line at speed without understeer."
+		"why": "A real carve at 8 m/s needs 8 to 12 m. THUG-style steering is sharper, but the round-9 3.3 m read as a ball on a pin (audit gap 5). About 4.5 m threads a street line at speed and still has weight."
 	},
 	"turn_radius_12ms": {
-		"target": 7.0,
-		"min_ok": 5.0,
+		"target": 8.0,
+		"min_ok": 6.0,
 		"max_ok": 10.0,
 		"unit": "m",
 		"why": "Radius should grow with speed but stay well under a real skater's 15 m or more, so speed does not turn the game into a straight-line racer. It should be clearly wider than at 8 m/s (about 1.5x)."
+	},
+	"carve_lean_in_s": {
+		"target": 0.2,
+		"min_ok": 0.1,
+		"max_ok": 0.35,
+		"unit": "s",
+		"why": "Full stick at 8 m/s: time until the turn reaches 90% of its steady rate. Weight moves onto the board's rail over a beat (Skate 3 carve), not in one tick (round 9: 0.017 s, a sphere on a pin); past about 0.35 s steering feels laggy for THUG lines."
 	},
 	"quarter_air_8ms": {
 		"target": 0.3,
@@ -468,6 +475,20 @@
 		"max_ok": 1.02,
 		"unit": "ratio",
 		"why": "Speed on the face after an acid drop over sqrt(v^2 + 2 g drop) at the press: dropping into a transition turns the fall into roll (Skate 3 physics, THUG2 generosity); a flat landing from the same air keeps under half of it."
+	},
+	"snap_drop_energy_keep": {
+		"target": 0.95,
+		"min_ok": 0.88,
+		"max_ok": 1.0,
+		"unit": "ratio",
+		"why": "Ramp snap (Q+E) drop-in off a 6 m quarter: speed at the bottom over sqrt(2 g h). A real drop-in turns the height into speed less rolling friction (rolling in by hand keeps about 0.97); the round-9 snap catapulted the body down the top of the wall (5x gravity) and came out over 1."
+	},
+	"snap_drop_peak_accel_g": {
+		"target": 0.9,
+		"min_ok": 0.5,
+		"max_ok": 1.15,
+		"unit": "g",
+		"why": "The hardest one-tick speed gain while the snap carries the body (the tip over the coping), over gravity. Falling into the wall can never pull harder than gravity; under half reads as a stall at the lip."
 	},
 	"grind_switch_speed_keep": {
 		"target": 1.0,

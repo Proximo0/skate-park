@@ -344,7 +344,7 @@ func _dome() -> Array:
 		out.append(wp(c.x + cos(a) * radius, c.z + sin(a) * radius, 10.0, {"r": 1.8, "pump": true, "pump_max": 12.0, "tmo": 8.0}))
 	# then pump straight across the bowl, wall to wall, until the passes reach the rim (no pumping at the lip, and back to
 	# the middle if a pass carries the rider out of the dish)
-	out.append(wp(c.x, c.z, 10.0, {"r": 0.1, "tmo": 30.0, "pump": true, "pipe": {"axis": "x", "lane": c.z, "ref": 0.0, "min_y": -3.0, "want": 5,
+	out.append(wp(c.x, c.z, 10.0, {"r": 0.1, "tmo": 30.0, "pump": true, "pump_max": 15.0, "pipe": {"axis": "x", "lane": c.z, "ref": 0.0, "min_y": -3.0, "want": 5,
 		"no_push_above": -2.0, "center": Vector2(c.x, c.z), "radius": rim - 0.5}}))
 	out.append(wp(c.x + 6.0, c.z, 6.0, {"r": 2.0, "tmo": 6.0}))
 	# Dome Air: the gap zone floats over the middle of the dish (y 0..4, 9.6 m square), so the rider has to leave the wall

@@ -41,6 +41,8 @@ const FLOOR_JUMP_DOT: float = 0.64
 ## Share of the speed along the coping kept on a vert launch. Real (and THUG) vert airs carry it: going up a
 ## quarter at an angle sends you along the ramp, not straight up and to a stop.
 const VERT_LATERAL_KEEP: float = 0.85
+const VERT_GRAZE_FROM: float = 0.8  ## sideways share of the speed at a vert launch where the lateral trim starts to fade
+const VERT_GRAZE_TO: float = 0.97  ## ... and where it is gone (a grazing hop off a bowl wall keeps its carve speed)
 ## Going up a transition, the pump only works below this steepness (normal y, about 66 degrees: the extension through
 ## the middle of the curve), not on the upper wall, and only while the surface is curving (a bend within
 ## PUMP_CURVE_TIME): pumping needs a curve, a flat bank gives nothing.
@@ -280,6 +282,10 @@ var _transition_ticks: int = 0  ## consecutive ground ticks on a face with norma
 var _topple_side: float = 0.0  ## +1 / -1 while hopping off a toppled grind (right / left of travel), else 0
 var _carve_side: float = 0.0  ## side of the carve after a topple landing
 var _carve_left: float = 0.0  ## seconds of topple carve left
+## The rider's weight on the board's rail: the steer stick lagged by tune.steer_lean_time (longer at speed), so a carve
+## leans in over a beat instead of turning on a pin, and a quick flick the other way unwinds through the middle.
+var _steer_lean: float = 0.0
+var _steer_lean_t: float = -1.0  ## _t of the last ground tick that moved the lean (off the ground it resets)
 var _since_bend: float = 1.0  ## seconds since the floor normal last bent by over a degree (curving transition)
 var _touch_wall_n: Vector3 = Vector3.ZERO  ## the upright wall rolled along last tick (steering can't turn into it)
 var _recent_revert_press: int = 100  ## ticks since revert was pressed (buffered across the touchdown)
@@ -759,12 +765,20 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 		facing = v.normalized()
 	else:
 		facing = facing.slide(n).normalized() if facing.slide(n).length() > 0.01 else _fallback_facing(n)
-	# steering: rotate travel direction around the surface normal
-	var turn_rate: float = lerpf(tune.turn_rate, tune.turn_rate_fast, clampf(v.length() / tune.max_speed, 0.0, 1.0))
-	# Carving is limited by grip: the sideways pull v * turn_rate can't pass carve_grip, so at speed the radius
-	# grows like v^2 / carve_grip (a wide carve), while low-speed turns stay tight.
-	turn_rate = minf(turn_rate, tune.carve_grip / maxf(v.length(), 0.1))
-	var stick_x: float = _stick.x
+	# steering: rotate travel direction around the surface normal. Kick-turn tight at a crawl (THUG), falling quickly
+	# to the carving rate by a jog: from there the radius grows with speed (v / turn_rate_fast), and past the grip
+	# limit like v^2 / carve_grip, so a fast carve is wide and weighty (about 2.3 / 4.6 / 8 m at 4 / 8 / 12 m/s).
+	var spd_g: float = v.length()
+	var turn_rate: float = tune.turn_rate_fast + (tune.turn_rate - tune.turn_rate_fast) * exp(-spd_g / maxf(tune.turn_fade_speed, 0.01))
+	turn_rate = minf(turn_rate, tune.carve_grip / maxf(spd_g, 0.1))
+	# Lean in: weight moves onto the rail over a beat (longer at speed), not in one tick. Fresh onto the ground (a
+	# landing, a snap) the lean starts where the stick is, so landing turns answer at once.
+	if _t - _steer_lean_t > 0.05:
+		_steer_lean = _stick.x
+	var lean_tau: float = tune.steer_lean_time * clampf(spd_g / 8.0, 0.25, 1.25)
+	_steer_lean += (_stick.x - _steer_lean) * (1.0 - exp(-delta / maxf(lean_tau, 0.001)))
+	_steer_lean_t = _t
+	var stick_x: float = _steer_lean
 	if _carve_left > 0.0:
 		# Carving out of a toppled grind: a steer toward the fall side that fades out.
 		stick_x = clampf(stick_x + _carve_side * TOPPLE_CARVE_STEER * (_carve_left / TOPPLE_CARVE_TIME), -1.0, 1.0)
@@ -1452,7 +1466,13 @@ func _enter_air(_from_rail: bool) -> void:
 		var out: Vector3 = Vector3(_launch_normal.x, 0.0, _launch_normal.z).normalized()
 		var lateral: Vector3 = velocity - out * velocity.dot(out)
 		lateral.y = 0.0
-		velocity = Vector3(0.0, maxf(velocity.y, 0.0) + absf(velocity.dot(out)) * 0.6, 0.0) + lateral * VERT_LATERAL_KEEP + out * 0.7
+		# A carve leaving the wall almost along it (high on a bowl, mostly sideways, barely rising) is a hop off the
+		# wall, not a vert air: trimming its sideways speed ate a third of the energy (practice dome, 22 deg graze).
+		# The trim fades out as the departure turns sideways, so real vert airs (mostly up) keep it.
+		var spd0: float = maxf(velocity.length(), 0.001)
+		var graze: float = clampf((lateral.length() / spd0 - VERT_GRAZE_FROM) / (VERT_GRAZE_TO - VERT_GRAZE_FROM), 0.0, 1.0)
+		var keep: float = lerpf(VERT_LATERAL_KEEP, 1.0, graze * graze * (3.0 - 2.0 * graze))
+		velocity = Vector3(0.0, maxf(velocity.y, 0.0) + absf(velocity.dot(out)) * 0.6, 0.0) + lateral * keep + out * 0.7
 	_floor_normal = Vector3.UP
 	up_direction = Vector3.UP
 	spin.start(_yaw())
@@ -2999,6 +3019,7 @@ func _tick_snap(delta: float) -> void:
 				_snap["phase"] = "tip"
 				_snap["t"] = 0.0
 				_snap["c0"] = global_position + Vector3.UP * 0.3
+				_snap["fall_time"] = _tip_fall_time(_snap["c0"], (_snap["rest"] as Vector3) + Vector3.UP * 0.3)
 			return
 		"tip":
 			_tick_tip(delta)
@@ -3059,28 +3080,44 @@ func _arrive_snap() -> void:
 
 
 ## The drop-in tip: the front foot has stomped the nose down; the board rolls over the coping on its rear wheels and
-## onto the wall (the sphere swung about the coping, the board's up turned from the deck's to the wall's), picking up
-## the speed of that swing, then rides the wall as ordinary ground. No air, no hop, no snap of orientation.
+## onto the wall (the sphere swung about the coping, the board's up turned from the deck's to the wall's), then rides
+## the wall as ordinary ground. No air, no hop, no snap of orientation. The nose turns over in TIP_TIME; the body falls
+## into the wall from rest at a steady rate that reaches the speed gravity gives over that drop (sqrt(2 g h)) as it
+## arrives (see _tip_fall_time), so a snap drop-in carries the same energy down the ramp as rolling in by hand.
 func _tick_tip(delta: float) -> void:
-	var s: float = clampf(float(_snap["t"]) / RampSnap.TIP_TIME, 0.0, 1.0)
+	var t: float = float(_snap["t"])
 	var n: Vector3 = _snap["n"]
 	var c1: Vector3 = (_snap["rest"] as Vector3) + Vector3.UP * 0.3
-	# the nose turns down eased in and out; the body starts down the wall from rest, eased in (it falls into it), so
-	# the speed only ever grows and hands over to the ride down the wall without a step
-	var fall: float = clampf((s - 0.3) / 0.7, 0.0, 1.0)
-	var pose: Array = RampSnap.tip_pose(_snap["c0"], c1, _snap["lip"], n, lerpf(s, _smooth01(s), 0.5), fall * fall)
+	var t_fall: float = float(_snap.get("fall_time", RampSnap.TIP_TIME * (1.0 - RampSnap.TIP_FALL_START)))
+	# the nose turns over the coping through the whole fall (a long drop tips over as it goes, no jerk when it ends)
+	var s: float = clampf(t / maxf(RampSnap.TIP_TIME, RampSnap.TIP_TIME * RampSnap.TIP_FALL_START + t_fall), 0.0, 1.0)
+	var fall: float = clampf((t - RampSnap.TIP_TIME * RampSnap.TIP_FALL_START) / maxf(t_fall, 0.001), 0.0, 1.0)
+	var pose: Array = RampSnap.tip_pose(_snap["c0"], c1, _snap["lip"], n, _smooth01(s), fall * fall)
 	var origin: Vector3 = (pose[0] as Vector3) - Vector3.UP * 0.3
 	var was_speed: float = velocity.length()
 	velocity = (origin - global_position) / maxf(delta, 0.0001)
-	if s >= 1.0:
+	var done: bool = s >= 1.0 and fall >= 1.0
+	if done:
 		velocity = velocity.normalized() * maxf(velocity.length(), was_speed)  # the last step is a partial tick
 	global_position = origin
 	board_up = pose[1]
 	var down: Vector3 = Vector3.DOWN.slide(board_up)
 	if down.length() > 0.2:
 		facing = down.normalized()
-	if s >= 1.0:
+	if done:
 		_start_wall_roll(n, maxf(velocity.length(), tune.snap_drop_speed))
+
+
+## How long the tip's fall from the coping (sphere centre c0) onto the wall (c1) takes: an even push from rest over
+## the swing's length that ends at the speed falling that height gives (v = sqrt(2 g h), so the push is g h / L, never
+## more than gravity). Never quicker than the nose's own turn. A 2.5 m swing down a tall ramp's top takes about 0.5 s
+## and leaves the wall at about 9.5 m/s, not the 20 m/s a fixed 0.22 s fall threw it at.
+func _tip_fall_time(c0: Vector3, c1: Vector3) -> float:
+	var quick: float = RampSnap.TIP_TIME * (1.0 - RampSnap.TIP_FALL_START)
+	var h: float = maxf(c0.y - c1.y, 0.0)
+	var v_end: float = maxf(sqrt(2.0 * tune.gravity * h), tune.snap_drop_speed)
+	var path: float = RampSnap.tip_path_length(c0, c1, _snap["lip"], _snap["n"])
+	return maxf(quick, 2.0 * path / v_end)
 
 
 ## Wheels on the wall below the coping: ride it down as ordinary ground (ROLLING on the transition), starting at
@@ -3372,6 +3409,8 @@ func snapshot() -> Dictionary:
 		"roll_off": _roll_off,
 		"carve_side": _carve_side,
 		"carve_left": _carve_left,
+		"steer_lean": _steer_lean,
+		"steer_lean_t": _steer_lean_t,
 		"recent_grind_press": _recent_grind_press,
 		"recent_revert_press": _recent_revert_press,
 		"pending_air": _pending_air.duplicate(true),
@@ -3504,6 +3543,8 @@ func restore(d: Dictionary) -> void:
 	_roll_off = bool(d.get("roll_off", false))
 	_carve_side = float(d.get("carve_side", 0.0))
 	_carve_left = float(d.get("carve_left", 0.0))
+	_steer_lean = float(d.get("steer_lean", 0.0))
+	_steer_lean_t = float(d.get("steer_lean_t", -1.0))
 	_recent_grind_press = d["recent_grind_press"]
 	_recent_revert_press = int(d.get("recent_revert_press", 100))
 	_pending_air = (d["pending_air"] as Array).duplicate(true)

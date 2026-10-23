@@ -16,6 +16,8 @@ const LOOP_RADIUS: float = 4.0  ## the main park's loop
 const LOOP_RUN_IN: float = 6.0
 const LOOP_RUN_OUT: float = 6.0
 
+var last_turn_lean_in: float = -1.0  ## set by _turn: seconds from full stick to 90% of the steady turn rate
+
 
 ## The manoeuvre table: [method name, [metric names it produces]]. `--only=<prefix>` keeps a manoeuvre when any of its
 ## metrics starts with the prefix.
@@ -28,7 +30,7 @@ static func table() -> Array:
 		["m_coast", ["coast_distance_8ms"]],
 		["m_brake", ["brake_distance_8ms"]],
 		["m_turn_4", ["turn_radius_4ms"]],
-		["m_turn_8", ["turn_radius_8ms"]],
+		["m_turn_8", ["turn_radius_8ms", "carve_lean_in_s"]],
 		["m_turn_12", ["turn_radius_12ms"]],
 		["m_quarter_8", ["quarter_air_8ms"]],
 		["m_quarter_12", ["quarter_air_12ms"]],
@@ -67,6 +69,7 @@ static func table() -> Array:
 		["m_acid_drop", ["acid_drop_energy_keep"]],
 		["m_grind_links", ["grind_switch_speed_keep", "rail_transfer_speed_keep", "grind_pop_charge_ratio"]],
 		["m_lip_out", ["lip_pop_flip_margin_s"]],
+		["m_snap_drop", ["snap_drop_energy_keep", "snap_drop_peak_accel_g"]],
 	]
 
 
@@ -190,7 +193,9 @@ func m_brake() -> Dictionary:
 ## friction has bled much speed).
 func _turn(v0: float) -> float:
 	await _flat_start(v0)
-	var prev_dir: Vector2 = Vector2(0, -1)
+	for i: int in 3:
+		await tick()  # rolling straight first, so the press is a lean-in from neutral as in play
+	var prev_dir: Vector2 = Vector2(sk.velocity.x, sk.velocity.z).normalized()
 	var ang: float = 0.0
 	var ang_a: float = 0.0
 	var ang_b: float = 0.0
@@ -198,12 +203,16 @@ func _turn(v0: float) -> float:
 	var spd_n: int = 0
 	var a_tick: int = int(0.2 / DT)
 	var b_tick: int = int(1.2 / DT)
+	var rates: Array = []
 	for i: int in b_tick:
 		await tick(Vector2(1.0, 0.0))
 		var d: Vector2 = Vector2(sk.velocity.x, sk.velocity.z)
+		var step: float = 0.0
 		if d.length() > 0.1:
-			ang += prev_dir.angle_to(d.normalized())
+			step = prev_dir.angle_to(d.normalized())
+			ang += step
 			prev_dir = d.normalized()
+		rates.append(absf(step) / DT)
 		if i + 1 == a_tick:
 			ang_a = ang
 		if i >= a_tick:
@@ -212,6 +221,16 @@ func _turn(v0: float) -> float:
 		ang_b = ang
 	await clear()
 	var rate: float = absf(ang_b - ang_a) / (float(b_tick - a_tick) * DT)
+	# lean-in: the first tick the turn reaches 90% of its steady rate (the 0.5..1 s average), in seconds from the press
+	var steady: float = 0.0
+	for k: int in range(int(0.5 / DT), int(1.0 / DT)):
+		steady += float(rates[k])
+	steady /= float(int(1.0 / DT) - int(0.5 / DT))
+	last_turn_lean_in = -1.0
+	for k: int in rates.size():
+		if float(rates[k]) >= 0.9 * steady:
+			last_turn_lean_in = float(k + 1) * DT
+			break
 	if rate < 0.01:
 		return 999.0
 	return (spd_sum / float(maxi(spd_n, 1))) / rate
@@ -222,7 +241,8 @@ func m_turn_4() -> Dictionary:
 
 
 func m_turn_8() -> Dictionary:
-	return {"turn_radius_8ms": await _turn(8.0)}
+	var r: float = await _turn(8.0)
+	return {"turn_radius_8ms": r, "carve_lean_in_s": last_turn_lean_in}
 
 
 func m_turn_12() -> Dictionary:
@@ -1292,6 +1312,53 @@ func _links(path: String) -> Variant:
 	m.host = host
 	m.SkaterScript = SkaterScript
 	return m
+
+
+## Ramp snap drop-in (Q + E) off the deck of a quarter pipe `height` tall (radius 3 m, a vertical wall above that):
+## speed at the bottom of the transition and the hardest push the tip over the coping gives (the most speed gained in
+## one tick from the stomp to a few ticks onto the wall; the hop up to the coping is a guided glide and not counted). The snap must be a real drop-in: energy-true like rolling in by hand.
+func snap_drop_data(height: float) -> Dictionary:
+	var deck: float = 2.0
+	await sandbox([QP.build(8.0, 3.0, height, deck)])
+	place(Vector3(4.0, height + 0.02, deck - 1.2), Vector3(0, 0, 1), 0.5)
+	await host.get_tree().physics_frame
+	await tick()
+	await tick(NONE, ["spin_left", "spin_right"], ["spin_left", "spin_right"])
+	await tick(NONE, [], ["spin_left", "spin_right"])
+	var snapped: bool = false
+	var peak: float = 0.0
+	var prev: float = sk.velocity.length()
+	var spd: float = -1.0
+	var peak_ticks: int = 0
+	var bails0: int = bails
+	for i: int in int(6.0 / DT):
+		await tick()
+		var v: float = sk.velocity.length()
+		if not sk._snap.is_empty():
+			snapped = true
+		if str(sk._snap.get("phase", "")) == "tip" or (snapped and sk._snap.is_empty() and peak_ticks < 3):
+			peak = maxf(peak, (v - prev) / DT)  # the fall over the coping and its hand-over to the wall
+			if sk._snap.is_empty():
+				peak_ticks += 1
+		prev = v
+		if snapped and sk._snap.is_empty() and sk.global_position.z > deck + 3.0 and sk.global_position.y < 0.15:
+			spd = v
+			break
+	var res: Dictionary = {"spd": spd, "peak": peak, "snapped": snapped, "bails": bails - bails0, "state": sname()}
+	await clear()
+	return res
+
+
+func m_snap_drop() -> Dictionary:
+	var g: float = tv("gravity", 18.0)
+	var h: float = 6.0
+	var r: Dictionary = await snap_drop_data(h)
+	var low: Dictionary = await snap_drop_data(3.2)
+	if not bool(r["snapped"]) or float(r["spd"]) < 0.0:
+		return {"snap_drop_energy_keep": NAN, "snap_drop_peak_accel_g": NAN}
+	return {"snap_drop_energy_keep": float(r["spd"]) / sqrt(2.0 * g * h), "snap_drop_peak_accel_g": float(r["peak"]) / g,
+		"x_snap_drop_6m_speed_ms": r["spd"], "x_snap_drop_6m_bails": r["bails"],
+		"x_snap_drop_3m_keep": float(low["spd"]) / sqrt(2.0 * g * 3.2), "x_snap_drop_3m_peak_accel_g": float(low["peak"]) / g}
 
 
 ## Grind links (tests/sim/sim_grind_links.gd): speed kept through a switch to another grind on the rail and through an

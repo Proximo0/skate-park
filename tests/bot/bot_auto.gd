@@ -285,7 +285,18 @@ func _landing(origin: Vector3, d: Vector3, edge: Vector3, y0: float) -> Dictiona
 		hr = _floor(run.x, run.z, ly + 1.5)
 		if hr.is_empty() or absf((hr["position"] as Vector3).y - ly) > 1.0:
 			return {}
-	return {"start": Vector3(origin.x, y0, origin.z), "dir": d, "edge": edge, "drop": drop, "land": Vector3(land_p.x, ly, land_p.z), "run": Vector3(run.x, (hr["position"] as Vector3).y, run.z)}
+	var run_p: Vector3 = Vector3(run.x, (hr["position"] as Vector3).y, run.z)
+	# the landing must be open: no wall or hedge across the path from the edge's foot to the landing point (a landing
+	# strip 2 m deep, boxed in by a hedge, wedged the rider in its corner: hills auto_roll_off_b)
+	var foot: Vector3 = Vector3(edge.x, ly, edge.z) + d * 0.6
+	var past: Vector3 = Vector3(land_p.x, ly, land_p.z)
+	for hgt: float in [0.7]:
+		var across := PhysicsRayQueryParameters3D.create(foot + Vector3.UP * hgt, past + Vector3.UP * hgt, 1)
+		if not _space.intersect_ray(across).is_empty():
+			return {}
+	if not _clear(Vector3(land_p.x, ly, land_p.z)):
+		return {}
+	return {"start": Vector3(origin.x, y0, origin.z), "dir": d, "edge": edge, "drop": drop, "land": Vector3(land_p.x, ly, land_p.z), "run": run_p}
 
 
 func _edges() -> Array:

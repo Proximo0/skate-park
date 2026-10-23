@@ -19,8 +19,10 @@ const FIELDS: Array = [
 	["brake", 6.0, 0.0, 30.0, 0.25, "Rolling", "Braking deceleration (stick back), m/s²."],
 	["roll_friction", 0.45, 0.0, 5.0, 0.05, "Rolling", "Rolling resistance, m/s² (mu about 0.025 at gravity 18: a bowl lap keeps about 0.9 of its speed, Skate-3-like carves)."],
 	["side_grip", 25.0, 1.0, 100.0, 1.0, "Rolling", "How hard the wheels stop sideways sliding, m/s²."],
-	["turn_rate", 2.6, 0.5, 8.0, 0.05, "Rolling", "Turn rate at low speed, rad/s."],
-	["turn_rate_fast", 1.7, 0.3, 6.0, 0.05, "Rolling", "Turn rate at max speed, rad/s."],
+	["turn_rate", 3.2, 0.5, 8.0, 0.05, "Rolling", "Turn rate at a crawl, rad/s (kick-turn tight)."],
+	["turn_rate_fast", 1.65, 0.3, 6.0, 0.05, "Rolling", "Carving turn rate once rolling, rad/s: the radius grows with speed (v / rate) up to the grip limit."],
+	["turn_fade_speed", 1.2, 0.2, 10.0, 0.1, "Rolling", "Speed scale (m/s) over which the crawl turn rate falls to the carving rate (exp(-v / this))."],
+	["steer_lean_time", 0.1, 0.0, 0.5, 0.01, "Rolling", "Lean-in time of a carve at 8 m/s, s (a quarter of it at a crawl, more when faster): the weight moves onto the rail over a beat."],
 	["carve_grip", 18.0, 4.0, 60.0, 0.5, "Rolling", "Most sideways acceleration a carve can pull, m/s² (about 1 g here): sets how wide fast turns get."],
 	["pump_accel", 2.5, 0.0, 15.0, 0.25, "Transitions", "Pump on gentle transitions, m/s²."],
 	["pump_accel_vert", 32.0, 0.0, 50.0, 0.5, "Transitions", "Pump on steep (vert) transitions, m/s²."],
@@ -112,6 +114,8 @@ var roll_friction: float
 var side_grip: float
 var turn_rate: float
 var turn_rate_fast: float
+var turn_fade_speed: float
+var steer_lean_time: float
 var carve_grip: float
 var pump_accel: float
 var pump_accel_vert: float
