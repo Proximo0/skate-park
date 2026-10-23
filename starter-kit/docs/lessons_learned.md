@@ -17,3 +17,16 @@ The full build guide is a Claude Doc: https://claude.ai/artifact/WtmrkVRtizP8oJB
 | A fix looked plausible but the bug predated the changed code | Check git history for when a bug first appeared. |
 | Feel bugs were found by the player, not by us | Build the debug layer and the bot before content: tunables, debug frame, snapshot/replay, recorder, overlay, lab, bot. |
 | Ramps had knife-edge side walls under 0.3 m | Piece rule: no collision edge under the skater's radius, side walls run below ground, no coplanar floors. |
+| Mid-flight workers left the tree red while CI linted the pushed tree (Sandblood) | The lead copies finished files into a clean clone (`/tmp/<project>_build`), runs lint, tests and sims there, commits by name and pushes from it; then `git reset` the work tree to origin. |
+| Container restarts killed running workers three times (Sandblood) | Workers leave WIP in the tree; relaunch on that WIP with the prior findings in the prompt, never from scratch. |
+| A bot run hung 15 min and wrote 334 MB: another worker's half-saved shared script failed to parse (Sandblood) | Watch a long bot run's log size or error lines, not just its exit; re-run balance after a shared script stops changing. |
+| Balance work started from stale numbers after an AI change (Sandblood) | Re-measure the baseline on the current tree before tuning; numbers go stale after any AI or physics change. |
+| An AI "thrust" never hurt: it aimed open-loop and moved slower than the damage threshold (Sandblood) | Steer AI actions on the measured result (closed loop) and check speeds against the damage thresholds. |
+| A win rule had no fallback for its zero case: fist fights never bleed, so every time-out was a draw (Sandblood) | Every judge or scoring rule needs a fallback when its main measure is level. |
+| Two instances of one glb shared a cached `Mesh`; per-instance override materials errored at teardown (Sandblood) | Duplicate an instanced glb's mesh before setting surface override materials. |
+| Houdini glTF ROP exported every material as `alphaMode BLEND` (Sandblood) | Force imported art opaque (or set it in the ROP); `hipFile.save` needs its folder made first; build with `--only=<ids>`. |
+| Jolt contact order is thread-dependent, so same-seed runs split (Sandblood) | Sort contacts before first-per-key debounce; run each same-seed repeat in a fresh process. |
+| Dynamic props with a one-sided layer/mask became immovable blocks (Sandblood) | Give dynamic props symmetric masks, or no layer at all. |
+| Closing an ENet peer from its own signal crashed; ENet's throttle dropped half the snapshots; a relay silently dropped packets over its size limit (Sandblood) | Defer peer close to idle; switch the ENet throttle off for snapshot streams; split packets by bytes under the relay limit. |
+| Thin decorative meshes cast hard shadow streaks; cool ambient made orange sand read green in shadow (Sandblood) | Only big shapes cast shadows; use a warm ambient on warm ground and sample shadow hues before blaming shaders. |
+| Secrets (online service client keys) must ship in builds but not in a public repo (Sandblood) | Keep them in a gitignored config injected by the export script; never write them to memory or docs. |

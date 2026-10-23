@@ -30,6 +30,10 @@ Characters:
 - [ ] Rating and tone agreed (kid-friendly, Teen, M), plus reference images and comparable games.
 - [ ] Before building any humanoid, follow `docs/character_creation_lessons.md`: numeric spec, skeleton sized to it, parts in separate files, pose-grid renders.
 
+Running the project:
+- [ ] After the bot exists, run the lean loop in `docs/production_pipeline.md` (measure, fix 1-2 traced defects, verify on a clean clone, push).
+- [ ] Lead verifies every worker hand-back on a clean clone before pushing; builds only at milestones.
+
 Shipping:
 - [ ] `tools/check_all.sh` green and CI green, then `tools/export_windows.sh`.
 - [ ] Lead-only git: stage by name, one commit per integrated step.
