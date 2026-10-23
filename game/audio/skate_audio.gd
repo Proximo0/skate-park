@@ -1,7 +1,11 @@
 class_name SkateAudio
 extends Node
-## Placeholder skate sounds. bind(skater) attaches 3D players to the skater and wires its signals to SfxSynth
-## streams. Presentation only: it reads skater state and never changes it.
+## Skate sounds. bind(skater) attaches 3D players to the skater and wires its signals to the sample bank in
+## SAMPLE_DIR (rendered offline by tools/audio/render_sfx.py: ollie pop, land by surface x impact, grind
+## start/loop/end per material, roll loops, skid, bail, wallplant, push), falling back to the SfxSynth stream of the
+## same name when a file is missing. One-shots with round-robin variants play through an AudioStreamRandomizer
+## (random variant, pitch and volume). Everything plays on the SFX bus (see sfx_bus / set_sfx_volume).
+## Presentation only: it reads skater state and never changes it.
 ## Loops (roll, grind) run continuously and are silenced with volume, which avoids start/stop clicks.
 
 const UNIT_SIZE: float = 6.0
@@ -41,12 +45,38 @@ const EVENT_SOUNDS: Dictionary = {
 	"bert_slide": ["revert_whoosh", 0.7, -5.0],
 	"focus_on": ["focus_on", 1.0, -4.0],
 	"focus_off": ["focus_off", 1.0, -4.0],
+	"wallplant": ["wallplant", 1.0, -2.0],
+	"boneless_plant": ["push", 0.9, -3.0],
+	"no_comply_plant": ["push", 1.05, -4.0],
 }
 const BERT_DB: Vector2 = Vector2(-20.0, -5.0)
 const TOW_DB: Vector2 = Vector2(-26.0, -10.0)
 const FOCUS_LOWPASS_HZ: float = 2400.0  ## the master low-pass while focus slow-mo is on (muffled, underwater feel)
 const LINK_SOUND: Array = ["link", 1.0, -3.0]
 const OLLIE_FRAMES: int = 3  ## frames to wait for anim "ollie" after the state flips to AIR
+const SAMPLE_DIR: String = "res://assets/audio/sfx/"
+const SFX_BUS: StringName = &"SFX"
+const MUSIC_BUS: StringName = &"Music"
+const MAX_VARIANTS: int = 6
+## Stream name -> sample base in SAMPLE_DIR: "<base>.wav", or round-robin "<base>_1.wav", "<base>_2.wav", ...
+## land_<surface>_<soft|med|hard> and grind_<material>_<start|end> are added by sample_map().
+const SAMPLES: Dictionary = {
+	"pop": "pop", "bail": "bail", "push": "push", "wallplant": "wallplant",
+	"roll": "roll_concrete_loop", "roll_wood": "roll_wood_loop", "skid": "skid_loop",
+	"grind": "grind_metal_loop", "grind_concrete": "grind_concrete_loop", "grind_wood": "grind_wood_loop",
+}
+const LAND_SURFACES: PackedStringArray = ["concrete", "wood", "metal"]
+const LAND_IMPACTS: PackedStringArray = ["soft", "med", "hard"]
+const GRIND_KINDS: PackedStringArray = ["metal", "concrete", "wood"]
+## Randomization of the sampled one-shots: pitch within 1/x..x, volume within +-dB.
+const SAMPLE_RANDOM_PITCH: float = 1.06
+const SAMPLE_RANDOM_DB: float = 1.5
+## The sampled loops were rendered at a cruising speed (about 6 m/s), so they bend less in pitch than the synth's.
+const ROLL_SAMPLE_PITCH: Vector2 = Vector2(0.72, 1.22)
+const GRIND_SAMPLE_PITCH: Vector2 = Vector2(0.88, 1.18)
+const LOOP_SAMPLE_DB: float = 2.0  ## the sampled loops sit about 2 dB under the synth's loudness at the same setting
+const LAND_SAMPLE_DB: Vector2 = Vector2(-12.0, 0.0)  ## soft..hard landing volume for the sampled landings
+const PUSH_DB: float = -7.0
 
 var _skater: Skater
 var _roll: AudioStreamPlayer3D
@@ -73,40 +103,142 @@ var _streams: Dictionary = {}
 var _prev_state: int = SkateState.State.ROLLING
 var _ollie_frames: int = 0
 var _bail_cooldown: float = 0.0
+var _sampled: Dictionary = {}  ## stream names that came from a sample file (the rest are SfxSynth fallbacks)
+var _was_grinding: bool = false
+var _land_surface: String = "concrete"  ## raw surface under the wheels, metal included (for the landing sound)
+var _push_contact: bool = false
 
 
 func _ready() -> void:
 	_build_streams()
 
 
+## Sample files first; every name without one gets its SfxSynth stream (only those are synthesized).
 func _build_streams() -> void:
-	_streams = {
-		"roll": SfxSynth.roll_loop(),
-		"grind": SfxSynth.grind_loop(),
-		"pop": SfxSynth.pop(),
-		"land": SfxSynth.land(),
-		"bail": SfxSynth.bail(),
-		"ding": SfxSynth.trick_ding(),
-		"combo": SfxSynth.combo_land(),
-		"roll_wood": SfxSynth.roll_wood_loop(),
-		"grind_concrete": SfxSynth.grind_concrete_loop(),
-		"grind_wood": SfxSynth.grind_wood_loop(),
-		"land_heavy": SfxSynth.land_heavy(),
-		"skid": SfxSynth.skid_loop(),
-		"skid_sand": SfxSynth.skid_sand_loop(),
-		"grind_switch": SfxSynth.grind_switch(),
-		"manual_switch": SfxSynth.manual_switch(),
-		"manual_pivot": SfxSynth.manual_pivot(),
-		"flatland": SfxSynth.flatland(),
-		"lip_pop": SfxSynth.lip_pop(),
-		"revert_whoosh": SfxSynth.revert_whoosh(),
-		"link": SfxSynth.link(),
-		"bert": SfxSynth.bert_loop(),
-		"tow": SfxSynth.tow_loop(),
-		"slap": SfxSynth.slap(),
-		"focus_on": SfxSynth.focus_swoop(true),
-		"focus_off": SfxSynth.focus_swoop(false),
-	}
+	_streams = {}
+	_sampled = {}
+	var map: Dictionary = {} if OS.get_environment("SKATE_SFX_SYNTH") == "1" else sample_map()  # A/B: synth only
+	for key: String in map:
+		var st: AudioStream = load_sample(str(map[key]))
+		if st != null:
+			_streams[key] = st
+			_sampled[key] = true
+	for key: String in SYNTH_NAMES:
+		if not _streams.has(key):
+			_streams[key] = _synth(key)
+	if not _streams.has("wallplant"):
+		_streams["wallplant"] = _streams["slap"]
+	if not _streams.has("push"):
+		_streams["push"] = _streams["land"]  # (plants only: the push scuff itself needs the sample)
+
+
+const SYNTH_NAMES: PackedStringArray = ["roll", "grind", "pop", "land", "bail", "ding", "combo", "roll_wood",
+		"grind_concrete", "grind_wood", "land_heavy", "skid", "skid_sand", "grind_switch", "manual_switch",
+		"manual_pivot", "flatland", "lip_pop", "revert_whoosh", "link", "bert", "tow", "slap", "focus_on", "focus_off"]
+
+
+## The fallback stream for a name in SYNTH_NAMES.
+static func _synth(key: String) -> AudioStream:
+	match key:
+		"roll": return SfxSynth.roll_loop()
+		"grind": return SfxSynth.grind_loop()
+		"pop": return SfxSynth.pop()
+		"land": return SfxSynth.land()
+		"bail": return SfxSynth.bail()
+		"ding": return SfxSynth.trick_ding()
+		"combo": return SfxSynth.combo_land()
+		"roll_wood": return SfxSynth.roll_wood_loop()
+		"grind_concrete": return SfxSynth.grind_concrete_loop()
+		"grind_wood": return SfxSynth.grind_wood_loop()
+		"land_heavy": return SfxSynth.land_heavy()
+		"skid": return SfxSynth.skid_loop()
+		"skid_sand": return SfxSynth.skid_sand_loop()
+		"grind_switch": return SfxSynth.grind_switch()
+		"manual_switch": return SfxSynth.manual_switch()
+		"manual_pivot": return SfxSynth.manual_pivot()
+		"flatland": return SfxSynth.flatland()
+		"lip_pop": return SfxSynth.lip_pop()
+		"revert_whoosh": return SfxSynth.revert_whoosh()
+		"link": return SfxSynth.link()
+		"bert": return SfxSynth.bert_loop()
+		"tow": return SfxSynth.tow_loop()
+		"slap": return SfxSynth.slap()
+		"focus_on": return SfxSynth.focus_swoop(true)
+		"focus_off": return SfxSynth.focus_swoop(false)
+	return null
+
+
+## Every stream name that has a sample, with its base file name. Pure.
+static func sample_map() -> Dictionary:
+	var m: Dictionary = SAMPLES.duplicate()
+	for s: String in LAND_SURFACES:
+		for i: String in LAND_IMPACTS:
+			m["land_%s_%s" % [s, i]] = "land_%s_%s" % [s, i]
+	for k: String in GRIND_KINDS:
+		for e: String in ["start", "end"]:
+			m["grind_%s_%s" % [k, e]] = "grind_%s_%s" % [k, e]
+	return m
+
+
+## The sample files for a base name: "<base>.wav" alone, else "<base>_1.wav" ... while they exist.
+static func sample_paths(base: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var single: String = SAMPLE_DIR + base + ".wav"
+	if ResourceLoader.exists(single):
+		out.append(single)
+		return out
+	for v: int in range(1, MAX_VARIANTS + 1):
+		var p: String = "%s%s_%d.wav" % [SAMPLE_DIR, base, v]
+		if not ResourceLoader.exists(p):
+			break
+		out.append(p)
+	return out
+
+
+## A loop sample as it is, or a one-shot (one or several round-robin variants) in an AudioStreamRandomizer that
+## picks a variant (never the same twice running) with a little pitch and volume spread. null when no file exists.
+static func load_sample(base: String) -> AudioStream:
+	var paths: PackedStringArray = sample_paths(base)
+	if paths.is_empty():
+		return null
+	var first: AudioStream = load(paths[0]) as AudioStream
+	if first == null:
+		return null
+	if first is AudioStreamWAV and (first as AudioStreamWAV).loop_mode != AudioStreamWAV.LOOP_DISABLED:
+		return first
+	var r := AudioStreamRandomizer.new()
+	r.playback_mode = AudioStreamRandomizer.PLAYBACK_RANDOM_NO_REPEATS if paths.size() > 2 \
+			else AudioStreamRandomizer.PLAYBACK_RANDOM
+	r.random_pitch = SAMPLE_RANDOM_PITCH
+	r.random_volume_offset_db = SAMPLE_RANDOM_DB
+	for i: int in paths.size():
+		var st: AudioStream = first if i == 0 else load(paths[i]) as AudioStream
+		if st != null:
+			r.add_stream(-1, st)
+	return r
+
+
+## The bus every sound effect plays on: "SFX" when the layout has it (default_bus_layout.tres), else Master.
+static func sfx_bus() -> StringName:
+	return SFX_BUS if AudioServer.get_bus_index(SFX_BUS) >= 0 else &"Master"
+
+
+## Sets the SFX bus volume from a 0..1 setting (0 mutes). For a settings slider; music has its own bus.
+static func set_sfx_volume(setting: float) -> void:
+	var idx: int = AudioServer.get_bus_index(SFX_BUS)
+	if idx < 0:
+		return
+	AudioServer.set_bus_mute(idx, setting <= 0.001)
+	AudioServer.set_bus_volume_db(idx, linear_to_db(clampf(setting, 0.001, 1.0)))
+
+
+## The sampled landing for a 0..1 impact and the surface under the wheels: "land_<surface>_<soft|med|hard>".
+## Sand and anything unknown land as concrete. Pure.
+static func land_sample_key(impact: float, surface: String) -> String:
+	var k: float = clampf(impact, 0.0, 1.0)
+	var level: String = "soft" if k < 0.3 else ("med" if k < 0.65 else "hard")
+	var s: String = surface if LAND_SURFACES.has(surface) else "concrete"
+	return "land_%s_%s" % [s, level]
 
 
 ## Skid loop volume (dB) and pitch for a speed in m/s: silent-ish at a crawl, full by SPEED_FULL. Pure.
@@ -202,6 +334,11 @@ func _on_tick(frame: Dictionary) -> void:
 		var snd: Array = event_sound(str(e))
 		if not snd.is_empty():
 			_play_once(str(snd[0]), float(snd[1]), float(snd[2]))
+	# Push: one sole scuff each time the push foot meets the ground (the pulse that drives the speed).
+	var contact: bool = bool(frame.get("pushing", false)) and float(frame.get("push_pulse", 0.0)) > 1.0
+	if contact and not _push_contact and _sampled.has("push"):
+		_play_once("push", 1.0, PUSH_DB)
+	_push_contact = contact
 
 
 ## Background music for the level: silent in scripted runs and when the volume setting is off.
@@ -216,6 +353,8 @@ func _start_music() -> void:
 	_music.name = "Music"
 	_music.level_id = lvl
 	add_child(_music)
+	if AudioServer.get_bus_index(MUSIC_BUS) >= 0:
+		_music.bus = MUSIC_BUS  # (after add_child: its _ready sets Master)
 
 
 func _duck_music() -> void:
@@ -234,21 +373,31 @@ func _start_ambience() -> void:
 	_ambience.name = "AmbienceSfx"
 	_ambience.stream = SfxSynth.ambience_loop(ambience_for(lvl))
 	_ambience.volume_db = AMBIENCE_DB
+	_ambience.bus = sfx_bus()
 	add_child(_ambience)
 	_ambience.play()
 
 
 ## Looks under the board for what the wheels are on (a few times a second, not every frame).
 func _probe_surface() -> void:
-	if not _skater.is_inside_tree():
+	var s: String = _probe_raw()
+	if s.is_empty():
 		return
+	_land_surface = s
+	_surface = s if s == "wood" or s == "sand" else "concrete"
+
+
+## The raw surface under the board ("concrete", "wood", "metal", "sand"), "" when the ray finds nothing.
+func _probe_raw() -> String:
+	if not _skater.is_inside_tree():
+		return ""
 	var from: Vector3 = _skater.global_position + Vector3.UP * 0.3
 	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 1.2)
 	if _skater is CollisionObject3D:
 		q.exclude = [(_skater as CollisionObject3D).get_rid()]
 	var hit: Dictionary = _skater.get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty():
-		return
+		return ""
 	var names := PackedStringArray()
 	var n: Node = hit["collider"] as Node
 	var depth: int = 0
@@ -256,8 +405,7 @@ func _probe_surface() -> void:
 		names.append(str(n.name))
 		n = n.get_parent()
 		depth += 1
-	var s: String = classify_surface(names)
-	_surface = s if s == "wood" or s == "sand" else "concrete"
+	return classify_surface(names)
 
 
 func _process(delta: float) -> void:
@@ -342,20 +490,37 @@ func _update_loops(st: int) -> void:
 	var roll_db: float = lerpf(ROLL_DB.x, ROLL_DB.y, t) if (rolling and moving) else SILENT_DB
 	var pitch: float = lerpf(ROLL_PITCH.x, ROLL_PITCH.y, t)
 	var wood: bool = _surface == "wood"
-	_roll.pitch_scale = pitch
-	_roll_wood.pitch_scale = pitch
-	_roll.volume_db = SILENT_DB if wood else roll_db
-	_roll_wood.volume_db = roll_db if wood else SILENT_DB
+	_roll.pitch_scale = _loop_pitch("roll", ROLL_SAMPLE_PITCH, ROLL_PITCH, t)
+	_roll_wood.pitch_scale = _loop_pitch("roll_wood", ROLL_SAMPLE_PITCH, ROLL_PITCH, t)
+	_roll.volume_db = SILENT_DB if wood else roll_db + _loop_gain("roll", roll_db)
+	_roll_wood.volume_db = roll_db + _loop_gain("roll_wood", roll_db) if wood else SILENT_DB
 	var grinding: bool = st == SkateState.State.GRIND
 	if grinding:
 		var rail: Variant = _skater.get("_rail")
 		_grind_surface = classify_grind(str(rail.name)) if rail is Node else "metal"
+	if grinding != _was_grinding:
+		# The trucks hitting the rail (or leaving it): a one-shot on top of the loop's fade.
+		var edge: String = "grind_%s_%s" % [_grind_surface, "start" if grinding else "end"]
+		if grinding or moving:
+			_play_once(edge, 1.0, lerpf(-10.0, -3.0, t) if grinding else lerpf(-12.0, -4.0, t))
+		_was_grinding = grinding
 	var g_db: float = lerpf(GRIND_DB.x, GRIND_DB.y, t) if (grinding and moving) else SILENT_DB
-	var g_pitch: float = lerpf(GRIND_PITCH.x, GRIND_PITCH.y, t)
-	for pair: Array in [[_grind, "metal"], [_grind_concrete, "concrete"], [_grind_wood, "wood"]]:
+	for pair: Array in [[_grind, "metal", "grind"], [_grind_concrete, "concrete", "grind_concrete"],
+			[_grind_wood, "wood", "grind_wood"]]:
 		var p: AudioStreamPlayer3D = pair[0]
-		p.pitch_scale = g_pitch
-		p.volume_db = g_db if _grind_surface == pair[1] else SILENT_DB
+		var key: String = pair[2]
+		p.pitch_scale = _loop_pitch(key, GRIND_SAMPLE_PITCH, GRIND_PITCH, t)
+		p.volume_db = g_db + _loop_gain(key, g_db) if _grind_surface == pair[1] else SILENT_DB
+
+
+## Loop pitch for a 0..1 speed share: the sample's narrower range when the stream is a sample.
+func _loop_pitch(key: String, sample_range: Vector2, synth_range: Vector2, t: float) -> float:
+	var r: Vector2 = sample_range if _sampled.has(key) else synth_range
+	return lerpf(r.x, r.y, t)
+
+
+func _loop_gain(key: String, db: float) -> float:
+	return LOOP_SAMPLE_DB if _sampled.has(key) and db > SILENT_DB else 0.0
 
 
 func _was_grounded(st: int) -> bool:
@@ -376,8 +541,16 @@ func _on_trick_started(trick: Dictionary) -> void:
 func _on_landed(result: String) -> void:
 	if result == "bail":
 		_on_bailed()
+		return
+	var raw: String = _probe_raw() if _skater.is_inside_tree() else ""
+	if not raw.is_empty():
+		_land_surface = raw
+	var k: float = clampf(_skater.land_impact, 0.0, 1.0)
+	var key: String = land_sample_key(k, _land_surface)
+	if _sampled.has(key):
+		_play_once(key, lerpf(1.04, 0.96, k), lerpf(LAND_SAMPLE_DB.x, LAND_SAMPLE_DB.y, k))
 	else:
-		var shape: Array = land_shape(_skater.land_impact)
+		var shape: Array = land_shape(k)
 		_play_once(str(shape[0]), float(shape[1]), float(shape[2]))
 
 
@@ -398,6 +571,7 @@ func _make_player(stream: AudioStream, node_name: String) -> AudioStreamPlayer3D
 	p.stream = stream
 	p.unit_size = UNIT_SIZE
 	p.volume_db = SILENT_DB
+	p.bus = sfx_bus()
 	_skater.add_child(p)
 	return p
 
@@ -411,6 +585,7 @@ func _play_once(stream_name: String, pitch: float, volume_db: float = 0.0) -> vo
 	p.unit_size = UNIT_SIZE
 	p.pitch_scale = pitch
 	p.volume_db = volume_db
+	p.bus = sfx_bus()
 	_skater.add_child(p)
 	p.finished.connect(p.queue_free)
 	p.play()

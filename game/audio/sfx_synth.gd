@@ -1,6 +1,8 @@
 class_name SfxSynth
 extends RefCounted
-## Placeholder sound effects synthesized in code (no audio files). Pure math: no nodes, no clock, no randf().
+## Sound effects synthesized in code: the fallback for any name SkateAudio finds no sample for in
+## assets/audio/sfx (tools/audio/render_sfx.py), and the only source of the chimes, ambience and UI blips.
+## Pure math: no nodes, no clock, no randf().
 ## Every stream is 16-bit mono at RATE, normalised to PEAK (-6 dBFS). Noise comes from a seeded
 ## RandomNumberGenerator. Loops are built to be periodic over their length: every frequency is an integer
 ## number of Hz and the filters are run over two cycles, keeping the second, so the loop point is seamless.

@@ -24,7 +24,7 @@ static func volume_db_for(setting: float) -> float:
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	bus = &"Master"
+	bus = &"Music"
 	if Flags.is_scripted_run():
 		set_process(false)
 		return
