@@ -281,9 +281,55 @@ func _trim_springs() -> void:
 		if first.contains("Bust") or first.contains("Skirt") or (bikini and first.contains("Sleeve")):
 			continue
 		kept.append(sb)
+	_tune_hair(kept)
 	sec.set("spring_bones", kept)
 	if "spring_bones" in model:
 		model.set("spring_bones", kept)
+
+
+## Hair spring settings that keep long hair off the face and torso on hard landings and quick poses: stiffer chains and more
+## drag (less travel and a faster settle), thicker strands for the collision test, and fatter head, neck and chest
+## colliders so the hair rides over the hood of the head instead of through it. The resources are shared between bodies
+## of one model, so every value is set from its stored original (re-tuning never compounds).
+const HAIR_STIFFNESS_GAIN: float = 1.5
+const HAIR_DRAG_GAIN: float = 1.3
+const HAIR_MIN_HIT: float = 0.035
+const HEAD_COLLIDER_R: float = 0.125
+const TORSO_COLLIDER_PAD: float = 0.02
+
+
+func _tune_hair(springs: Array) -> void:
+	var seen: Dictionary = {}
+	for sb: Resource in springs:
+		if sb == null:
+			continue
+		var joints: PackedStringArray = sb.get("joint_nodes")
+		if joints.is_empty() or not joints[0].contains("Hair"):
+			continue
+		for key: String in ["stiffness_scale", "drag_force_scale", "hit_radius_scale"]:
+			if not sb.has_meta("orig_" + key):
+				sb.set_meta("orig_" + key, float(sb.get(key)))
+		var st: float = float(sb.get_meta("orig_stiffness_scale"))
+		var dr: float = float(sb.get_meta("orig_drag_force_scale"))
+		var hr: float = float(sb.get_meta("orig_hit_radius_scale"))
+		sb.set("stiffness_scale", st * HAIR_STIFFNESS_GAIN)
+		sb.set("drag_force_scale", minf(dr * HAIR_DRAG_GAIN, 1.0))
+		sb.set("hit_radius_scale", maxf(hr, HAIR_MIN_HIT))
+		for g: Resource in sb.get("collider_groups"):
+			if g == null:
+				continue
+			for c: Resource in g.get("colliders"):
+				if c == null or seen.has(c):
+					continue
+				seen[c] = true
+				var bone: String = str(c.get("bone"))
+				if not c.has_meta("orig_radius"):
+					c.set_meta("orig_radius", float(c.get("radius")))
+				var r0: float = float(c.get_meta("orig_radius"))
+				if bone == "Head":
+					c.set("radius", maxf(r0, HEAD_COLLIDER_R))
+				elif bone == "Neck" or bone == "UpperChest" or bone == "Spine" or bone.ends_with("UpperArm"):
+					c.set("radius", r0 + TORSO_COLLIDER_PAD)
 
 
 ## A copy of `src` without the dropped surfaces and with swapped materials (null when nothing changes).

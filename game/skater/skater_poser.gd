@@ -307,9 +307,13 @@ func _skater_ctx(delta: float) -> Dictionary:
 	ctx["ledge"] = bool(skater.get("lip_on_ledge"))
 	var cur: String = str(skater.get("anim"))
 	if cur == "sticker_slap":
-		ctx["wall_side"] = _wall_side()
+		var ws: float = _wall_side()
+		ctx["wall_side"] = ws
+		ctx["wall_dist"] = _wall_ray(Vector3(ws, 0.0, 0.0), 0.9)
 	else:
 		_wall_side_cache = 0.0
+	if cur == "wallplant":
+		ctx["wall_dist"] = _wall_ray(Vector3(0.0, 0.0, -1.0), 0.8)
 	if cur == "bert_slide":
 		ctx["uphill_side"] = _uphill_side()
 	return ctx
@@ -336,6 +340,27 @@ func _wall_side() -> float:
 				side = sgn
 	_wall_side_cache = side
 	return side
+
+
+## Distance (m, from the rider's origin) to the first surface along a visual-space horizontal direction at `height` above the
+## feet: a real ray, so the planted foot and the braced hand can sit on the wall instead of at a guessed offset. -1 when
+## nothing is within 1.6 m (or off the tree).
+func _wall_ray(dir_local: Vector3, height: float) -> float:
+	var parent: Node3D = body.get_parent() as Node3D
+	var sk: Node3D = skater as Node3D
+	if parent == null or sk == null or not sk.is_inside_tree():
+		return -1.0
+	var from: Vector3 = sk.global_position + Vector3.UP * height
+	var dir: Vector3 = parent.global_basis * dir_local
+	dir.y = 0.0
+	if dir.length() < 0.001:
+		return -1.0
+	var q: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(from, from + dir.normalized() * 1.6)
+	q.exclude = [sk.get_rid()]
+	var hit: Dictionary = sk.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return -1.0
+	return from.distance_to(hit["position"] as Vector3)
 
 
 ## The uphill side of a bank under a bert slide, in visual X (+1 right of travel): against the fall line of the floor.
@@ -607,7 +632,7 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 			"wallride":
 				_pose_wallride(pose, t)
 			"wallplant":
-				_pose_wallplant(pose, t)
+				_pose_wallplant(pose, t, float(ctx.get("wall_dist", -1.0)))
 			"boneless":
 				_pose_boneless(pose, t)
 			"no_comply":
@@ -619,7 +644,7 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 			"natas_spin":
 				_pose_natas(pose, t, b)
 			"sticker_slap":
-				_pose_sticker(pose, t, float(ctx.get("wall_side", 1.0)), float(ctx.get("vy", 0.0)))
+				_pose_sticker(pose, t, float(ctx.get("wall_side", 1.0)), float(ctx.get("vy", 0.0)), float(ctx.get("wall_dist", -1.0)))
 			"bert_slide":
 				_pose_bert(pose, t, float(ctx.get("uphill_side", 1.0)))
 			"skitch":
@@ -637,6 +662,9 @@ static func pose_for(anim: String, t: float, crouch: float, balance: float, swit
 
 ## Grind anim ids that have a pose of their own in _pose_grind (matched by exact id; no keyword fallback, so
 ## grind_noseslide / grind_nosebluntslide / grind_tailslide can never be mistaken for a nose or tail grind).
+const GRIND_SLIDES: PackedStringArray = [
+	"grind_boardslide", "grind_lipslide", "grind_noseslide", "grind_tailslide", "grind_hurricane", "grind_darkslide",
+]
 const GRIND_BRANCHES: PackedStringArray = [
 	"grind_five_oh", "grind_nosegrind", "grind_crooked_grind", "grind_overcrook", "grind_willy_grind", "grind_salad_grind",
 	"grind_suski_grind", "grind_smith_grind", "grind_feeble_grind", "grind_boardslide", "grind_lipslide", "grind_noseslide",
@@ -1372,10 +1400,13 @@ static func _pose_grind(pose: Dictionary, anim: String, t: float, c: float, b: f
 	# Balance: the body leans with the meter, both arms tilt against it like a balance pole and flail when it is far
 	# out, the hips shift the other way.
 	var flail: float = 35.0 * absf(b) * sin(t * 10.0)
-	var tilt: float = 28.0 * b
-	_arms(pose, Vector3(flail + 10.0, 0.0, -42.0 + tilt), Vector3(-flail - 6.0, 0.0, 42.0 + tilt), 22.0)
-	pose["lean"] = LEAN_MAX * b
-	pose["Hips"] = Vector3(0.0, 0.0, -6.0 * b)
+	# A rider on a rail is never still: a slow weight shift (the balance work the meter only shows when it gets big)
+	# sways the arms like a pole, the hips and the lean, and the knees flex a touch against it.
+	var sway: float = sin(t * 2.7 - 0.81) * (0.55 + 0.45 * sin(t * 1.1 + 1.0))
+	var tilt: float = 28.0 * b + 11.0 * sway
+	_arms(pose, Vector3(flail + 10.0 + 6.0 * absf(sway), 0.0, -46.0 + tilt), Vector3(-flail - 6.0 - 6.0 * absf(sway), 0.0, 46.0 + tilt), 24.0)
+	pose["lean"] = LEAN_MAX * b + 2.6 * sway
+	pose["Hips"] = Vector3(0.0, 0.0, -6.0 * b - 2.5 * sway)
 	var drop: float = 0.0  ## extra hip drop for the stalls on one truck
 	var front: Vector3 = Vector3.ZERO
 	var back: Vector3 = Vector3.ZERO
@@ -1464,9 +1495,14 @@ static func _pose_grind(pose: Dictionary, anim: String, t: float, c: float, b: f
 			_board_turn(pose, Vector3(GRIND_BLUNT, 0.0, 0.0), Vector3(0.0, 0.0, BACK_FOOT.z))
 			pose["pitch"] = -10.0
 			drop = 0.04
-	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * c - drop
-	_curl(pose, 12.0 + 14.0 * c)
+	var flex: float = 0.5 + 0.5 * sin(t * 5.4 + 0.6)  ## knees give and take with the sway
+	pose["hips_y"] = IDLE_HIPS - CROUCH_DROP * c - drop - 0.012 * flex - 0.02 * absf(b)
+	_curl(pose, 12.0 + 14.0 * c + 5.0 * flex + 8.0 * absf(b))
 	pose["Head"] = Vector3(-10.0, 0.0, 0.0)  ## eyes down the rail
+	if not GRIND_SLIDES.has(anim) and anim != "grind_blunt_slide" and anim != "grind_nosebluntslide":
+		# The deck rolls about the rail with the balance meter and the sway so the contact reads from behind.
+		var br: Vector3 = pose["board_rot"] as Vector3
+		pose["board_rot"] = Vector3(br.x, br.y, br.z + 9.0 * b)
 	if anim != "grind_darkslide":
 		_feet_on_board(pose, front, back)
 
@@ -1971,7 +2007,8 @@ static func _sole_point(pose: Dictionary, x: float, y: float, z: float) -> Vecto
 ## plants flat on the wall (sole to the wall, toes up) with the knee folded and the body compressed in against it, the
 ## back foot holding the board under the tail; then the leg drives straight, the body extends off the wall and the
 ## foot drops back onto the board. The wall is ahead of the nose (-Z).
-static func _pose_wallplant(pose: Dictionary, t: float) -> void:
+static func _pose_wallplant(pose: Dictionary, t: float, wall_dist: float = -1.0) -> void:
+	var wz: float = -clampf(wall_dist - 0.1, 0.3, 0.95) if wall_dist > 0.0 else -0.56  ## the wall plane ahead, ankle side (sole is toes-on)
 	var load_k: float = _smooth(t / 0.12)  ## compress toward the wall
 	var plant: float = _smooth((t - 0.08) / 0.07) * (1.0 - _smooth((t - 0.3) / 0.08))  ## front sole on the wall
 	var drive: float = _smooth((t - 0.2) / 0.16)  ## leg straightens, body pushes off
@@ -1988,13 +2025,17 @@ static func _pose_wallplant(pose: Dictionary, t: float) -> void:
 	# The front arm braces toward the wall, the back arm swings out for balance, both throw wide as the body leaves.
 	_arms(pose, Vector3(60.0 * load_k * (1.0 - drive) - 10.0 * drive, 0.0, -25.0 - 35.0 * drive),
 			Vector3(-25.0 * load_k + 20.0 * drive, 0.0, 22.0 + 50.0 * drive), 22.0 + 20.0 * load_k * (1.0 - drive))
-	var wall: Vector3 = _sole_point(pose, 0.0, 0.5, -0.56)
+	var wall: Vector3 = _sole_point(pose, 0.0, 0.5, wz)
 	var deck: Vector3 = deck_point(pose, FRONT_FOOT + Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0))
 	var reach: Vector3 = deck.lerp(wall, _smooth(t / 0.12))
 	pose["foot_L"] = reach.lerp(deck, back) + Vector3(0.0, 0.1 * sin(PI * minf(t / 0.12, 1.0)) * (1.0 - plant), 0.0)
 	pose["fpitch_L"] = 78.0 * plant
 	pose["foot_R"] = deck_point(pose, BACK_FOOT + Vector3(0.0, 0.0, 0.03 * plant) + Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0))
 	pose["feet_on_board"] = 1.0 - 0.7 * plant
+	# The wall-side hand slaps flat on the wall at chest height while the foot is planted.
+	if plant > 0.05:
+		pose["hand_L"] = Vector3(-0.2, 1.0 + 0.06 * (1.0 - plant), wz + 0.03)
+		pose["grip_L"] = 0.0
 
 
 ## Boneless (anim "boneless", about 0.65 s): the front foot steps off the board onto the ground ahead of it
@@ -2128,12 +2169,12 @@ static func _pose_natas(pose: Dictionary, t: float, b: float) -> void:
 ## Sticker slap (anim "sticker_slap", 0.3 s, ctx "wall_side"): in the air beside a wall, the rider tips away from it and
 ## kicks the near foot out flat onto the wall, the wall-side arm braced against it and the other thrown out, then
 ## the foot comes back under the body for the air pose.
-static func _pose_sticker(pose: Dictionary, t: float, side: float, vy: float) -> void:
+static func _pose_sticker(pose: Dictionary, t: float, side: float, vy: float, wall_dist: float = -1.0) -> void:
 	_pose_air(pose, t + 0.2, 0.0, vy)
 	var u: float = clampf(t / 0.3, 0.0, 1.0)
 	var slap: float = sin(PI * _smooth(u)) ## 0 -> 1 at the touch -> 0
 	var held: float = _smooth(slap * 1.4)
-	var wall_x: float = 0.56 * side
+	var wall_x: float = (clampf(wall_dist - 0.1, 0.3, 0.95) if wall_dist > 0.0 else 0.56) * side
 	var ankle: Vector3 = Vector3(0.0, PlaceholderSkater.ANKLE_HEIGHT, 0.0)
 	var sx: float = cos(deg_to_rad(float(pose["feet_yaw"])))
 	pose["lean"] = float(pose["lean"]) + 14.0 * side * sx * held

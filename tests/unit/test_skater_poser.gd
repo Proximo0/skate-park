@@ -678,3 +678,26 @@ func test_skitch_holds_the_bumper_ahead_with_the_lead_hand() -> void:
 		assert_near(float(p["grip_" + other]), 0.0, 0.01, "other arm free")
 		assert_true((p["hand_" + lead] as Vector3).z < -0.4, "hand ahead of the nose side")
 		assert_true(float(p["pitch"]) > 15.0, "leaning toward the car")
+
+
+func test_wallplant_foot_follows_the_real_wall_distance() -> void:
+	var near: Dictionary = SkaterPoser.pose_for("wallplant", 0.2, 0.0, 0.0, false, 6.0, 0.0, {"wall_dist": 0.5})
+	var far: Dictionary = SkaterPoser.pose_for("wallplant", 0.2, 0.0, 0.0, false, 6.0, 0.0, {"wall_dist": 0.9})
+	var zn: float = (near["foot_L"] as Vector3).z
+	var zf: float = (far["foot_L"] as Vector3).z
+	assert_true(zf < zn - 0.2, "the planted foot reaches out to a farther wall (%.2f vs %.2f)" % [zf, zn])
+	assert_true(absf(zn + 0.4) < 0.08, "ankle sits a shoe's depth off a wall 0.5 m away: %.2f" % zn)
+
+
+func test_sticker_slap_foot_and_hand_follow_the_wall_distance() -> void:
+	var near: Dictionary = SkaterPoser.pose_for("sticker_slap", 0.15, 0.0, 0.0, false, 6.0, 0.0, {"wall_side": 1.0, "vy": 1.0, "wall_dist": 0.55})
+	var far: Dictionary = SkaterPoser.pose_for("sticker_slap", 0.15, 0.0, 0.0, false, 6.0, 0.0, {"wall_side": 1.0, "vy": 1.0, "wall_dist": 0.9})
+	assert_true(absf((far["foot_L"] as Vector3).x) > absf((near["foot_L"] as Vector3).x) + 0.15, "foot goes farther out to a farther wall")
+
+
+func test_grind_has_balance_motion_even_at_zero_meter() -> void:
+	var a: Dictionary = SkaterPoser.pose_for("grind_fifty_fifty", 0.3, 0.0, 0.0)
+	var b: Dictionary = SkaterPoser.pose_for("grind_fifty_fifty", 1.2, 0.0, 0.0)
+	assert_true(absf(float(a["lean"]) - float(b["lean"])) > 0.3 or (a["LeftUpperArm"] as Vector3).distance_to(b["LeftUpperArm"] as Vector3) > 1.0, "the rider sways on a rail")
+	var tipped: Dictionary = SkaterPoser.pose_for("grind_fifty_fifty", 0.3, 0.0, 0.8)
+	assert_true(absf((tipped["board_rot"] as Vector3).z - (a["board_rot"] as Vector3).z) > 3.0, "the deck rolls with the balance meter")
