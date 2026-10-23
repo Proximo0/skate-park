@@ -1,13 +1,16 @@
 class_name ResultsScreen
 extends CanvasLayer
 ## THUG2-style end-of-run card, shown when the run timer hits zero: score, best combo, goals done this run, new
-## records flagged, and three ways on: Retry, Free Skate (keep skating, no clock) or Level Select.
+## records flagged, and three ways on: Retry, Free Skate (keep skating, no clock) or Level Select. When the game's
+## ReplayDirector kept a clip of the run's best combo, a fourth button, Watch Replay, plays it (the card hides and
+## comes back when the replay closes).
 ## The owner (GoalsPanel) pauses the tree while it is open; this layer keeps running (PROCESS_MODE_ALWAYS).
 ## Cross / Enter presses the focused button, like the level select.
 
 signal retry_pressed
 signal free_skate_pressed
 signal level_select_pressed
+signal replay_pressed
 
 const RS_PANEL_MIN := Vector2(1060, 0)
 const RS_GOAL_ROWS: int = 5
@@ -19,6 +22,7 @@ var _combo_label: Label
 var _retry: Button
 var _free: Button
 var _levels: Button
+var _replay: Button = null
 var _tween: Tween
 
 
@@ -125,12 +129,21 @@ func _build() -> void:
 	_retry = _button("Retry", SkateThemeBuilder.BTN_MINT, retry_pressed)
 	_free = _button("Free Skate", SkateThemeBuilder.BTN_TEAL, free_skate_pressed)
 	_levels = _button("Level Select", SkateThemeBuilder.BTN_SUN, level_select_pressed)
-	for b: Button in [_retry, _free, _levels]:
+	var buttons: Array[Button] = [_retry, _free, _levels]
+	if not best_replay().is_empty():
+		_replay = _button("Watch Replay", SkateThemeBuilder.BTN_CORAL, replay_pressed)
+		_replay.name = "WatchReplay"
+		replay_pressed.connect(watch_replay)
+		buttons.append(_replay)
+		for b: Button in buttons:
+			b.custom_minimum_size.x = 252
+	for b: Button in buttons:
 		bar.add_child(b)
-	_retry.focus_neighbor_right = _free.get_path()
-	_free.focus_neighbor_left = _retry.get_path()
-	_free.focus_neighbor_right = _levels.get_path()
-	_levels.focus_neighbor_left = _free.get_path()
+	for i: int in buttons.size():
+		if i > 0:
+			buttons[i].focus_neighbor_left = buttons[i - 1].get_path()
+		if i + 1 < buttons.size():
+			buttons[i].focus_neighbor_right = buttons[i + 1].get_path()
 	_retry.grab_focus.call_deferred()
 
 	# Count-up and slam-in.
@@ -143,6 +156,36 @@ func _build() -> void:
 	_tween.tween_property(panel, "modulate:a", 1.0, 0.15)
 	_tween.tween_method(func(v: float) -> void: _score_label.text = Hud.format_points(int(v)), 0.0, float(score), RS_COUNT_TIME).set_delay(0.2)
 	_tween.tween_method(func(v: float) -> void: _combo_label.text = Hud.format_points(int(v)), 0.0, float(combo), RS_COUNT_TIME).set_delay(0.2)
+
+
+## The game's kept clip of this run's best combo ({"points", "text", "clip"}), or {} (no director, no combo).
+func best_replay() -> Dictionary:
+	var combo: int = int(data.get("best_combo", 0))
+	var dir: ReplayDirector = ReplayDirector.find(get_tree()) if is_inside_tree() else null
+	if combo <= 0 or dir == null:
+		return {}
+	return dir.best_clip_for(combo)
+
+
+## Watch Replay: hide the card, play the best combo, come back focused on the button.
+func watch_replay() -> void:
+	var dir: ReplayDirector = ReplayDirector.find(get_tree())
+	var e: Dictionary = best_replay()
+	if dir == null or e.is_empty():
+		return
+	var text: String = str(e.get("text", ""))
+	if text.length() > 64:
+		text = text.substr(0, 61) + "..."
+	var title: String = "BEST COMBO  %s   %s" % [Hud.format_points(int(e["points"])), text]
+	visible = false
+	if not dir.play_clip(e["clip"] as ReplayBuffer, title, _back_from_replay):
+		visible = true
+
+
+func _back_from_replay() -> void:
+	visible = true
+	if _replay != null:
+		_replay.grab_focus()
 
 
 ## Skip the count-up (tests and captures).

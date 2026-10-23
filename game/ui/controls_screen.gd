@@ -39,7 +39,7 @@ const CTRL_TIPS := [
 	"Sticker slap: Ollie beside a wall while riding along it to slap a sticker on it.",
 	"Bert slide: Revert on a bank to drag a hand and carve around it.",
 	"Skitch: Grab behind a moving car to hang on and get towed.",
-	"Focus: with a full special meter press F / R3 (the right stick) for slow motion. It drains the meter.",
+	"Focus: full special meter + F / R3 for slow motion. Replay: press R or hold R3 to watch your last 10 s and save photos.",
 ]
 const CTRL_TIPS_PER_PAGE: int = 6
 
