@@ -184,6 +184,13 @@ const LEDGE_STALL_ALONG: float = 0.5
 const DECK_LEAD: float = 0.3  ## s of fall a vert air looks ahead for a flat deck to level the board onto (_deck_ahead)
 const DECK_MIN_NY: float = 0.9
 const LIP_DOUBLE_WINDOW: float = 0.25  ## s into a lip trick the second tap of a double-tapped grind still picks its trick
+## Round 11 trick depth. Grab grind: grab pressed on a rail and still held this long (s) holds the grab on the rail (the
+## table's "grind_grab" button: the stick picks it, as in the air) and scores it; let go sooner and it is the air grab of
+## the pop instead (a grab pressed just before the ollie off). Flip out: a flip pressed on the rail (it waits for the pop,
+## as before) or up to GRIND_OUT_WINDOW s after the pop is the out trick, "<flip> Out", with the "grind_out" bonus.
+const GRAB_GRIND_COMMIT: float = 0.1
+const GRIND_OUT_WINDOW: float = 0.3
+const GRIND_POP_CLEAR: float = 0.06  ## m the body steps up off the rail as it pops (see _grind_pop)
 # THUG2 extras (round 8): natas spin, sticker slap, bert slide, skitch, focus. Their feel numbers are in PhysicsTuning.
 const NATAS_POINTS_PER_180: int = 150  ## each half turn spun on a post (scored with its direction as the post is left)
 const NATAS_DROP: float = 0.4  ## m: a post's top must stand at least this far above whatever is around it
@@ -320,6 +327,10 @@ var _manual_since: float = 0.0  ## s since the manual started or last switched
 var _flatland: Dictionary = {}  ## the flatland trick held (grab held in a manual), {} when none
 var lip_on_ledge: bool = false  ## the lip trick held is a ledge stall, not a coping lip (only "ledge" lip tricks switch in; the poser can pose it lower)
 var _pivot_wait: int = -1  ## ticks until a lone spin press pivots the manual (it waits out the ramp snap's chord)
+var grind_grab_anim: String = ""  ## the grab held on the rail (a "grab_*" anim the poser adds to the grind pose), "" when none
+var _grind_grab: Dictionary = {}  ## the scored grab grind entry while the grab is held on the rail, {} when none
+var _grind_grab_wait: Dictionary = {}  ## a grab pressed on the rail, not yet held GRAB_GRIND_COMMIT: {"dir", "t"}
+var _grind_out_until: float = -1.0  ## _t until which the first flip of this air is a flip out of the grind just popped
 # THUG2 extras (round 8)
 var focus := FocusMode.new()  ## focus slow-mo (full special meter + the focus button); see _toggle_focus
 var _natas: Dictionary = {}  ## standing on a post (state LIP, balance "natas"): {"top": Vector3, "spin": rad, "halves": int}
@@ -1646,6 +1657,10 @@ func _air_trick(r: Dictionary) -> void:
 		return
 	if _air_trick_until > _t:
 		return  # still finishing the last flip
+	if t["kind"] == "flip" and _t <= _grind_out_until:
+		t = flip_out_trick(t, db.find_link("grind_out"))
+		_grind_out_until = -1.0
+		_ev("flip_out")
 	if t["kind"] == "grab":
 		_grab_trick = t
 		_hold_pps = int(t.get("points_per_sec", 0))
@@ -1946,11 +1961,16 @@ func _tick_grind(delta: float, requests: Array) -> void:
 				_ev("grind_switch")
 				_half_reset_balance()
 				_grind_trick = t
-				_hold_pps = int(t.get("points_per_sec", 0))
 				_score_trick(t)
+				_hold_pps = int(t.get("points_per_sec", 0)) + int(_grind_grab.get("points_per_sec", 0))
 		else:
 			_pending_air.append({"req": r, "t": _t})  # flip or grab: with the pop
+			if r["button"] == "grab" and _grind_grab.is_empty():
+				# held on, it is a grab grind (_tick_grind_grab); the hand goes down at once, the score waits for the hold
+				_grind_grab_wait = {"dir": str(r["dir"]), "t": _t}
+				grind_grab_anim = str(db.find("grind_grab", str(r["dir"]), false).get("anim", ""))
 	_pending_air = _pending_air.filter(func(p: Dictionary) -> bool: return _t - float(p["t"]) < 0.2)
+	_tick_grind_grab()
 	var seq: Array = tricks.manual_flick_now()
 	if seq.size() == 2:
 		var m: Dictionary = db.find_sequence(seq, "")
@@ -1977,6 +1997,7 @@ func _tick_grind(delta: float, requests: Array) -> void:
 
 
 ## Ollie off the rail: a tap pops grind_pop_min, a full crouch (crouch_full s of ollie held on the rail) grind_pop_max.
+## The first flip of the pop (pressed on the rail, or within GRIND_OUT_WINDOW after) is a flip out (_air_trick).
 func _grind_pop() -> void:
 	var power: float = lerpf(tune.grind_pop_min, tune.grind_pop_max, crouch)
 	_grind_charge = -1.0
@@ -1985,7 +2006,62 @@ func _grind_pop() -> void:
 	_left_rail_t = _t
 	_link_from = "rail"
 	_link_rail = _rail
+	_grind_out_until = _t + GRIND_OUT_WINDOW
+	# Clear of the rail's own body first: a solid rail (hills' overlook, a box under the line) whose top sits a hair above
+	# the grind line touched the body on the pop tick, which landed the pop on the rail at once (a flip out bailed mid-flip).
+	global_position += Vector3.UP * GRIND_POP_CLEAR
+	_snap_offset -= Vector3.UP * GRIND_POP_CLEAR
 	_ollie(power)
+
+
+## Grab grind (GRAB_GRIND_COMMIT): a grab pressed on the rail and still held scores the table's grab grind for the stick
+## dir it was pressed with ("Indy" on a 5-0 is "Indy 5-0"), paying its points per second on top of the grind's while
+## held. It stays on through grind switches; letting go of grab ends it (the grind carries on).
+func _tick_grind_grab() -> void:
+	if not _held.has("grab"):
+		if not _grind_grab.is_empty():
+			_ev("grab_grind_end")
+			_hold_pps = int(_grind_trick.get("points_per_sec", 0))
+		_clear_grind_grab()
+		return
+	if _grind_grab_wait.is_empty() or _t - float(_grind_grab_wait["t"]) < GRAB_GRIND_COMMIT - 0.0001:
+		return
+	var g: Dictionary = db.find("grind_grab", str(_grind_grab_wait["dir"]), false)
+	_grind_grab_wait = {}
+	if g.is_empty():
+		grind_grab_anim = ""
+		return
+	# held on the rail: not an air grab with the pop any more
+	_pending_air = _pending_air.filter(func(p: Dictionary) -> bool: return str((p["req"] as Dictionary)["button"]) != "grab")
+	_grind_grab = g
+	grind_grab_anim = str(g.get("anim", ""))
+	_ev("grab_grind")
+	_score_trick(grab_grind_trick(g, _grind_trick))
+	_hold_pps = int(_grind_trick.get("points_per_sec", 0)) + int(g.get("points_per_sec", 0))
+
+
+func _clear_grind_grab() -> void:
+	_grind_grab = {}
+	_grind_grab_wait = {}
+	grind_grab_anim = ""
+
+
+## The scoring entry of a grab grind: the grab's table entry named after it and the grind ("Indy" + "5-0": "Indy 5-0"),
+## posed as the grind (the poser adds the grab from grind_grab_anim).
+static func grab_grind_trick(grab: Dictionary, grind: Dictionary) -> Dictionary:
+	var t: Dictionary = grab.duplicate(true)
+	t["name"] = "%s %s" % [str(grab.get("name", "Grab")), str(grind.get("name", "50-50"))]
+	t["anim"] = str(grind.get("anim", "grind_fifty_fifty"))
+	return t
+
+
+## The flip out of a grind: the flip named "<flip> Out" ("Kickflip Out") with the table's "grind_out" bonus on its points.
+static func flip_out_trick(flip: Dictionary, bonus: Dictionary) -> Dictionary:
+	var t: Dictionary = flip.duplicate(true)
+	t["id"] = str(flip.get("id", "flip")) + "_out"
+	t["name"] = "%s %s" % [str(flip.get("name", "Flip")), str(bonus.get("name", "Out"))]
+	t["points"] = int(flip.get("points", 0)) + int(bonus.get("points", 150))
+	return t
 
 
 ## The grind balance tipped over. Low and moving: step off the rail on the side you leaned, a small sideways hop to
@@ -2061,8 +2137,16 @@ func _try_ledge_stall(hit: Dictionary) -> bool:
 	return true
 
 
+## On a coping the rider stands up on the lip: the board's frame turns from the wall (board_up was the wall's normal in
+## the vert air, which laid every lip pose flat out over the ramp) to world up, facing out over the ramp (the way back
+## in), so the stall stands the board up on the coping and a hand plant puts the hand on it.
 func _hold_lip(t: Dictionary, at: Vector3, on_ledge: bool) -> void:
 	lip_on_ledge = on_ledge
+	if not on_ledge:
+		var out: Vector3 = Vector3(_launch_normal.x, 0.0, _launch_normal.z)
+		if out.length() > 0.01:
+			facing = out.normalized()
+		board_up = Vector3.UP
 	var lip_at: Vector3 = at + Vector3.UP * 0.1
 	_snap_offset += global_position - lip_at
 	global_position = lip_at
@@ -3352,6 +3436,8 @@ func _clear_links() -> void:
 	_revert_on_land = false
 	_flatland = {}
 	_pivot_wait = -1
+	_clear_grind_grab()
+	_grind_out_until = -1.0
 	_natas = {}
 	_end_bert()
 	_skitch_car = null
@@ -3455,6 +3541,10 @@ func snapshot() -> Dictionary:
 			"manual_since": _manual_since,
 			"flatland": _flatland.duplicate(true),
 			"pivot_wait": _pivot_wait,
+			"grind_grab": _grind_grab.duplicate(true),
+			"grind_grab_wait": _grind_grab_wait.duplicate(true),
+			"grind_grab_anim": grind_grab_anim,
+			"grind_out_until": _grind_out_until,
 		},
 		"chord": chord.to_dict(),
 		"state": {
@@ -3587,6 +3677,10 @@ func restore(d: Dictionary) -> void:
 	_manual_since = float(lk.get("manual_since", 0.0))
 	_flatland = (lk.get("flatland", {}) as Dictionary).duplicate(true)
 	_pivot_wait = int(lk.get("pivot_wait", -1))
+	_grind_grab = (lk.get("grind_grab", {}) as Dictionary).duplicate(true)
+	_grind_grab_wait = (lk.get("grind_grab_wait", {}) as Dictionary).duplicate(true)
+	grind_grab_anim = str(lk.get("grind_grab_anim", ""))
+	_grind_out_until = float(lk.get("grind_out_until", -1.0))
 	chord.from_dict(d.get("chord", {}))
 	var st: Dictionary = d["state"]
 	state.state = int(st["state"]) as SkateState.State
@@ -3666,11 +3760,8 @@ func _start_balance_trick(t: Dictionary, kind: String) -> void:
 
 func _score_trick(t: Dictionary) -> void:
 	var points: int = int(t.get("points", 0))
-	var nm: String = str(t.get("name", "Trick"))
-	if _nollie_air and state.state == SkateState.State.AIR and t.get("kind", "") in ["flip", "grab"]:
-		nm = "Nollie " + nm
-	elif switch_stance and t.get("kind", "") in ["flip", "grab", "grind", "manual"]:
-		nm = "Switch " + nm
+	var nm: String = stance_name(str(t.get("name", "Trick")), str(t.get("kind", "")),
+		_nollie_air and state.state == SkateState.State.AIR, switch_stance)
 	combo.add_trick(str(t.get("id", nm)), nm, points)
 	special.add_points(points)
 	state.mark_trick()
@@ -3681,6 +3772,21 @@ func _score_trick(t: Dictionary) -> void:
 	if a != "":
 		_set_anim(a)
 	trick_started.emit(t)
+
+
+## A trick's name with its stance: flips popped off the nose are "Nollie", flips ridden backward (switch_stance, the
+## tail leading) "Fakie", and a nollie popped riding backward is a "Switch" flip; grabs, grinds and manuals ridden
+## backward are "Switch" (THUG's naming), a nollie grab "Nollie".
+static func stance_name(nm: String, kind: String, nollie_air: bool, switch: bool) -> String:
+	if kind == "flip":
+		if nollie_air:
+			return ("Switch " if switch else "Nollie ") + nm
+		return ("Fakie " + nm) if switch else nm
+	if nollie_air and kind == "grab":
+		return "Nollie " + nm
+	if switch and kind in ["grab", "grind", "manual"]:
+		return "Switch " + nm
+	return nm
 
 
 func _on_combo_landed() -> void:
@@ -3702,6 +3808,7 @@ func _on_state_changed(from: SkateState.State, to: SkateState.State) -> void:
 	_restart_gaps_in_zones()
 	if from == SkateState.State.GRIND:
 		_ev("grind_end")
+		_clear_grind_grab()
 	if to == SkateState.State.WALK or from == SkateState.State.WALK:
 		_set_walk_physics(to == SkateState.State.WALK)
 		_ev("dismount" if to == SkateState.State.WALK else "mount")

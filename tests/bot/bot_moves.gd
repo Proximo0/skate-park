@@ -15,6 +15,10 @@ extends BotAuto
 ##   mv_rail_transfer   grind a rail, pop off its end, catch the next rail         moves: link:rail_transfer
 ##   mv_grind_switch    grind a rail, stick E + grind switches to a boardslide     moves: grind_switch
 ##   mv_ledge_stall     pop slow onto a ledge square to it, grind press stalls     moves: ledge_stall
+##   mv_rail_tricks     grind a rail, stick E + grab held on it (Indy grab grind), moves: grab_grind, flip_out
+##                      then flip on it and ollie off: "Kickflip Out"
+##   mv_hand_plant      ride up a ramp to the coping, stick NE + grind tapped twice moves: andrecht
+##                      (the Andrecht Invert hand plant), held, ollie back in
 ## Each line is `moves`-checked by the runner: a move that never happened is a move_miss. `build_move(name, level, space)`
 ## returns the line or {}. Candidates come in a fixed order so before/after runs compare.
 
@@ -24,8 +28,8 @@ extends BotAuto
 const GROUPS: Dictionary = {
 	"mv_flat": ["mv_powerslide", "mv_boneless", "mv_no_comply", "mv_manual_pivot"],
 	"mv_walls": ["mv_wallplant", "mv_sticker_slap"],
-	"mv_ramps": ["mv_bert_slide", "mv_acid_drop"],
-	"mv_rails": ["mv_grind_switch", "mv_rail_transfer", "mv_ledge_stall"],
+	"mv_ramps": ["mv_bert_slide", "mv_acid_drop", "mv_hand_plant"],
+	"mv_rails": ["mv_grind_switch", "mv_rail_transfer", "mv_rail_tricks", "mv_ledge_stall"],  ## the ledge stall last: its script runs past its final waypoint
 	"mv_street": ["mv_skitch", "mv_natas"],  ## skitch first: the cars have not driven off yet
 }
 const MOVE_NAMES: Array[String] = ["mv_flat", "mv_walls", "mv_ramps", "mv_rails", "mv_street"]
@@ -92,6 +96,10 @@ func _member(line_name: String) -> Dictionary:
 			return ctx._rail_line(line_name, false)
 		"mv_ledge_stall":
 			return ctx._ledge_line(line_name)
+		"mv_rail_tricks":
+			return ctx._rail_trick_line(line_name)
+		"mv_hand_plant":
+			return ctx._hand_plant_line(line_name)
 	return {}
 
 
@@ -607,6 +615,62 @@ func _rail_line(line_name: String, transfer: bool) -> Dictionary:
 		wps.append(grind_wp)
 		wps.append_array((ga["tail"] as Array).duplicate(true))
 		return {"name": line_name, "limit": 40.0, "soft": true, "expect": [], "moves": ["grind_switch"], "wps": wps, "note": note}
+	return {}
+
+
+## Round 11 rail tricks, one segment on the level route's first long rail: a grab grind (stick E + grab pressed early on
+## the rail and held a third of a second), then a flip out (ollie held for a full crouch, so a low rail's pop clears the
+## flip, and the flip pressed on the rail just before the release).
+func _rail_trick_line(line_name: String) -> Dictionary:
+	for ga: Dictionary in _route_grinds():
+		var grind_wp: Dictionary = (ga["grind"] as Dictionary).duplicate(true)
+		var at: int = int(_h((ga["b"] as Vector3) - (ga["a"] as Vector3)).length() / 8.0 * 60.0 * 0.15)
+		# the stick picks the grab on the press tick only; after it the driver balances the rail again (a stick held hard
+		# over for the whole hold toppled the beach seawall rail)
+		grind_wp["steps"] = [{"from": "GRIND", "at": at, "dur": 1, "press": ["grab"], "held": ["grab"], "sx": 1.0},
+			{"from": "GRIND", "at": at + 1, "dur": 19, "held": ["grab"]},
+			{"from": "GRIND", "at": at + 20, "dur": 14, "press": ["ollie"], "held": ["ollie"]},
+			{"from": "GRIND", "at": at + 27, "dur": 1, "press": ["flip"]}]
+		var wps: Array = (ga["pre"] as Array).duplicate(true)
+		wps.append(grind_wp)
+		wps.append_array((ga["tail"] as Array).duplicate(true))
+		return {"name": line_name, "limit": 40.0, "soft": true, "expect": [], "moves": ["grab_grind", "flip_out"], "wps": wps,
+			"note": "rail of line %s" % str(ga["line"])}
+	return {}
+
+
+## A hand plant: from the flat in front of a ramp lip, ride straight up it fast enough to go up past the coping, tap grind
+## twice (stick NE) near the coping: the Andrecht Invert. Held a moment, then ollie back in and ride out.
+func _hand_plant_line(line_name: String) -> Dictionary:
+	for c: Dictionary in _lip_spots():
+		var mid: Vector3 = c["mid"]
+		var inward: Vector3 = c["inward"]
+		var drop: float = float(c["drop"])
+		if drop < 2.0 or drop > 5.0:
+			continue
+		# a lip trick needs vert air: the face just under the coping must be near vertical (not a bank's)
+		var wall_hit: Dictionary = _ray(mid + inward * 0.8 + Vector3.DOWN * 0.35, mid - inward * 0.4 + Vector3.DOWN * 0.35)
+		if wall_hit.is_empty() or absf((wall_hit["normal"] as Vector3).y) > 0.35:
+			continue
+		var target: Vector3 = c["target"]
+		var start: Vector3 = target + _h(inward).normalized() * 3.0
+		var gs: Vector3 = _ground(start.x, start.z, target.y + 1.0)
+		if gs == Vector3.INF or absf(gs.y - target.y) > LEVEL_TOL or not _runway_ok(gs, target, 0.6):
+			continue
+		var spd: float = sqrt(2.0 * PhysicsTuning.shared().gravity * (drop + 1.2)) + 1.0
+		var steps: Array = []
+		for k: int in 30:
+			# grind taps in pairs two ticks apart near the coping (a pair is a double tap), with the stick NE
+			steps.append({"from": "AIR", "at": k * 6, "dur": 1, "press": ["grind"], "sx": 0.7, "sy": -0.7, "near": [mid.x, mid.z, 2.0]})
+			steps.append({"from": "AIR", "at": k * 6 + 2, "dur": 1, "press": ["grind"], "sx": 0.7, "sy": -0.7, "near": [mid.x, mid.z, 2.0]})
+		steps.append({"from": "LIP", "at": 30, "dur": 4, "press": ["ollie"], "held": ["ollie"]})
+		var wps: Array = [
+			{"tp": {"pos": gs + Vector3.UP * 0.1, "dir": -inward, "speed": spd}},
+			{"p": mid + inward * 0.5, "r": 2.0, "spd": spd, "act": "script", "steps": steps, "len": 260, "nopush": true, "tmo": 8.0},
+			{"p": target, "r": 3.0, "spd": 5.0, "tmo": 10.0},
+		]
+		return {"name": line_name, "limit": 30.0, "soft": true, "expect": [], "moves": ["andrecht"], "wps": wps,
+			"note": "ramp=%s drop=%.1fm" % [String(c["name"]).get_slice("/", String(c["name"]).get_slice_count("/") - 2), drop]}
 	return {}
 
 

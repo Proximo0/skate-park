@@ -534,7 +534,8 @@ const LIP_BRANCH: Dictionary = {
 	"lip_invert": "invert", "lip_one_foot_invert": "one_foot_invert", "lip_eggplant": "eggplant",
 	"lip_blunt_to_fakie": "blunt", "lip_nose_pick": "nose_pick", "lip_nose_stall": "nose_stall",
 	"lip_smith_stall": "smith", "lip_feeble_stall": "feeble", "lip_axle_stall": "axle", "lip_rock_to_fakie": "rock",
-	"lip_disaster": "disaster",
+	"lip_disaster": "disaster", "lip_andrecht": "andrecht", "lip_sad_plant": "sad_plant",
+	"lip_russian_boneless": "russian_boneless",
 }
 
 

@@ -19,7 +19,7 @@ func test_every_thug2_move_has_a_bot_line() -> void:
 	for n: String in BotMoves.MOVE_NAMES:
 		members.append_array(BotMoves.GROUPS[n])
 	for m: String in ["natas", "sticker_slap", "bert_slide", "skitch", "wallplant", "boneless", "no_comply", "acid_drop",
-			"rail_transfer", "grind_switch", "manual_pivot", "ledge_stall", "powerslide"]:
+			"rail_transfer", "grind_switch", "manual_pivot", "ledge_stall", "powerslide", "rail_tricks", "hand_plant"]:
 		assert_true(members.has("mv_" + m), "no bot line for " + m)
 
 
@@ -38,3 +38,4 @@ func test_trick_db_has_every_move_the_lines_expect() -> void:
 	for id: String in ["natas_spin", "sticker_slap", "bert_slide", "skitch", "wallplant", "boneless", "no_comply", "acid_drop"]:
 		assert_false(db.find_move(id).is_empty(), id)
 	assert_false(db.find_link("rail_transfer").is_empty())
+	assert_false(db.get_trick("andrecht").is_empty(), "the hand plant line expects the andrecht")

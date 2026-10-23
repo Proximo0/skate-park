@@ -22,7 +22,7 @@ func test_find_flip_dirs() -> void:
 func test_find_double_tap_variants() -> void:
 	var db: TrickDB = _db()
 	assert_eq(str(db.find("flip", "", true).get("id", "")), "double_kickflip")
-	assert_eq(str(db.find("flip", "N", true).get("id", "")), "double_pop_shove_it")
+	assert_eq(str(db.find("flip", "N", true).get("id", "")), "three_sixty_shove_it")
 	# THUG2: a double-tapped grab is its own named grab, not a "Double Indy"
 	assert_eq(str(db.find("grab", "E", true).get("id", "")), "crossbone")
 	assert_eq(str(db.find("grab", "", true).get("id", "")), "madonna")
@@ -73,7 +73,7 @@ func test_find_lip() -> void:
 	assert_eq(str(db.find_lip("SW").get("id", "")), "blunt_to_fakie")
 	assert_eq(str(db.find_lip("").get("id", "")), "nose_stall", "no dir: the nose stall")
 	assert_eq(str(db.find_lip("N", true).get("id", "")), "nose_pick", "double tap")
-	assert_eq(str(db.find_lip("SE", true).get("id", "")), "eggplant", "no double for the dir: its single")
+	assert_eq(str(db.find_lip("SW", true).get("id", "")), "blunt_to_fakie", "no double for the dir: its single")
 
 
 func test_find_lip_on_ledge() -> void:
@@ -102,13 +102,13 @@ func test_find_sequence() -> void:
 func test_by_kind_counts() -> void:
 	var db: TrickDB = _db()
 	assert_eq(db.by_kind("flip").size(), 18, "flips: 9 dirs x 2")
-	assert_eq(db.by_kind("grab").size(), 18, "grabs: 9 dirs x 2")
+	assert_eq(db.by_kind("grab").size(), 27, "grabs: 9 dirs x 2, and 9 grab grinds")
 	assert_eq(db.by_kind("grind").size(), 18, "grinds: 9 dirs x 2")
-	assert_eq(db.by_kind("lip").size(), 11, "lips: 8 dirs + 3 double taps")
+	assert_eq(db.by_kind("lip").size(), 14, "lips: 8 dirs + 6 double taps")
 	assert_eq(db.by_kind("manual").size(), 2, "manuals")
 	assert_eq(db.by_kind("special").size(), 4, "specials")
 	assert_eq(db.by_kind("flatland").size(), 6, "flatland: 5 grab dirs + the 180 pivot")
-	assert_eq(db.by_kind("link").size(), TrickDB.LINK_IDS.size(), "links")
+	assert_eq(db.by_kind("link").size(), TrickDB.LINK_IDS.size() + 1, "links, and the grind_out bonus")
 	assert_eq(db.by_kind("bogus").size(), 0, "unknown kind")
 
 
@@ -233,3 +233,40 @@ func test_clear_specials_restriction_restores_the_table() -> void:
 	assert_eq(db.ids().size(), n)
 	assert_false(db.find_sequence(["E", "W"], "grab").is_empty(), "restored specials trigger again")
 	assert_eq(db.clear_specials_restriction(), 0, "clearing twice is a no-op")
+
+
+## Round 11 naming: 360 flip (tre flip), 360 shove-it and pressure flip on the double taps, varial heel kept.
+func test_tre_flip_pressure_flip_and_360_shove_it() -> void:
+	var db: TrickDB = _db()
+	assert_eq(str(db.find("flip", "E", true).get("name", "")), "360 Flip", "double-tapped varial kickflip: the tre flip")
+	assert_eq(str(db.find("flip", "N", true).get("name", "")), "360 Shove-It")
+	assert_eq(str(db.find("flip", "NW", true).get("name", "")), "Pressure Flip")
+	assert_eq(str(db.find("flip", "SE", false).get("name", "")), "Varial Heelflip")
+	assert_eq(str(db.get_trick("tre_flip").get("anim", "")), "flip_tre_flip")
+
+
+## Grab grinds: their own button, the same stick dirs as the air grabs; never matched by an air grab press.
+func test_grab_grinds_in_the_table() -> void:
+	var db: TrickDB = _db()
+	assert_eq(str(db.find("grind_grab", "", false).get("name", "")), "Melon")
+	assert_eq(str(db.find("grind_grab", "E", false).get("name", "")), "Indy")
+	assert_eq(str(db.find("grind_grab", "NW", false).get("name", "")), "Crail", "no airwalk on a rail")
+	assert_eq(str(db.find("grind_grab", "E", true).get("name", "")), "Melon", "no double taps: neutral fallback")
+	assert_eq(str(db.find("grab", "E", false).get("id", "")), "indy", "an air grab press never finds a grab grind")
+	for t: Dictionary in db.by_kind("grab"):
+		if str(t["button"]) == "grind_grab":
+			assert_true(str(t["anim"]).begins_with("grab_"), "%s poses a grab" % t["id"])
+	var out: Dictionary = db.find_link("grind_out")
+	assert_eq(str(out.get("name", "")), "Out")
+	assert_true(int(out.get("points", 0)) > 0, "the flip out pays a bonus")
+
+
+## Hand plants on the coping: the double taps of the invert / one-foot invert / eggplant dirs, never on a ledge.
+func test_hand_plant_lips() -> void:
+	var db: TrickDB = _db()
+	assert_eq(str(db.find_lip("NE", true).get("id", "")), "andrecht")
+	assert_eq(str(db.find_lip("NW", true).get("id", "")), "sad_plant")
+	assert_eq(str(db.find_lip("SE", true).get("id", "")), "russian_boneless")
+	for id: String in ["andrecht", "sad_plant", "russian_boneless"]:
+		assert_false(bool(db.get_trick(id).get("ledge", true)), id + " is coping only")
+	assert_eq(str(db.find_lip("NE", true, true).get("id", "")), "nose_stall", "no plants on a ledge")
