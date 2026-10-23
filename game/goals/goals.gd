@@ -22,6 +22,10 @@ extends RefCounted
 ## - gap_chain: land one combo holding at least target different gaps.
 ## - timed_gaps: target different gaps inside "seconds" seconds (on_gap_event with the caller's clock).
 ## - streak: land target combos in a row without a bail.
+## - pro_challenge: one tier (bronze / silver / gold, "tier") of a level's Pro Challenge. Needs a running timed run. Lands a
+##   combo that holds at least "chain" different gaps of the signature list "gaps" (ids or names) and is worth at least
+##   "combo" points, while the run's landed_total is at least "score" (the target; 5:00 runs double it like high_score) and
+##   no more than "within" seconds (of a 2:00 run, scaled with the session) have passed since the run started (0 = no limit).
 ## Combo-shaped goals read a buffer of what the running combo holds (on_trick, on_gap_event); on_combo_landed judges
 ## and clears it, on_combo_bailed clears it and breaks the streak.
 ## A session (set_session) picks the run: 2:00 is the file's own, 5:00 doubles every high_score target, free skate has
@@ -35,8 +39,9 @@ const DEFAULT_RUN_SECONDS: float = 120.0
 const TYPES: PackedStringArray = [
 	"high_score", "combo", "collect", "pickup", "gaps", "trick", "special", "manual_time", "grind_time",
 	"manual_distance", "grind_distance", "named_gap", "gap_trick", "combo_trick", "combo_distinct", "gap_chain",
-	"timed_gaps", "streak",
+	"timed_gaps", "streak", "pro_challenge",
 ]
+const PRO_TIERS: PackedStringArray = ["bronze", "silver", "gold"]
 const DISTANCE_TYPE_BY_KIND: Dictionary = {"manual": "manual_distance", "grind": "grind_distance"}
 ## Score targets grow with the run length: a 5 minute run asks twice the 2 minute points.
 const SCORE_SCALE_5MIN: float = 2.0
@@ -62,6 +67,7 @@ var _combo_gaps: Array[String] = []  ## gap ids the running combo holds
 var _combo_gap_names: Array[String] = []  ## their display names (a goal may name either)
 var _gap_log: Array[Dictionary] = []  ## {"id", "t"} of recent gaps, for timed_gaps
 var _streak: int = 0
+var _now: float = 0.0  ## the caller's clock as last seen (tick, start_run, on_gap_event)
 
 
 static func load_default() -> Goals:
@@ -128,7 +134,7 @@ func set_session(seconds: float) -> void:
 	if not untimed and run_seconds > _file_run_seconds * 1.5:
 		scale = SCORE_SCALE_5MIN
 	for goal: Dictionary in _goals:
-		if goal["type"] != "high_score":
+		if not _is_timed_type(str(goal["type"])):
 			continue
 		var base: float = goal["base_target"]
 		var target: float = base if scale == 1.0 else roundf(base * scale / SCORE_ROUND) * SCORE_ROUND
@@ -145,7 +151,12 @@ func set_session(seconds: float) -> void:
 func is_active(id: String) -> bool:
 	if not untimed or not _index_by_id.has(id):
 		return true
-	return _goals[_index_by_id[id]]["type"] != "high_score"
+	return not _is_timed_type(str(_goals[_index_by_id[id]]["type"]))
+
+
+## The goal types a free-skate session parks and a 5 minute session scales: they need a timed run.
+static func _is_timed_type(type_name: String) -> bool:
+	return type_name == "high_score" or type_name == "pro_challenge"
 
 
 ## "Pro Score: 30,000" with 30000 -> 60000 gives "Pro Score: 60,000".
@@ -235,6 +246,7 @@ func progress(id: String) -> float:
 func start_run(now: float) -> void:
 	_run_active = true
 	_run_start = now
+	_now = now
 	_combo_tricks.clear()
 	_combo_gaps.clear()
 	_combo_gap_names.clear()
@@ -249,6 +261,7 @@ func end_run() -> void:
 
 ## Call once per frame (or per physics tick) with the current time. Ends the run when its time is up.
 func tick(now: float) -> void:
+	_now = now
 	if _run_active and not untimed and now - _run_start >= run_seconds:
 		_run_active = false
 
@@ -324,9 +337,35 @@ func on_combo_landed(points: int, landed_total: int, tricks: Array) -> Array[Dic
 				_bump(id, float(_streak) / target)
 				if float(_streak) >= target:
 					_complete(id, out)
+			"pro_challenge":
+				if _run_active:
+					_judge_pro(goal, points, landed_total, gaps_held, names_held, out)
 	for h: Dictionary in held:
 		_apply_trick(str(h["id"]), str(h["kind"]), out)
 	return out
+
+
+## One pro challenge tier against a landed combo. Progress is the mean of the three asks (score, chain, combo).
+func _judge_pro(goal: Dictionary, points: int, landed_total: int, gaps_held: Array[String], names_held: Array[String], out: Array[Dictionary]) -> void:
+	var id: String = goal["id"]
+	var within: float = float(goal.get("within", 0.0))
+	if within > 0.0 and _now - _run_start > within * run_seconds / _file_run_seconds:
+		return  # too slow for this medal
+	var chain: int = 0
+	for g: Variant in goal["gaps"] as Array:
+		if gaps_held.has(str(g)) or names_held.has(str(g)):
+			chain += 1
+	var need_chain: float = float(goal["chain"])
+	var need_combo: float = float(goal["combo"])
+	var parts: Array[float] = [minf(float(landed_total) / float(goal["target"]), 1.0), minf(float(chain) / need_chain, 1.0)]
+	if need_combo > 0.0:
+		parts.append(minf(float(points) / need_combo, 1.0))
+	var sum: float = 0.0
+	for x: float in parts:
+		sum += x
+	_bump(id, sum / float(parts.size()) * 0.99)
+	if sum >= float(parts.size()) - 0.0001:
+		_complete(id, out)
 
 
 ## The combo was bailed: what it held counts for nothing and the streak starts again.
@@ -382,6 +421,7 @@ func on_gap_discovered(count: int) -> Array[Dictionary]:
 ## A real gap (from data/gaps.json) was completed at time now: id and display name. Finishes named_gap goals, feeds
 ## timed_gaps, and goes into the running combo for gap_trick and gap_chain.
 func on_gap_event(gap_id: String, gap_name: String, now: float) -> Array[Dictionary]:
+	_now = maxf(_now, now)
 	var out: Array[Dictionary] = []
 	var key: String = gap_id if gap_id != "" else gap_name
 	if key != "" and not _combo_gaps.has(key):
@@ -553,6 +593,27 @@ func _add_goal(raw: Dictionary) -> String:
 			goal["target"] = ct
 			goal["trick"] = _str_field(raw, "trick")
 			goal["trick_kind"] = _str_field(raw, "trick_kind")
+		"pro_challenge":
+			var tier: String = _str_field(raw, "tier")
+			if not PRO_TIERS.has(tier):
+				return "%s: pro_challenge tier must be bronze, silver or gold" % id
+			var sc: float = _as_number(raw.get("score", NAN))
+			if is_nan(sc) or sc <= 0.0:
+				return "%s: pro_challenge needs a score above 0" % id
+			var gl: Variant = raw.get("gaps", null)
+			if typeof(gl) != TYPE_ARRAY or (gl as Array).is_empty():
+				return "%s: pro_challenge needs a gaps array" % id
+			var gaps_list: Array[String] = []
+			for gx: Variant in gl as Array:
+				if typeof(gx) != TYPE_STRING or gx == "":
+					return "%s: pro_challenge gaps must be non-empty strings" % id
+				gaps_list.append(gx)
+			goal["target"] = sc
+			goal["tier"] = tier
+			goal["gaps"] = gaps_list
+			goal["chain"] = clampi(int(_as_number(raw.get("chain", 1.0))), 1, gaps_list.size())
+			goal["combo"] = maxf(_as_number(raw.get("combo", 0.0)), 0.0) if not is_nan(_as_number(raw.get("combo", 0.0))) else 0.0
+			goal["within"] = maxf(_as_number(raw.get("within", 0.0)), 0.0) if not is_nan(_as_number(raw.get("within", 0.0))) else 0.0
 		"timed_gaps":
 			var tg: float = _as_number(raw.get("target", NAN))
 			var secs: float = _as_number(raw.get("seconds", NAN))
@@ -565,7 +626,7 @@ func _add_goal(raw: Dictionary) -> String:
 			if is_nan(target) or target <= 0.0:
 				return "%s: target must be a number above 0" % id
 			goal["target"] = target
-	if type_name == "high_score":  # kept so set_session can rescale from the file's own numbers
+	if _is_timed_type(type_name):  # kept so set_session can rescale from the file's own numbers
 		goal["base_target"] = goal["target"]
 		goal["base_title"] = title
 		goal["base_description"] = goal["description"]

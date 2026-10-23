@@ -1,5 +1,10 @@
 {
 	"run_seconds": 120,
+	"pro": {
+		"name": "Avenue Run",
+		"blurb": "Roof to the line, then the avenue grind and the station.",
+		"line": "roof_to_line"
+	},
 	"goals": [
 		{
 			"id": "dt_high_score",
@@ -160,6 +165,56 @@
 				"VHS",
 				"VHS"
 			]
+		},
+		{
+			"id": "downtown_pro_bronze",
+			"title": "Pro Challenge Bronze: Avenue Run",
+			"description": "Avenue Run: land 5,000 points in the run, and one combo of 3,000+ points over one of its gaps.",
+			"type": "pro_challenge",
+			"tier": "bronze",
+			"score": 5000,
+			"chain": 1,
+			"combo": 3000,
+			"gaps": [
+				"dt_roof_to_line",
+				"dt_avenue_grind",
+				"dt_monorail",
+				"dt_station_24"
+			]
+		},
+		{
+			"id": "downtown_pro_silver",
+			"title": "Pro Challenge Silver: Avenue Run",
+			"description": "Avenue Run: land 16,000 points in the run, and one combo of 6,500+ points over 2 of its gaps, inside 100 seconds.",
+			"type": "pro_challenge",
+			"tier": "silver",
+			"score": 16000,
+			"chain": 2,
+			"combo": 6500,
+			"gaps": [
+				"dt_roof_to_line",
+				"dt_avenue_grind",
+				"dt_monorail",
+				"dt_station_24"
+			],
+			"within": 100
+		},
+		{
+			"id": "downtown_pro_gold",
+			"title": "Pro Challenge Gold: Avenue Run",
+			"description": "Avenue Run: land 32,000 points in the run, and one combo of 12,000+ points over 3 of its gaps, inside 80 seconds.",
+			"type": "pro_challenge",
+			"tier": "gold",
+			"score": 32000,
+			"chain": 3,
+			"combo": 12000,
+			"gaps": [
+				"dt_roof_to_line",
+				"dt_avenue_grind",
+				"dt_monorail",
+				"dt_station_24"
+			],
+			"within": 80
 		}
 	],
 	"pickups": [

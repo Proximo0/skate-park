@@ -63,6 +63,26 @@ static func build(lvl: WarehouseLevel) -> void:
 		lamp.energy = 2.6
 		root.add_child(_steady(lamp) if absf(float(m[1]) + 44.0) > 1.0 or bool(m[3]) else _fake(_steady(lamp)))  # rail side: fakes
 		i += 1
+	# the settling pit: a sodium mast on its east rim, a cheap real fill light over the bowl (no shadows) and a warm pool on
+	# the floor (the dark pit itself was the far-ground plane lidding it: see WhOutdoor._backdrop_without)
+	var pit_c := Vector3(WarehouseLevel.PIT_POS.x + WarehouseLevel.PIT_SIZE.x * 0.5, 0.0, WarehouseLevel.PIT_POS.z + WarehouseLevel.PIT_SIZE.y * 0.5)
+	var pit_lamp: FlickerLight = FlickerLight.sodium_lamp(7.0, false, SODIUM, 90)
+	pit_lamp.position = Vector3(pit_c.x + WarehouseLevel.PIT_SIZE.x * 0.5 + 1.2, 0.0, pit_c.z)
+	pit_lamp.rotation_degrees.y = 90.0
+	pit_lamp.energy = 2.6
+	root.add_child(_fake(_steady(pit_lamp)))
+	var pit_fill := OmniLight3D.new()
+	pit_fill.name = "PitFill"
+	pit_fill.light_color = Color("ffb870")
+	pit_fill.light_energy = 1.8
+	pit_fill.omni_range = 17.0
+	pit_fill.omni_attenuation = 1.2
+	pit_fill.shadow_enabled = false
+	pit_fill.position = Vector3(pit_c.x, 2.6, pit_c.z)
+	root.add_child(pit_fill)
+	var pit_pool: MeshInstance3D = FlickerLight.light_pool(7.5, SODIUM, 0.4)
+	pit_pool.position = Vector3(pit_c.x, -2.55, pit_c.z)
+	root.add_child(pit_pool)
 	# moonlight shafts under every skylight (merged into one shaft mesh and one pool mesh; dust in every other one)
 	var d: Vector3 = WarehouseLevel.MOON_DIR.normalized()
 	var shafts: Array[MeshInstance3D] = []

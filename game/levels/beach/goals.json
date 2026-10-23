@@ -1,5 +1,10 @@
 {
 	"run_seconds": 120,
+	"pro": {
+		"name": "Seawall Sprint",
+		"blurb": "Launch off the beach, drop the seawall and rail the pier.",
+		"line": "beach_launch"
+	},
 	"goals": [
 		{
 			"id": "beach_score_15k",
@@ -139,6 +144,59 @@
 				"VHS",
 				"VHS"
 			]
+		},
+		{
+			"id": "beach_pro_bronze",
+			"title": "Pro Challenge Bronze: Seawall Sprint",
+			"description": "Seawall Sprint: land 2,500 points in the run, and one combo of 1,500+ points over one of its gaps.",
+			"type": "pro_challenge",
+			"tier": "bronze",
+			"score": 2500,
+			"chain": 1,
+			"combo": 1500,
+			"gaps": [
+				"beach_launch",
+				"seawall_drop",
+				"seawall_slide",
+				"pier_approach",
+				"pier_rail_marathon"
+			]
+		},
+		{
+			"id": "beach_pro_silver",
+			"title": "Pro Challenge Silver: Seawall Sprint",
+			"description": "Seawall Sprint: land 10,000 points in the run, and one combo of 3,500+ points over 2 of its gaps, inside 100 seconds.",
+			"type": "pro_challenge",
+			"tier": "silver",
+			"score": 10000,
+			"chain": 2,
+			"combo": 3500,
+			"gaps": [
+				"beach_launch",
+				"seawall_drop",
+				"seawall_slide",
+				"pier_approach",
+				"pier_rail_marathon"
+			],
+			"within": 100
+		},
+		{
+			"id": "beach_pro_gold",
+			"title": "Pro Challenge Gold: Seawall Sprint",
+			"description": "Seawall Sprint: land 22,000 points in the run, and one combo of 7,000+ points over 4 of its gaps, inside 80 seconds.",
+			"type": "pro_challenge",
+			"tier": "gold",
+			"score": 22000,
+			"chain": 4,
+			"combo": 7000,
+			"gaps": [
+				"beach_launch",
+				"seawall_drop",
+				"seawall_slide",
+				"pier_approach",
+				"pier_rail_marathon"
+			],
+			"within": 80
 		}
 	],
 	"pickups": [

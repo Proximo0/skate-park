@@ -26,6 +26,7 @@ var _difficulty: float = 1.0
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _next_nudge_at: float = 0.0
 var _failed: bool = false
+var _growth_seconds: float = TIME_GROWTH_SECONDS  ## TIME_GROWTH_SECONDS under the player's balance assist
 
 
 ## Resets the meter to a small seeded offset from center. Same seed and inputs give the same angles.
@@ -38,6 +39,7 @@ func start(seed_value: int, difficulty: float = 1.0) -> void:
 	velocity = 0.0
 	_time = 0.0
 	_failed = false
+	_growth_seconds = TIME_GROWTH_SECONDS / GameSettings.balance_growth_scale()  ## Normal = today's values
 	_next_nudge_at = _rng.randf_range(NUDGE_MIN_INTERVAL, NUDGE_MAX_INTERVAL)
 
 
@@ -47,7 +49,7 @@ func update(delta: float, correction: float) -> bool:
 	if _failed:
 		return false
 	_time += delta
-	var instability: float = INSTABILITY * _difficulty * (1.0 + _time / TIME_GROWTH_SECONDS)
+	var instability: float = INSTABILITY * _difficulty * (1.0 + _time / _growth_seconds)
 	velocity += angle * instability * delta
 	if _time >= _next_nudge_at:
 		velocity += _rng.randf_range(-1.0, 1.0) * NUDGE_STRENGTH

@@ -1,5 +1,10 @@
 {
 	"run_seconds": 120,
+	"pro": {
+		"name": "Leap of Faith",
+		"blurb": "Send the Leap of Faith and keep the combo going over the gym roof.",
+		"line": "leap_of_faith"
+	},
 	"goals": [
 		{
 			"id": "high_score_15k",
@@ -147,6 +152,56 @@
 				"VHS",
 				"VHS"
 			]
+		},
+		{
+			"id": "school_pro_bronze",
+			"title": "Pro Challenge Bronze: Leap of Faith",
+			"description": "Leap of Faith: land 4,000 points in the run, and one combo of 2,500+ points over one of its gaps.",
+			"type": "pro_challenge",
+			"tier": "bronze",
+			"score": 4000,
+			"chain": 1,
+			"combo": 2500,
+			"gaps": [
+				"leap_of_faith",
+				"double_kink",
+				"gym_roof_drop",
+				"up_on_the_roof"
+			]
+		},
+		{
+			"id": "school_pro_silver",
+			"title": "Pro Challenge Silver: Leap of Faith",
+			"description": "Leap of Faith: land 14,000 points in the run, and one combo of 6,000+ points over 2 of its gaps, inside 100 seconds.",
+			"type": "pro_challenge",
+			"tier": "silver",
+			"score": 14000,
+			"chain": 2,
+			"combo": 6000,
+			"gaps": [
+				"leap_of_faith",
+				"double_kink",
+				"gym_roof_drop",
+				"up_on_the_roof"
+			],
+			"within": 100
+		},
+		{
+			"id": "school_pro_gold",
+			"title": "Pro Challenge Gold: Leap of Faith",
+			"description": "Leap of Faith: land 30,000 points in the run, and one combo of 10,000+ points over 3 of its gaps, inside 80 seconds.",
+			"type": "pro_challenge",
+			"tier": "gold",
+			"score": 30000,
+			"chain": 3,
+			"combo": 10000,
+			"gaps": [
+				"leap_of_faith",
+				"double_kink",
+				"gym_roof_drop",
+				"up_on_the_roof"
+			],
+			"within": 80
 		}
 	],
 	"pickups": [

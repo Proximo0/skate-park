@@ -12,6 +12,8 @@ const SAVE_PATH: String = "user://progress.json"
 const VERSION: int = 1
 const GOALS_FALLBACK: String = "res://data/goals.json"
 ## Goals done (over every level) a level needs before it opens. Missing id = open from the start.
+const MEDAL_TIERS: PackedStringArray = ["bronze", "silver", "gold"]
+const MEDAL_NAMES: PackedStringArray = ["Bronze", "Silver", "Gold"]
 const UNLOCK_AT: Dictionary = {"beach": 3, "school": 6, "downtown": 10, "hills": 15}
 
 static var _shared: ProgressStore = null
@@ -211,14 +213,62 @@ func note_bests(level_id: String, score: int, combo: int) -> void:
 
 ## How many goals a level has (its goals.json, else the shared one). 0 if unreadable.
 static func goal_total(level_id: String) -> int:
-	var file: String = "res://game/levels/%s/goals.json" % level_id
-	if not FileAccess.file_exists(file):
-		file = GOALS_FALLBACK
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(file))
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(goals_file(level_id)))
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return 0
 	var list: Variant = (parsed as Dictionary).get("goals", [])
 	return (list as Array).size() if typeof(list) == TYPE_ARRAY else 0
+
+
+## The level's goals file (its own, else the shared one).
+static func goals_file(level_id: String) -> String:
+	var file: String = "res://game/levels/%s/goals.json" % level_id
+	return file if FileAccess.file_exists(file) else GOALS_FALLBACK
+
+
+## The level's Pro Challenge from its goals file: {"name", "blurb", "line", "tiers": [goal id bronze, silver, gold]}.
+## Empty when the level has none. Medals are saved as the tier goals in the career (medal() reads them back).
+static func pro_info(level_id: String) -> Dictionary:
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(goals_file(level_id)))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	var root: Dictionary = parsed
+	var tiers: Array[String] = ["", "", ""]
+	var found: bool = false
+	var list: Variant = root.get("goals", [])
+	if typeof(list) == TYPE_ARRAY:
+		for g: Variant in list as Array:
+			if typeof(g) == TYPE_DICTIONARY and str((g as Dictionary).get("type", "")) == "pro_challenge":
+				var idx: int = MEDAL_TIERS.find(str((g as Dictionary).get("tier", "")))
+				if idx >= 0:
+					tiers[idx] = str((g as Dictionary).get("id", ""))
+					found = true
+	if not found:
+		return {}
+	var meta: Variant = root.get("pro", {})
+	var m: Dictionary = meta if typeof(meta) == TYPE_DICTIONARY else {}
+	return {"name": str(m.get("name", "Pro Challenge")), "blurb": str(m.get("blurb", "")), "line": str(m.get("line", "")), "tiers": tiers}
+
+
+## 0 none, 1 bronze, 2 silver, 3 gold: the best Pro Challenge tier done on the level.
+func medal(level_id: String) -> int:
+	var info: Dictionary = pro_info(level_id)
+	return medal_of(info, goals_done(level_id))
+
+
+## The best tier of `info` (pro_info) among the done goal ids.
+static func medal_of(info: Dictionary, done: PackedStringArray) -> int:
+	if info.is_empty():
+		return 0
+	var best: int = 0
+	for i: int in 3:
+		if done.has(str((info["tiers"] as Array)[i])):
+			best = i + 1
+	return best
+
+
+static func medal_name(m: int) -> String:
+	return "No medal" if m <= 0 else MEDAL_NAMES[clampi(m, 1, 3) - 1] + " medal"
 
 
 ## 0 to 3 stars: one for any goal, two for half of them, three for all.

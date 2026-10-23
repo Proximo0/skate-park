@@ -1,5 +1,10 @@
 {
 	"run_seconds": 120,
+	"pro": {
+		"name": "Catwalk Run",
+		"blurb": "String the catwalk, the pipes and the racks without touching down.",
+		"line": "catwalk_marathon"
+	},
 	"goals": [
 		{
 			"id": "high_score_15k",
@@ -151,6 +156,56 @@
 				"VHS",
 				"VHS"
 			]
+		},
+		{
+			"id": "warehouse_pro_bronze",
+			"title": "Pro Challenge Bronze: Catwalk Run",
+			"description": "Catwalk Run: land 3,000 points in the run, and one combo of 2,500+ points over one of its gaps.",
+			"type": "pro_challenge",
+			"tier": "bronze",
+			"score": 3000,
+			"chain": 1,
+			"combo": 2500,
+			"gaps": [
+				"catwalk_marathon",
+				"catwalk_stairs",
+				"pipe_dream",
+				"rack_to_rack"
+			]
+		},
+		{
+			"id": "warehouse_pro_silver",
+			"title": "Pro Challenge Silver: Catwalk Run",
+			"description": "Catwalk Run: land 12,000 points in the run, and one combo of 5,000+ points over 2 of its gaps, inside 100 seconds.",
+			"type": "pro_challenge",
+			"tier": "silver",
+			"score": 12000,
+			"chain": 2,
+			"combo": 5000,
+			"gaps": [
+				"catwalk_marathon",
+				"catwalk_stairs",
+				"pipe_dream",
+				"rack_to_rack"
+			],
+			"within": 100
+		},
+		{
+			"id": "warehouse_pro_gold",
+			"title": "Pro Challenge Gold: Catwalk Run",
+			"description": "Catwalk Run: land 25,000 points in the run, and one combo of 9,000+ points over 3 of its gaps, inside 80 seconds.",
+			"type": "pro_challenge",
+			"tier": "gold",
+			"score": 25000,
+			"chain": 3,
+			"combo": 9000,
+			"gaps": [
+				"catwalk_marathon",
+				"catwalk_stairs",
+				"pipe_dream",
+				"rack_to_rack"
+			],
+			"within": 80
 		}
 	],
 	"pickups": [

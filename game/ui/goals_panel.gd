@@ -180,6 +180,11 @@ func _on_goal_completed(goal: Dictionary) -> void:
 	_list_key = ""
 	_run_goal_ids.append(str(goal.get("id", "")))
 	_run_goal_titles.append(str(goal.get("title", "")))
+	if str(goal.get("type", "")) == "pro_challenge":
+		var tier: int = ProgressStore.MEDAL_TIERS.find(str(goal.get("tier", ""))) + 1
+		if not results_enabled:
+			ProLog.medal(level_id, ProgressStore.MEDAL_TIERS[maxi(tier - 1, 0)])  # bot check (tools/pro_check.sh)
+		_banner("%s MEDAL! %s" % [ProgressStore.MEDAL_NAMES[maxi(tier - 1, 0)].to_upper(), ProgressStore.pro_info(level_id).get("name", "Pro Challenge")])
 	var before: int = store.total_goals_done()
 	if store.add_goal(level_id, str(goal.get("id", ""))):
 		store.save()
@@ -232,7 +237,15 @@ func build_results() -> Dictionary:
 			name = str(e["name"])
 	var done: int = store.goals_done_count(level_id)
 	var total: int = goals.all_goals().size()
+	var pro: Dictionary = ProgressStore.pro_info(level_id)
+	var run_medal: int = 0  # the best tier this run earned
+	for gid: String in _run_goal_ids:
+		if not pro.is_empty():
+			run_medal = maxi(run_medal, (pro["tiers"] as Array).find(gid) + 1)
 	return {
+		"pro_name": str(pro.get("name", "")), "pro_blurb": str(pro.get("blurb", "")),
+		"pro_medal": ProgressStore.medal_of(pro, store.goals_done(level_id)), "pro_medal_run": run_medal,
+		"pro_medal_name": ProgressStore.medal_name(run_medal),
 		"level_name": name, "score": score, "best_combo": _run_best_combo,
 		"goals": _run_goal_titles.duplicate(), "goals_done": done, "goals_total": total,
 		"stars": ProgressStore.stars_for(done, total),

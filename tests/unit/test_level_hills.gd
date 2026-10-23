@@ -102,3 +102,31 @@ func test_level_content_counts() -> void:
 	assert_true(rails >= 25, "at least 25 grind edges (%d)" % rails)
 	assert_true(lips >= 4, "ramp lips for snap (%d)" % lips)
 	lvl.free()
+
+
+## Round 11: the north hedge used to stop 0.5 m short of the park-side hedge, leaving a slot at (-40.7, 55.8) a skater
+## could wedge into. Every hedge box must now overlap (or touch) the next one around the garden: no gaps but the shed's.
+func test_secret_garden_corner_has_no_wedge_slot() -> void:
+	var lvl: HillsLevel = LevelRegistry.create("hills") as HillsLevel
+	(Engine.get_main_loop() as SceneTree).root.add_child(lvl)
+	var garden: Node = lvl.find_child("SecretGarden", true, false)
+	assert_true(garden != null, "garden built")
+	var boxes: Array[Rect2] = []  # footprints (x, z) of the hedges
+	for h: Node in garden.find_children("*", "StaticBody3D", false, false):
+		if h.name == "Shed":
+			continue
+		var body := h as StaticBody3D
+		var shape: BoxShape3D = (body.find_children("*", "CollisionShape3D", true, false)[0] as CollisionShape3D).shape as BoxShape3D
+		var half: Vector3 = shape.size * 0.5
+		var ext: Vector3 = (body.global_transform.basis * half).abs()
+		boxes.append(Rect2(body.global_position.x - ext.x, body.global_position.z - ext.z, ext.x * 2.0, ext.z * 2.0))
+	var north_east: Rect2 = Rect2()
+	var east: Rect2 = Rect2()
+	for b: Rect2 in boxes:
+		if absf(b.get_center().x - HillsLevel.SECRET.end.x) < 0.1:
+			east = b
+		elif absf(b.get_center().y - HillsLevel.SECRET.position.y) < 0.1 and b.end.x > HillsLevel.SECRET.end.x - 8.0:
+			north_east = b
+	assert_true(north_east.has_area() and east.has_area(), "found the north-east and east hedges in %s" % [boxes])
+	assert_true(north_east.end.x >= east.position.x - 0.001, "north hedge reaches the east hedge: %s vs %s" % [north_east, east])
+	lvl.free()

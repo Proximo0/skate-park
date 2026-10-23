@@ -73,7 +73,27 @@ static func _ground(lvl: WarehouseLevel) -> void:
 		WhGeo.solid_min(sb, Vector3(r.position.x, -1.0, r.position.y), Vector3(r.size.x, 1.0, r.size.y))
 		bt.quad(Vector3(r.position.x, 0.0, r.position.y), Vector3(r.position.x, 0.0, r.end.y), Vector3(r.end.x, 0.0, r.end.y), Vector3(r.position.x + r.size.x, 0.0, r.position.y), m)
 	bt.commit(lvl, "GroundMesh")
-	lvl.add_backdrop("asphalt", Color("2c2e34"), 3000.0, -0.08)
+	var backdrop: MeshInstance3D = lvl.add_backdrop("asphalt", Color("2c2e34"), 3000.0, -0.08)
+	backdrop.mesh = _backdrop_without(3000.0, Rect2(pit.position - Vector2(lvl.bounds.get_center()), pit.size))
+
+
+## The far-ground plane with a rectangular hole (in the plane's own coordinates). The plain plane sits at y = -0.08 and
+## plugged the drained pit like a lid, so the pit read as a flat black disc however it was lit.
+static func _backdrop_without(size: float, hole: Rect2) -> ArrayMesh:
+	var h: float = size * 0.5
+	var rects: Array[Rect2] = [
+		Rect2(-h, -h, hole.position.x + h, size), Rect2(hole.end.x, -h, h - hole.end.x, size),
+		Rect2(hole.position.x, -h, hole.size.x, hole.position.y + h), Rect2(hole.position.x, hole.end.y, hole.size.x, h - hole.end.y),
+	]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3.UP)
+	for r: Rect2 in rects:
+		var q: Array[Vector3] = [Vector3(r.position.x, 0.0, r.position.y), Vector3(r.end.x, 0.0, r.position.y), Vector3(r.end.x, 0.0, r.end.y), Vector3(r.position.x, 0.0, r.end.y)]
+		for i: int in [0, 2, 1, 0, 3, 2]:  # counter-clockwise seen from above
+			st.set_uv(Vector2(q[i].x, q[i].z) / size + Vector2(0.5, 0.5))
+			st.add_vertex(q[i])
+	return st.commit()
 
 
 # ----------------------------------------------------------------------------------------------------------- the slab

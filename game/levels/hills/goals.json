@@ -1,5 +1,10 @@
 {
 	"run_seconds": 120,
+	"pro": {
+		"name": "Pool Row",
+		"blurb": "Hop the fences and pools down Pool Row in one clean line.",
+		"line": "pool_row"
+	},
 	"goals": [
 		{
 			"id": "hills_score_15k",
@@ -143,6 +148,62 @@
 				"VHS",
 				"VHS"
 			]
+		},
+		{
+			"id": "hills_pro_bronze",
+			"title": "Pro Challenge Bronze: Pool Row",
+			"description": "Pool Row: land 2,000 points in the run, and one combo of 800+ points over one of its gaps.",
+			"type": "pro_challenge",
+			"tier": "bronze",
+			"score": 2000,
+			"chain": 1,
+			"combo": 800,
+			"gaps": [
+				"fence_hop_ab",
+				"fence_hop_bc",
+				"pool_to_pool",
+				"next_door_pool",
+				"fence_hop_ba",
+				"fence_hop_cb"
+			]
+		},
+		{
+			"id": "hills_pro_silver",
+			"title": "Pro Challenge Silver: Pool Row",
+			"description": "Pool Row: land 9,000 points in the run, and one combo of 2,500+ points over 3 of its gaps, inside 100 seconds.",
+			"type": "pro_challenge",
+			"tier": "silver",
+			"score": 9000,
+			"chain": 3,
+			"combo": 2500,
+			"gaps": [
+				"fence_hop_ab",
+				"fence_hop_bc",
+				"pool_to_pool",
+				"next_door_pool",
+				"fence_hop_ba",
+				"fence_hop_cb"
+			],
+			"within": 100
+		},
+		{
+			"id": "hills_pro_gold",
+			"title": "Pro Challenge Gold: Pool Row",
+			"description": "Pool Row: land 22,000 points in the run, and one combo of 5,000+ points over 5 of its gaps, inside 80 seconds.",
+			"type": "pro_challenge",
+			"tier": "gold",
+			"score": 22000,
+			"chain": 5,
+			"combo": 5000,
+			"gaps": [
+				"fence_hop_ab",
+				"fence_hop_bc",
+				"pool_to_pool",
+				"next_door_pool",
+				"fence_hop_ba",
+				"fence_hop_cb"
+			],
+			"within": 80
 		}
 	],
 	"pickups": [

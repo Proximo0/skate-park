@@ -249,7 +249,7 @@ static func secret(lvl: HillsLevel) -> void:
 		[Vector3(r.position.x, y, r.get_center().y), Vector3(r.size.y, 2.4, 1.2), PI * 0.5],
 		[Vector3(r.get_center().x, y, r.end.y), Vector3(r.size.x, 2.4, 1.2), 0.0],
 		[Vector3(r.position.x + 4.5, y, r.position.y), Vector3(9.0, 2.4, 1.2), 0.0],
-		[Vector3(r.end.x - 4.0, y, r.position.y), Vector3(6.0, 2.4, 1.2), 0.0],
+		[Vector3(r.end.x - 3.5, y, r.position.y), Vector3(7.0, 2.4, 1.2), 0.0],  # runs into the park-side hedge: no slot at the corner to wedge in
 		[Vector3(r.end.x, y, r.get_center().y), Vector3(r.size.y, 1.05, 1.0), PI * 0.5],
 	]
 	for h: Array in hs:

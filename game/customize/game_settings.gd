@@ -15,6 +15,14 @@ static var cam_distance: int = 1  ## 0 Near, 1 Normal, 2 Far (SkateCamera arm le
 static var cam_fov: int = 1  ## 0 Narrow, 1 Normal, 2 Wide
 static var cam_shake: bool = true  ## landing weight: the dip and FOV punch
 static var music_volume: int = 50  ## percent, one of MUSIC_STEPS (0 is off)
+static var sfx_volume: int = 100  ## percent 0..100, drives the "SFX" audio bus (Master while that bus does not exist)
+static var balance_assist: int = 1  ## 0 Easy, 1 Normal (today's values), 2 Hard: scales how fast grind / manual balance gets worse
+static var invert_y: bool = false  ## camera orbit (right stick / mouse) vertical axis
+static var cam_sensitivity: int = 100  ## percent 25..200 of the orbit speed
+const SFX_BUS: String = "SFX"
+const ASSIST_NAMES: PackedStringArray = ["Easy", "Normal", "Hard"]
+## Balance.TIME_GROWTH_SECONDS is divided by this: Easy grows the wobble at 0.5x, Hard at 1.6x.
+const ASSIST_GROWTH: Array[float] = [0.5, 1.0, 1.6]
 const MUSIC_STEPS: Array[int] = [0, 25, 50, 75, 100]
 const CAM_DISTANCE_NAMES: PackedStringArray = ["Near", "Normal", "Far"]
 const CAM_DISTANCE_SCALE: Array[float] = [0.85, 1.0, 1.25]
@@ -28,7 +36,15 @@ static func ensure_loaded() -> void:
 	if _loaded:
 		return
 	_loaded = true
-	if Flags.is_scripted_run() or not FileAccess.file_exists(SAVE_PATH):
+	if Flags.is_scripted_run():
+		return
+	ControlRemap.load_saved()  # the player's key and button picks go into the InputMap with the first read of the options
+	_load_file()
+	apply_sfx_volume()
+
+
+static func _load_file() -> void:
+	if not FileAccess.file_exists(SAVE_PATH):
 		return
 	var f: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.READ)
 	if f == null:
@@ -43,6 +59,10 @@ static func ensure_loaded() -> void:
 		cam_fov = clampi(int((data as Dictionary).get("cam_fov", 1)), 0, 2)
 		cam_shake = bool((data as Dictionary).get("cam_shake", true))
 		music_volume = clampi(int((data as Dictionary).get("music_volume", 50)), 0, 100)
+		sfx_volume = clampi(int((data as Dictionary).get("sfx_volume", 100)), 0, 100)
+		balance_assist = clampi(int((data as Dictionary).get("balance_assist", 1)), 0, 2)
+		invert_y = bool((data as Dictionary).get("invert_y", false))
+		cam_sensitivity = clampi(int((data as Dictionary).get("cam_sensitivity", 100)), 25, 200)
 
 
 static func hair_on() -> bool:
@@ -104,7 +124,8 @@ static func save() -> void:
 	var f: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify({"hair_physics": hair_physics, "body_physics": body_physics, "body_level": body_strength,
-				"bail_injuries": bail_injuries, "cam_distance": cam_distance, "cam_fov": cam_fov, "cam_shake": cam_shake, "music_volume": music_volume}))
+				"bail_injuries": bail_injuries, "cam_distance": cam_distance, "cam_fov": cam_fov, "cam_shake": cam_shake, "music_volume": music_volume,
+				"sfx_volume": sfx_volume, "balance_assist": balance_assist, "invert_y": invert_y, "cam_sensitivity": cam_sensitivity}))
 
 
 static func cam_distance_scale() -> float:
@@ -159,4 +180,76 @@ static func next_music_volume(pct: int) -> int:
 static func set_music_volume(pct: int) -> void:
 	ensure_loaded()
 	music_volume = clampi(pct, 0, 100)
+	save()
+
+
+## SFX volume as 0..1.
+static func sfx_scale() -> float:
+	ensure_loaded()
+	return float(sfx_volume) / 100.0
+
+
+## Sets the SFX volume (percent) and applies it to the audio bus.
+static func set_sfx_volume(pct: int) -> void:
+	ensure_loaded()
+	sfx_volume = clampi(pct, 0, 100)
+	apply_sfx_volume()
+	save()
+
+
+## The bus the SFX slider drives: "SFX" when it exists, else Master (the fallback until the SFX bus is created).
+static func sfx_bus_index() -> int:
+	var i: int = AudioServer.get_bus_index(SFX_BUS)
+	return i if i >= 0 else AudioServer.get_bus_index("Master")
+
+
+static func apply_sfx_volume() -> void:
+	if AudioServer.get_bus_index(SFX_BUS) >= 0:
+		SkateAudio.set_sfx_volume(float(sfx_volume) / 100.0)
+		return
+	var i: int = sfx_bus_index()
+	if i < 0:
+		return
+	var lin: float = float(sfx_volume) / 100.0
+	AudioServer.set_bus_volume_db(i, linear_to_db(lin) if lin > 0.0 else -80.0)
+	AudioServer.set_bus_mute(i, sfx_volume <= 0)
+
+
+static func assist_level() -> int:
+	ensure_loaded()
+	return clampi(balance_assist, 0, 2)
+
+
+## Growth multiplier for the balance meter's instability over time (1.0 on Normal).
+static func balance_growth_scale() -> float:
+	return ASSIST_GROWTH[assist_level()]
+
+
+static func set_balance_assist(level: int) -> void:
+	ensure_loaded()
+	balance_assist = posmod(level, 3)
+	save()
+
+
+static func cam_invert_y() -> bool:
+	ensure_loaded()
+	return invert_y
+
+
+static func set_invert_y(on: bool) -> void:
+	ensure_loaded()
+	invert_y = on
+	save()
+
+
+## Camera orbit speed multiplier (1.0 = today). The camera multiplies its stick and mouse orbit by this and by -1 when
+## cam_invert_y() asks for the vertical axis flipped.
+static func cam_sens_scale() -> float:
+	ensure_loaded()
+	return float(cam_sensitivity) / 100.0
+
+
+static func set_cam_sensitivity(pct: int) -> void:
+	ensure_loaded()
+	cam_sensitivity = clampi(pct, 25, 200)
 	save()

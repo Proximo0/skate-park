@@ -11,7 +11,7 @@ signal closed
 
 const LS_COLUMNS: int = 3
 const LS_CARD_SIZE := Vector2(560, 392)
-const LS_IMAGE_SIZE := Vector2(524, 172)
+const LS_IMAGE_SIZE := Vector2(524, 148)
 const LS_NAME_FONT: int = 40
 const LS_BLURB_FONT: int = 23
 const LS_TAG_FONT: int = 22
@@ -29,6 +29,8 @@ var store: ProgressStore = null
 var _locks: Dictionary = {}  ## id -> Control (the LOCKED cover over the preview)
 var _lock_texts: Dictionary = {}  ## id -> Label
 var _stat_texts: Dictionary = {}  ## id -> Label
+var _medals: Dictionary = {}  ## id -> MedalDisc (the Pro Challenge medal beside the stars)
+var _pro_texts: Dictionary = {}  ## id -> Label ("PRO Pool Row: Gold medal")
 
 
 func _ready() -> void:
@@ -274,8 +276,21 @@ func _card(e: Dictionary) -> Button:
 	var stat := MenuKit.text(stat_line(id), LS_STAT_FONT, accent.darkened(0.45))
 	stat.name = "Stat"
 	stat.add_theme_font_override("font", SkateThemeBuilder.heading_font())
-	v.add_child(stat)
+	var stat_row := HBoxContainer.new()
+	stat_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(stat_row)
+	stat.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stat_row.add_child(stat)
 	_stat_texts[id] = stat
+	var disc := MedalDisc.new()
+	disc.name = "Medal"
+	disc.medal = store.medal(id)
+	stat_row.add_child(disc)
+	_medals[id] = disc
+	var pro := MenuKit.text(pro_line(id), LS_BLURB_FONT - 3, accent.darkened(0.45))
+	pro.name = "ProLine"
+	v.add_child(pro)
+	_pro_texts[id] = pro
 	return b
 
 
@@ -286,6 +301,15 @@ func stat_line(id: String) -> String:
 	if store.best_score(id) > 0:
 		line += "    Best %s" % Hud.format_points(store.best_score(id))
 	return line
+
+
+## "PRO Pool Row: Gold medal" (or "PRO Pool Row: no medal yet"); "" for a level without a Pro Challenge.
+func pro_line(id: String) -> String:
+	var info: Dictionary = ProgressStore.pro_info(id)
+	if info.is_empty():
+		return ""
+	var m: int = ProgressStore.medal_of(info, store.goals_done(id))
+	return "PRO %s: %s" % [info["name"], ProgressStore.medal_name(m) if m > 0 else "no medal yet"]
 
 
 func _lock_cover() -> Control:
@@ -316,6 +340,11 @@ func _refresh_locks() -> void:
 		(_locks[id] as Control).visible = need > 0
 		(_lock_texts[id] as Label).text = "Finish %d more goal%s" % [need, "" if need == 1 else "s"]
 		(_stat_texts[id] as Label).text = stat_line(id)
+		if _medals.has(id):
+			(_medals[id] as MedalDisc).medal = store.medal(id)
+			(_medals[id] as MedalDisc).queue_redraw()
+		if _pro_texts.has(id):
+			(_pro_texts[id] as Label).text = pro_line(id)
 	if _unlock_btn != null:
 		_unlock_btn.text = "Unlock all: %s" % ("On" if store.unlock_all else "Off")
 	_refresh_session()
@@ -375,6 +404,28 @@ class StarRow:
 			draw_colored_polygon(pts, SkateThemeBuilder.SUN if on else Color(SkateThemeBuilder.MUTED, 0.25))
 			pts.append(pts[0])
 			draw_polyline(pts, SkateThemeBuilder.NAVY, 3.0, true)
+
+
+## The Pro Challenge medal: a round disc (bronze, silver or gold) with a ribbon notch, a faint ring while unearned.
+class MedalDisc:
+	extends Control
+	const COLORS: Array[Color] = [Color("c9803f"), Color("c3ccd6"), Color("ffc93c")]
+	var medal: int = 0
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(40, 36)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var c := Vector2(20.0, 19.0)
+		if medal <= 0:
+			draw_arc(c, 13.0, 0.0, TAU, 24, Color(SkateThemeBuilder.MUTED, 0.4), 3.0, true)
+			return
+		var col: Color = COLORS[clampi(medal, 1, 3) - 1]
+		draw_circle(c, 15.0, SkateThemeBuilder.NAVY)
+		draw_circle(c, 12.0, col)
+		draw_arc(c, 8.0, 0.3, TAU - 0.3, 20, col.darkened(0.3), 2.0, true)
+		draw_circle(c + Vector2(-4.0, -4.0), 2.5, col.lightened(0.5))
 
 
 ## The painted stand-in for a level without a rendered preview: a sky gradient in the level's accent, a sun and a

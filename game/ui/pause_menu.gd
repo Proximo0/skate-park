@@ -26,6 +26,9 @@ var _resume_button: Button
 var _controls_button: Button
 var _controls_screen: ControlsScreen
 var _controls_open: bool = false
+var _settings_screen: SettingsScreen
+var _settings_open: bool = false
+var _settings_button: Button
 var _intro: Tween
 ## Drop-in buttons, spot id -> label ("Drop In: <label>"). main.gd sets the level's own before add_child.
 var drop_in_spots: Dictionary = {"mega": "Mega Ramp", "loop": "Loop"}
@@ -135,10 +138,15 @@ func _build() -> void:
 	last_row.name = "ControlsRow"
 	last_row.add_theme_constant_override("separation", 6)
 	col.add_child(last_row)
-	_controls_button = _pause_button("Controls", SkateThemeBuilder.BTN_TEAL, Vector2(PAUSE_TOGGLE_MIN.x * 0.5 - 3.0, 64), 28)
+	var third: float = PAUSE_TOGGLE_MIN.x / 3.0 - 4.0
+	_controls_button = _pause_button("Controls", SkateThemeBuilder.BTN_TEAL, Vector2(third, 64), 22)
 	_controls_button.pressed.connect(_on_controls_pressed)
 	last_row.add_child(_controls_button)
-	var music_btn := _pause_button(_music_text(), SkateThemeBuilder.BTN_TEAL, Vector2(PAUSE_TOGGLE_MIN.x * 0.5 - 3.0, 64), 24)
+	_settings_button = _pause_button("Settings", SkateThemeBuilder.BTN_MINT, Vector2(third, 64), 22)
+	_settings_button.name = "SettingsButton"
+	_settings_button.pressed.connect(_on_settings_pressed)
+	last_row.add_child(_settings_button)
+	var music_btn := _pause_button(_music_text(), SkateThemeBuilder.BTN_TEAL, Vector2(third, 64), 20)
 	music_btn.name = "MusicVolume"
 	music_btn.pressed.connect(_on_music_volume.bind(music_btn))
 	last_row.add_child(music_btn)
@@ -150,7 +158,7 @@ func _build() -> void:
 	# Up and down wrap around the buttons.
 	var buttons: Array[Button] = [_resume_button, restart, _level_button]
 	buttons.append_array(drops)
-	buttons.append_array([hair_btn, body_btn, injury_btn, cam_dist_btn, cam_fov_btn, cam_shake_btn, _controls_button, music_btn, quit])
+	buttons.append_array([hair_btn, body_btn, injury_btn, cam_dist_btn, cam_fov_btn, cam_shake_btn, _controls_button, _settings_button, music_btn, quit])
 	var n: int = buttons.size()
 	for i: int in n:
 		var b: Button = buttons[i]
@@ -161,10 +169,14 @@ func _build() -> void:
 	_controls_screen.visible = false
 	_controls_screen.closed.connect(_on_controls_closed)
 	add_child(_controls_screen)
+	_settings_screen = SettingsScreen.new()
+	_settings_screen.visible = false
+	_settings_screen.closed.connect(_on_settings_closed)
+	add_child(_settings_screen)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _controls_open or _level_select != null:
+	if _controls_open or _settings_open or _level_select != null:
 		return  # the controls screen and the level select handle their own close
 	if visible:
 		if event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel") or _pause_is_circle(event):
@@ -193,6 +205,8 @@ func open_menu() -> void:
 	visible = true
 	_controls_open = false
 	_controls_screen.visible = false
+	_settings_open = false
+	_settings_screen.visible = false
 	_panel.visible = true
 	get_tree().paused = true
 	_backdrop.modulate.a = 0.0
@@ -217,6 +231,8 @@ func _hide_menu() -> void:
 	_close_level_select()
 	_controls_open = false
 	_controls_screen.visible = false
+	_settings_open = false
+	_settings_screen.visible = false
 	visible = false
 	get_tree().paused = false
 
@@ -319,6 +335,19 @@ func _on_controls_pressed() -> void:
 	_controls_open = true
 	_panel.visible = false
 	_controls_screen.open_screen()
+
+
+func _on_settings_pressed() -> void:
+	_settings_open = true
+	_panel.visible = false
+	_settings_screen.open_screen()
+
+
+func _on_settings_closed() -> void:
+	_settings_open = false
+	_settings_screen.visible = false
+	_panel.visible = true
+	_settings_button.grab_focus()
 
 
 func _on_controls_closed() -> void:

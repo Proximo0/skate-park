@@ -44,7 +44,7 @@ func test_default_file_loads_valid_goals() -> void:
 	var g: Goals = Goals.load_default()
 	assert_true(g.load_errors.is_empty(), "no load errors: %s" % str(g.load_errors))
 	var all: Array[Dictionary] = g.all_goals()
-	assert_eq(all.size(), 24, "twenty four goals")
+	assert_eq(all.size(), 27, "twenty four goals and the three Pro Challenge medals")
 	assert_near(g.run_seconds, 120.0, 0.0001, "2-minute run")
 	var seen: Dictionary = {}
 	for goal: Dictionary in all:
