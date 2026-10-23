@@ -10,8 +10,9 @@ extends RefCounted
 ##   dir, then to the nose stall. on_ledge keeps to the tricks marked "ledge": true (stalls that work on a ledge's edge,
 ##   not only on a coping: no inverts or plants on a ledge).
 ## - find_sequence() matches manuals and specials by sequence and button.
-## - find_move() looks up a board move by id (kind "move": wallplant, boneless, no_comply, caveman, acid_drop). Moves are
-##   started by the skater's own rules (a button in a situation), never matched from a button and dir.
+## - find_move() looks up a board move by id (kind "move": wallplant, boneless, no_comply, caveman, acid_drop, and THUG2's
+##   extras natas_spin, sticker_slap, bert_slide, skitch). Moves are started by the skater's own rules (a button in a
+##   situation), never matched from a button and dir.
 ## - find_flatland() matches the tricks done inside a manual (kind "flatland": button "grab" + dir, falling back to the
 ##   neutral one; the "spin" button's 180 pivot).
 ## - find_link() looks up a link by id (kind "link": rail_transfer, wall_to_rail), the bonuses for joining one balance
@@ -25,7 +26,9 @@ const REQUIRED_FIELDS: PackedStringArray = [
 ]
 const VALID_KINDS: PackedStringArray = ["flip", "grab", "grind", "manual", "lip", "special", "move", "flatland", "link"]
 ## The board moves the skater scores by id (THUG2 move set); every one must be in the table.
-const MOVE_IDS: PackedStringArray = ["wallplant", "boneless", "no_comply", "caveman", "acid_drop"]
+const MOVE_IDS: PackedStringArray = [
+	"wallplant", "boneless", "no_comply", "caveman", "acid_drop", "natas_spin", "sticker_slap", "bert_slide", "skitch",
+]
 ## The links the skater scores by id; every one must be in the table.
 const LINK_IDS: PackedStringArray = ["rail_transfer", "wall_to_rail"]
 const VALID_DIRS: PackedStringArray = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", ""]

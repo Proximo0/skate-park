@@ -8,7 +8,7 @@ const SIM_FILES: Array = [
 	"sim_wall_glance", "sim_mega_air", "sim_dome_air", "sim_loop_edges", "sim_revert_buffer", "sim_grind_snap",
 	"sim_ramp_snap", "sim_levels", "sim_drop_feel", "sim_spine_transfer",
 	"sim_wall_scrape", "sim_wall_cling", "sim_air_wall_slide", "sim_buried_start", "sim_snap_turn_rate", "sim_camera_follow",
-	"sim_grind_links", "sim_manual_links", "sim_wall_lip_outs", "sim_trick_vocab", "sim_street_weight",
+	"sim_grind_links", "sim_manual_links", "sim_wall_lip_outs", "sim_trick_vocab", "sim_street_weight", "sim_thug2_extras",
 ]
 
 

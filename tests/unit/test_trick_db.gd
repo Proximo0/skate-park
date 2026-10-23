@@ -191,3 +191,14 @@ func test_links_score_from_the_table() -> void:
 	assert_eq(str(db.find_link("rail_transfer").get("name", "")), "Rail Transfer")
 	assert_eq(str(db.find_link("wall_to_rail").get("name", "")), "Wall to Rail")
 	assert_eq(db.find_link("kickflip").size(), 0, "a flip is not a link")
+
+
+func test_thug2_extras_in_the_table() -> void:
+	var db: TrickDB = _db()
+	assert_eq(str(db.find_move("natas_spin").get("name", "")), "Natas Spin")
+	assert_eq(str(db.find_move("sticker_slap").get("name", "")), "Sticker Slap")
+	assert_eq(str(db.find_move("bert_slide").get("name", "")), "Bert Slide")
+	assert_eq(str(db.find_move("skitch").get("name", "")), "Skitch")
+	assert_true(int(db.find_move("natas_spin").get("points_per_sec", 0)) > 0, "a natas pays while held")
+	assert_true(int(db.find_move("skitch").get("points_per_sec", 0)) > 0, "a skitch pays while towed")
+	assert_eq(int(db.find_move("sticker_slap").get("points_per_sec", 0)), 0, "a sticker slap is a tap")

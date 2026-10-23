@@ -21,6 +21,8 @@ signal ramp_snap_missed
 signal powerslide_changed(active: bool)
 ## The nollie stance was toggled (the nollie button): the HUD shows NOLLIE while it is on.
 signal nollie_changed(on: bool)
+## Focus slow-mo turned on (true) or off (false): the hook for a HUD tint, the audio pitch and a vignette.
+signal focus_changed(on: bool)
 
 const SPIN_POINTS_PER_180 := 100
 ## Floor contacts bending more than about 25 degrees from the current floor in one tick are checked against the
@@ -180,6 +182,21 @@ const LEDGE_STALL_ALONG: float = 0.5
 const DECK_LEAD: float = 0.3  ## s of fall a vert air looks ahead for a flat deck to level the board onto (_deck_ahead)
 const DECK_MIN_NY: float = 0.9
 const LIP_DOUBLE_WINDOW: float = 0.25  ## s into a lip trick the second tap of a double-tapped grind still picks its trick
+# THUG2 extras (round 8): natas spin, sticker slap, bert slide, skitch, focus. Their feel numbers are in PhysicsTuning.
+const NATAS_POINTS_PER_180: int = 150  ## each half turn spun on a post (scored with its direction as the post is left)
+const NATAS_DROP: float = 0.4  ## m: a post's top must stand at least this far above whatever is around it
+const NATAS_STEP: float = 0.04  ## m: the march across a post's top that finds its edges (and so its centre)
+const NATAS_ABOVE: float = 0.35  ## m a post's top may be above the board (a pop that only just reaches it still stands on it)
+const NATAS_BELOW: float = 1.6  ## m a post's top may be below the board
+const NATAS_RAIL_CLEAR: float = 1.2  ## m: a post this close to a grind rail is the rail's (the grind press is for the rail)
+const NATAS_OFF: float = 1.5  ## m/s along the facing as the pop leaves the post (clear of it before coming down)
+const STICKER_ALONG_DOT: float = 0.6  ## travel within about 53 degrees of the wall's plane: along it (more into it: a wallplant)
+const STICKER_ANIM_TIME: float = 0.3  ## s the "sticker_slap" pose runs before the air pose
+const BERT_MAX_NY: float = 0.95  ## faces less flat than this (normal y) take a bert slide; flatter ones a powerslide
+const BERT_MIN_NY: float = 0.3  ## and no steeper than this (a wall is a wallride, not a bank)
+const BERT_END_NY: float = 0.985  ## down on the flat: the hand comes up
+const SKITCH_PULL: float = 6.0  ## 1/s: how fast the tow closes the distance to the hold point behind the bumper
+const SKITCH_PULL_MAX: float = 3.0  ## m/s: the most that closing adds over the car's own speed
 
 ## Live physics tuning. Every ride number is read from here each tick.
 var tune: PhysicsTuning = PhysicsTuning.shared()
@@ -297,6 +314,15 @@ var _manual_since: float = 0.0  ## s since the manual started or last switched
 var _flatland: Dictionary = {}  ## the flatland trick held (grab held in a manual), {} when none
 var lip_on_ledge: bool = false  ## the lip trick held is a ledge stall, not a coping lip (only "ledge" lip tricks switch in; the poser can pose it lower)
 var _pivot_wait: int = -1  ## ticks until a lone spin press pivots the manual (it waits out the ramp snap's chord)
+# THUG2 extras (round 8)
+var focus := FocusMode.new()  ## focus slow-mo (full special meter + the focus button); see _toggle_focus
+var _natas: Dictionary = {}  ## standing on a post (state LIP, balance "natas"): {"top": Vector3, "spin": rad, "halves": int}
+var berting: bool = false  ## in a bert slide (anim "bert_slide"): hand down on a bank, carving hard and scrubbing speed
+var _bert_time: float = 0.0  ## s into the bert slide
+var _bert_dir: float = 0.0  ## +1 / -1: the way the bert slide turns (the sign of the steer about the floor normal)
+var _skitch_car: Node3D = null  ## the car being skitched (state MANUAL, balance "skitch"), else null
+var _skitch_side: float = 0.0  ## m: where across the rear bumper the hand holds (the car's right is +)
+var _cars: Array[Node3D] = []  ## every TrafficCar in the tree (skitch candidates), kept by _on_node_added
 
 
 func _ready() -> void:
@@ -331,12 +357,30 @@ func _ready() -> void:
 	Flags.register_hash(_state_hash)
 	for z: Node in get_tree().get_nodes_in_group("gap_zone"):
 		_connect_zone(z as Area3D)
+	for n: Node in get_tree().root.find_children("*", "AnimatableBody3D", true, false):
+		_on_node_added(n)
 	get_tree().node_added.connect(_on_node_added)
+	_ensure_focus_action()
 
 
 func _on_node_added(n: Node) -> void:
 	if n is Area3D and n.is_in_group("gap_zone"):
 		_connect_zone(n as Area3D)
+	elif n is TrafficCar and not _cars.has(n):
+		_cars.append(n as Node3D)
+
+
+## The focus button (F / R3): registered here when the Controls autoload has no "focus" action of its own.
+static func _ensure_focus_action() -> void:
+	if InputMap.has_action("focus"):
+		return
+	InputMap.add_action("focus", 0.25)
+	var k := InputEventKey.new()
+	k.physical_keycode = KEY_F
+	InputMap.action_add_event("focus", k)
+	var j := InputEventJoypadButton.new()
+	j.button_index = JOY_BUTTON_RIGHT_STICK
+	InputMap.action_add_event("focus", j)
 
 
 func _connect_zone(a: Area3D) -> void:
@@ -350,7 +394,9 @@ func read_input() -> void:
 	_stick = Controls.move_vector()
 	_just_pressed.clear()
 	_held.clear()
-	for b: String in ["ollie", "flip", "grab", "grind", "spin_left", "spin_right", "revert", "nollie", "dismount"]:
+	for b: String in ["ollie", "flip", "grab", "grind", "spin_left", "spin_right", "revert", "nollie", "dismount", "focus"]:
+		if not InputMap.has_action(b):
+			continue
 		if Input.is_action_just_pressed(b):
 			_just_pressed.append(b)
 			Flags.commands += 1
@@ -407,6 +453,13 @@ func _step(delta: float) -> void:
 		_set_nollie(not nollie)
 	if powersliding and state.state != SkateState.State.ROLLING:
 		_end_powerslide()
+	if berting and state.state != SkateState.State.ROLLING:
+		_end_bert()
+	if _just_pressed.has("focus"):
+		_toggle_focus()
+	if focus.tick(delta, tune.focus_scale, tune.focus_drain, special):
+		_ev("focus_off")  # the meter ran dry
+		_apply_focus()
 	anim_time += delta
 	camera_hold = maxf(camera_hold - delta, 0.0)
 	if state.state == SkateState.State.ROLLING and _floor_normal.y > 0.95 and _snap.is_empty():
@@ -474,15 +527,23 @@ func _tick_rolling(delta: float, requests: Array) -> void:
 		_score_trick(_revert_trick())
 		_set_anim("revert")
 		return
-	if powersliding:
+	var slide_held: bool = _held.has("revert") or _held.has("powerslide")
+	if berting:
+		_bert_time += delta
+		if (_bert_time >= tune.bert_time and not slide_held) or _bert_time >= tune.bert_max_time \
+				or speed < tune.bert_min_speed * 0.5 or _floor_normal.y >= BERT_END_NY or _floor_normal.y < BERT_MIN_NY:
+			_end_bert()
+	elif powersliding:
 		_slide_time += delta
-		var slide_held: bool = _held.has("revert") or _held.has("powerslide")
 		if (_slide_time >= POWERSLIDE_MIN_TIME and not slide_held) or speed < tune.powerslide_min_speed / 3.0 \
 				or _floor_normal.y < POWERSLIDE_MIN_NY:
 			_end_powerslide()
-	elif (_just_pressed.has("revert") or _just_pressed.has("powerslide")) and speed >= tune.powerslide_min_speed \
-			and _floor_normal.y >= POWERSLIDE_MIN_NY and _crouch_time == 0.0:
-		_start_powerslide()
+	elif (_just_pressed.has("revert") or _just_pressed.has("powerslide")) and _crouch_time == 0.0:
+		# The revert button while rolling: on a bank or a transition a bert slide (THUG2), on the flat a powerslide.
+		if _floor_normal.y < BERT_MAX_NY and _floor_normal.y > BERT_MIN_NY and speed >= tune.bert_min_speed:
+			_start_bert()
+		elif _floor_normal.y >= POWERSLIDE_MIN_NY and speed >= tune.powerslide_min_speed:
+			_start_powerslide()
 	var seq: Array = tricks.manual_tap_sequence()
 	if seq.size() == 2 and speed > 1.0:
 		var m: Dictionary = db.find_sequence(seq, "")
@@ -492,6 +553,9 @@ func _tick_rolling(delta: float, requests: Array) -> void:
 			return
 	if _recent_grind_press < 8 and _try_grind():
 		return
+	for r: Dictionary in requests:
+		if r["button"] == "grab" and not powersliding and not berting and _try_skitch():
+			return
 	# flips and grabs need air: keep presses from the last few ticks so ollie + flip together works
 	for r: Dictionary in requests:
 		if r["button"] != "grind":
@@ -674,6 +738,7 @@ func _publish() -> void:
 		"pumping": _d_pumping, "pushing": _d_pushing, "push_pulse": _d_pulse, "braking": _d_braking,
 		"left_edge": _left_edge, "on_wall": is_on_wall(), "rail": rail_name, "events": events,
 		"nollie": nollie, "powerslide": powersliding, "stagger": stagger,
+		"bert": berting, "natas": not _natas.is_empty(), "skitch": _skitch_car != null, "focus": focus.active,
 	}
 	physics_ticked.emit(debug)
 
@@ -707,6 +772,9 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	var steer: float = -stick_x * turn_rate * delta * clampf(v.length() / 1.5, 0.25, 1.0)
 	if powersliding:
 		steer *= POWERSLIDE_STEER
+	elif berting:
+		# Hand down on the bank: the board pivots round it, far tighter than a carve's grip allows.
+		steer = _bert_dir * tune.bert_turn * delta
 	var staggering: bool = stagger > 0.0
 	if staggering:
 		# Caught a sketchy landing: the rider is fighting for the board, so the carve is weak and pushing waits.
@@ -731,6 +799,8 @@ func _ground_move(delta: float, allow_push: bool) -> void:
 	if powersliding:
 		# Skidding sideways: the wheels scrub the speed off, nothing else adds or takes any.
 		along = move_toward(along, 0.0, tune.powerslide_decel * delta)
+	elif berting:
+		along = move_toward(along, 0.0, tune.bert_decel * delta)  # the hand and the sliding wheels scrub it
 	elif allow_push and _stick.y < -0.3 and along < tune.push_max and n.y > 0.8:
 		_d_pushing = true
 		if anim != "push" and crouch == 0.0:
@@ -1243,6 +1313,9 @@ func _fallback_facing(n: Vector3) -> Vector3:
 ## the other manual's flick switches to it, grab + stick holds a flatland trick (data kind "flatland") and a flip pressed
 ## with the ollie flips in the air.
 func _tick_manual(delta: float, requests: Array) -> void:
+	if _skitch_car != null:
+		_tick_skitch(delta)
+		return
 	_ground_move(delta, false)
 	combo.add_hold_points(_hold_pps, delta)
 	_manual_since += delta
@@ -1446,13 +1519,17 @@ func _tick_air(delta: float, requests: Array) -> void:
 		else:
 			_grab_trick = {}
 			_set_anim("air")
+	if _recent_grind_press < 8 and not vert_air and _try_natas():
+		return
 	if _recent_grind_press < 8 and _try_grind():
 		return
 	if vert_air and _recent_grind_press < 8 and _try_lip():
 		return
 	if _wallplant_cool <= 0.0 and not vert_air and tricks.pressed_within("ollie", WALLPLANT_BUFFER_TICKS) \
-			and _try_wallplant():
+			and (_try_wallplant() or _try_sticker_slap()):
 		return
+	if anim == "sticker_slap" and anim_time >= STICKER_ANIM_TIME:
+		_set_anim("air")
 	if _air_trick_until > 0.0 and _t >= _air_trick_until:
 		_air_trick_until = 0.0
 		_set_anim("air")
@@ -1976,6 +2053,9 @@ func _hold_lip(t: Dictionary, at: Vector3, on_ledge: bool) -> void:
 ## One tick of a lip trick. Out of it (THUG2): ollie or grind drops back in, revert drops in and reverts at the
 ## touchdown, flip or grab pops up out of the stall (tune.lip_pop) with that trick, then drops back in.
 func _tick_lip(delta: float, requests: Array) -> void:
+	if not _natas.is_empty():
+		_tick_natas(delta, requests)
+		return
 	combo.add_hold_points(_hold_pps, delta)
 	if not balance.update(delta, _stick.x):
 		_bail({"cause": "lip", "lean": balance.angle})
@@ -2254,6 +2334,350 @@ func _caveman() -> bool:
 ## Q + E / L1 + R1 together. Inside a ramp (on a transition, in vert air, on a lip, down in a half pipe or bowl) it
 ## takes the skater out of it; otherwise into the nearest ramp in reach (see RampSnap). Never on foot or bailing.
 ## Returns true when a snap started.
+# --- THUG2 extras: natas spin, sticker slap, bert slide, skitch, focus ----------------------------------
+
+## Natas spin: grind pressed in the air over a post (a bollard, a hydrant, a piling: any top no wider than
+## tune.natas_top_max that stands NATAS_DROP clear of everything around it) within tune.natas_reach. Stands on its top
+## (state LIP, balance "natas"). Returns true when it started.
+func _try_natas() -> bool:
+	if not is_inside_tree() or _air_trick_until > _t:
+		return false  # mid-flip: the feet are off the board
+	var top: Vector3 = _find_post()
+	if top == Vector3.INF or _rail_near(top) or not state.event("lip_start"):
+		return false
+	_snap_offset += global_position - top
+	global_position = top
+	velocity = Vector3.ZERO
+	lip_on_ledge = false
+	_grab_trick = {}
+	_recent_grind_press = 100
+	_launch_normal = Vector3.UP
+	_natas = {"top": top, "spin": 0.0, "halves": 0}
+	_ev("natas")
+	_start_balance_trick(_move_trick("natas_spin"), "natas")
+	return true
+
+
+## True when a grind rail runs within NATAS_RAIL_CLEAR of `p` (a rail's own post or end stanchion: grind the rail).
+func _rail_near(p: Vector3) -> bool:
+	for node: Node in get_tree().get_nodes_in_group("grind_rail"):
+		var r: GrindRail = node as GrindRail
+		if r == null or r.points.size() < 2:
+			continue
+		var hit: Dictionary = r.closest(p)
+		if not hit.is_empty() and (hit["point"] as Vector3).distance_to(p) < NATAS_RAIL_CLEAR:
+			return true
+	return false
+
+
+## The top centre of the nearest post in reach under the board, or Vector3.INF. Rays straight down on two rings round
+## the body find flat tops; a top is a post when nothing stands within NATAS_DROP below it tune.natas_top_max away on all
+## four sides (the ground, a box or a ledge's long top never pass), and its centre is found by marching to its edges.
+func _find_post() -> Vector3:
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var c: Vector3 = global_position
+	var best: Vector3 = Vector3.INF
+	var best_d: float = INF
+	var offsets: Array[Vector2] = [Vector2.ZERO]
+	for ring: float in [tune.natas_reach * 0.5, tune.natas_reach]:
+		for k: int in 8:
+			var a: float = TAU * float(k) / 8.0
+			offsets.append(Vector2(cos(a), sin(a)) * ring)
+	for o: Vector2 in offsets:
+		var from: Vector3 = Vector3(c.x + o.x, c.y + NATAS_ABOVE + 0.05, c.z + o.y)
+		var hit: Dictionary = _ray_hit(space, from, from + Vector3.DOWN * (NATAS_ABOVE + NATAS_BELOW))
+		if hit.is_empty() or (hit["normal"] as Vector3).y < 0.9:
+			continue
+		var centre: Vector3 = _post_centre(space, hit["position"] as Vector3)
+		if centre == Vector3.INF:
+			continue
+		var d: float = Vector2(centre.x - c.x, centre.z - c.z).length()
+		if d < best_d and d <= tune.natas_reach:
+			best_d = d
+			best = centre
+	return best
+
+
+## `p` on a flat top: that top's centre when it is a post's (see _find_post), else Vector3.INF.
+func _post_centre(space: PhysicsDirectSpaceState3D, p: Vector3) -> Vector3:
+	var w: float = tune.natas_top_max
+	for dir: Vector3 in [Vector3.RIGHT, Vector3.LEFT, Vector3.BACK, Vector3.FORWARD]:
+		var q: Vector3 = p + dir * w
+		if not _ray_hit(space, q + Vector3.UP * 0.05, q + Vector3.DOWN * NATAS_DROP).is_empty():
+			return Vector3.INF  # something within the drop that far out: not standing clear
+	var centre: Vector3 = p
+	for axis: Vector3 in [Vector3.RIGHT, Vector3.BACK]:
+		var ends: Array[float] = []
+		for sgn: float in [1.0, -1.0]:
+			var e: float = 0.0
+			while e < w:
+				var q: Vector3 = p + axis * sgn * (e + NATAS_STEP)
+				if _ray_hit(space, q + Vector3.UP * 0.05, q + Vector3.DOWN * 0.05).is_empty():
+					break
+				e += NATAS_STEP
+			ends.append(e)
+		centre += axis * (ends[0] - ends[1]) * 0.5
+	return centre
+
+
+func _ray_hit(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3) -> Dictionary:
+	var q := PhysicsRayQueryParameters3D.create(from, to, collision_mask, [get_rid()])
+	return space.intersect_ray(q)
+
+
+## One tick on a post. The spin buttons spin it (tune.natas_spin_rate), the stick's x holds the balance; ollie, flip or
+## grab pops off (a flip or grab with its trick), and the spin is scored per half turn with its direction as it leaves.
+func _tick_natas(delta: float, requests: Array) -> void:
+	combo.add_hold_points(_hold_pps, delta)
+	global_position = _natas["top"]
+	velocity = Vector3.ZERO
+	board_up = _turn_toward(board_up, Vector3.UP, clampf(delta * 10.0, 0.0, 1.0))
+	if not balance.update(delta, _stick.x):
+		_score_natas_spin()
+		_natas = {}
+		_bail({"cause": "natas", "lean": balance.angle})
+		return
+	var spin_in: float = 0.0
+	if _held.has("spin_left"):
+		spin_in += 1.0
+	if _held.has("spin_right"):
+		spin_in -= 1.0
+	if spin_in != 0.0:
+		var turn: float = spin_in * tune.natas_spin_rate * delta
+		facing = facing.rotated(Vector3.UP, turn).normalized()
+		_natas["spin"] = float(_natas["spin"]) + turn
+		var halves: int = int(absf(float(_natas["spin"])) / PI)
+		if halves > int(_natas["halves"]):
+			_natas["halves"] = halves
+			_ev("natas_180")
+	var pop: Dictionary = {}
+	for r: Dictionary in requests:
+		if r["button"] == "flip" or r["button"] == "grab":
+			pop = r
+			break
+	if not _just_pressed.has("ollie") and pop.is_empty():
+		return
+	_score_natas_spin()
+	_natas = {}
+	balance_kind = ""
+	state.event("lip_end")
+	_launch_normal = Vector3.UP
+	_link_from = ""
+	velocity = Vector3(facing.x, 0.0, facing.z).normalized() * NATAS_OFF + Vector3.UP * tune.natas_pop
+	global_position += Vector3.UP * 0.05
+	tricks.consume("ollie")
+	_ev("natas_pop")
+	_set_anim("ollie")
+	_enter_air(false)
+	if not pop.is_empty():
+		_air_trick(pop)
+
+
+## The spin done on the post, scored once: "FS 360 Natas" (spin right) or "BS 540 Natas" (spin left; the other way round
+## in switch), NATAS_POINTS_PER_180 a half turn.
+func _score_natas_spin() -> void:
+	var halves: int = int(_natas.get("halves", 0))
+	if halves <= 0:
+		return
+	var right: bool = float(_natas["spin"]) < 0.0
+	var side: String = "FS" if right != switch_stance else "BS"
+	var deg: int = halves * 180
+	_score_trick({"id": "natas_%s_%d" % [side.to_lower(), deg], "name": "%s %d Natas" % [side, deg],
+		"points": NATAS_POINTS_PER_180 * halves, "kind": "spin", "anim": ""})
+
+
+## Sticker slap: ollie in the air beside an upright wall while moving along it (not into it: that is a wallplant). A
+## quick foot tap: the speed along the wall is kept (tune.sticker_keep), the speed into it turned into a small push out
+## (tune.sticker_push), and a fresh pop up (tune.sticker_pop). Returns true when it slapped.
+func _try_sticker_slap() -> bool:
+	if not is_inside_tree() or _air_trick_until > _t:
+		return false
+	var hv: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+	if hv.length() < tune.sticker_min_speed:
+		return false
+	var dir: Vector3 = hv.normalized()
+	var right: Vector3 = dir.cross(Vector3.UP).normalized()
+	var c: Vector3 = global_position + Vector3.UP * BODY_RADIUS
+	var reach: float = BODY_RADIUS + tune.sticker_reach
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	for sgn: float in [1.0, -1.0]:
+		var hit: Dictionary = _ray_hit(space, c, c + right * sgn * reach)
+		if hit.is_empty():
+			continue
+		var n: Vector3 = hit["normal"]
+		if absf(n.y) > WALLPLANT_MAX_NY:
+			continue
+		var nh: Vector3 = Vector3(n.x, 0.0, n.z).normalized()
+		if absf(dir.dot(nh)) > STICKER_ALONG_DOT:
+			continue
+		var top: Vector3 = c + Vector3.UP * WALLPLANT_FOOT_UP
+		var hit2: Dictionary = _ray_hit(space, top, top - nh * (reach + 0.3))
+		if hit2.is_empty() or absf((hit2["normal"] as Vector3).y) > WALLPLANT_MAX_NY:
+			continue  # a curb or a ledge's side: no wall up at foot height to slap
+		var along: Vector3 = hv - nh * hv.dot(nh)
+		if along.length() < tune.sticker_min_speed:
+			continue
+		velocity = along * tune.sticker_keep + nh * tune.sticker_push + Vector3.UP * tune.sticker_pop
+		_wallplant_cool = WALLPLANT_COOL
+		_launch_normal = Vector3.UP
+		tricks.consume("ollie")
+		_grab_trick = {}
+		_ev("sticker_slap")
+		_score_trick(_move_trick("sticker_slap"))
+		return true
+	return false
+
+
+## Bert slide: the revert button while rolling on a bank or a transition. Turns toward the stick (pushed past 0.3), else
+## round toward the fall line (the hand goes down on the uphill side and the board swings round it).
+func _start_bert() -> void:
+	var n: Vector3 = _floor_normal
+	if absf(_stick.x) > 0.3:
+		_bert_dir = -signf(_stick.x)
+	else:
+		var downhill: Vector3 = Vector3.DOWN.slide(n)
+		var s: float = facing.cross(downhill).dot(n) if downhill.length() > 0.01 else 0.0
+		_bert_dir = 1.0 if s >= 0.0 else -1.0
+	berting = true
+	_bert_time = 0.0
+	_ev("bert_slide")
+	_score_trick(_move_trick("bert_slide"))
+
+
+func _end_bert() -> void:
+	if not berting:
+		return
+	berting = false
+	_bert_time = 0.0
+	_ev("bert_end")
+	if anim == "bert_slide":
+		_set_anim("idle_ride")
+
+
+## Skitch: grab pressed while rolling just behind a car (within tune.skitch_reach of its rear bumper, across its width,
+## facing its way, within tune.skitch_catch_speed of its speed; a stopped car counts). Holds its bumper (state MANUAL,
+## balance "skitch"). Returns true when it caught on.
+func _try_skitch() -> bool:
+	var best: Node3D = null
+	var best_d: float = INF
+	var side: float = 0.0
+	for car: Node3D in _cars:
+		if not is_instance_valid(car) or not car.is_inside_tree():
+			continue
+		var info: Dictionary = _car_rear(car)
+		var fwd: Vector3 = info["fwd"]
+		var rel: Vector3 = global_position - (info["rear"] as Vector3)
+		var back: float = -rel.dot(fwd)
+		var lat: float = rel.dot(info["right"] as Vector3)
+		if back < -0.1 or back > tune.skitch_reach or absf(lat) > float(info["half_w"]) or absf(rel.y) > 1.0:
+			continue
+		if facing.dot(fwd) < 0.5 or (velocity - fwd * float(info["speed"])).length() > tune.skitch_catch_speed:
+			continue
+		if back < best_d:
+			best_d = back
+			best = car
+			side = clampf(lat, -float(info["half_w"]) + 0.25, float(info["half_w"]) - 0.25)
+	if best == null or not state.event("manual_start"):
+		return false
+	_cars = _cars.filter(func(c: Node3D) -> bool: return is_instance_valid(c))
+	_skitch_car = best
+	_skitch_side = side
+	_pending_air = []
+	tricks.consume("grab")
+	_ev("skitch")
+	_start_balance_trick(_move_trick("skitch"), "skitch")
+	return true
+
+
+## A car's rear bumper (centre, at the ground), its forward and right (horizontal), half its width and its speed.
+func _car_rear(car: Node3D) -> Dictionary:
+	var bb: AABB = AABB(Vector3(-0.9, 0.0, -2.1), Vector3(1.8, 1.4, 4.2))
+	var model: Variant = car.get("model")
+	if model is CarModel:
+		bb = (model as CarModel).aabb
+	var b: Basis = car.global_transform.basis
+	var fwd: Vector3 = Vector3(-b.z.x, 0.0, -b.z.z).normalized()
+	return {"rear": car.global_transform * Vector3(bb.get_center().x, 0.0, bb.end.z), "fwd": fwd,
+		"right": fwd.cross(Vector3.UP).normalized(), "half_w": bb.size.x * 0.5, "speed": float(car.get("speed"))}
+
+
+## One tick on a car's bumper: carried at its speed toward the hold point tune.skitch_gap behind it (closing at most
+## SKITCH_PULL_MAX faster), the stick's x holding the balance. Letting go of grab, or ollie, lets go with the car's speed.
+func _tick_skitch(delta: float) -> void:
+	if not is_instance_valid(_skitch_car) or not _skitch_car.is_inside_tree():
+		_skitch_let_go(velocity, false)
+		return
+	var info: Dictionary = _car_rear(_skitch_car)
+	var fwd: Vector3 = info["fwd"]
+	var car_v: Vector3 = fwd * float(info["speed"])
+	if not _held.has("grab") or _just_pressed.has("ollie"):
+		_skitch_let_go(car_v * tune.skitch_release_keep, _just_pressed.has("ollie"))
+		return
+	combo.add_hold_points(_hold_pps, delta)
+	if not balance.update(delta, _stick.x):
+		_skitch_car = null
+		_bail({"cause": "skitch", "lean": balance.angle})
+		return
+	var hold: Vector3 = (info["rear"] as Vector3) - fwd * tune.skitch_gap + (info["right"] as Vector3) * _skitch_side
+	var to: Vector3 = hold - global_position
+	to.y = 0.0
+	var n: Vector3 = _floor_normal
+	velocity = (car_v + (to * SKITCH_PULL).limit_length(SKITCH_PULL_MAX)).slide(n) - n * 0.5
+	facing = fwd.slide(n).normalized()
+	up_direction = n
+	move_and_slide()
+	if not is_on_floor():
+		_skitch_let_go(car_v * tune.skitch_release_keep, false)
+		return
+	_floor_normal = get_floor_normal()
+	board_up = _turn_toward(board_up, _floor_normal, clampf(delta * 10.0, 0.0, 1.0))
+
+
+## Off the bumper: rolling on at `v` (or popping an ollie), the combo still open.
+func _skitch_let_go(v: Vector3, pop: bool) -> void:
+	_skitch_car = null
+	balance_kind = ""
+	state.event("manual_end")
+	velocity = v.slide(_floor_normal).limit_length(tune.max_speed)
+	if velocity.length() > 0.5:
+		facing = velocity.normalized()
+	_ev("skitch_off")
+	_set_anim("idle_ride")
+	if pop:
+		_ollie(tune.ollie_min)
+
+
+## The focus button: on a full special meter, focus slow-mo on (it drains the meter, see FocusMode); pressed again, off.
+func _toggle_focus() -> void:
+	var was: bool = focus.active
+	if was:
+		focus.active = false
+	elif state.state != SkateState.State.BAIL and state.state != SkateState.State.WALK:
+		focus.toggle(special)
+	if focus.active == was:
+		return
+	_ev("focus_on" if focus.active else "focus_off")
+	_apply_focus()
+
+
+func _focus_off() -> void:
+	if not focus.active:
+		return
+	focus.active = false
+	_ev("focus_off")
+	_apply_focus()
+
+
+## Focus is presentation time: the engine clock runs at tune.focus_scale in live play, so the world and the skater run
+## slower while every physics tick stays the same code on a shorter step. Scripted runs (sims, bots, captures, tests)
+## never touch the engine clock: their ticks are identical with focus on or off (see sim_thug2_extras focus_toggle).
+func _apply_focus() -> void:
+	focus_changed.emit(focus.active)
+	if scripted_input or Flags.is_scripted_run():
+		return
+	Engine.time_scale = focus.time_scale(tune.focus_scale)
+
+
 func _try_ramp_snap() -> bool:
 	var st: SkateState.State = state.state
 	if not st in [SkateState.State.ROLLING, SkateState.State.MANUAL, SkateState.State.AIR, SkateState.State.LIP]:
@@ -2758,6 +3182,7 @@ func _set_walk_physics(walking: bool) -> void:
 
 ## ctx: what caused it (BailKind context keys; the ragdoll's plan is classified from it).
 func _bail(ctx: Dictionary = {}) -> void:
+	_focus_off()  # before the bail's own slow-mo (BailFx) takes the engine clock
 	_bail_ctx = ctx
 	_plant = {}
 	_wallplant_left = 0.0
@@ -2849,6 +3274,7 @@ func _tick_bail(delta: float) -> void:
 
 func respawn() -> void:
 	_ev("respawn")
+	_focus_off()
 	_end_ragdoll()
 	_getup_left = 0.0
 	_snap = {}
@@ -2889,6 +3315,9 @@ func _clear_links() -> void:
 	_revert_on_land = false
 	_flatland = {}
 	_pivot_wait = -1
+	_natas = {}
+	_end_bert()
+	_skitch_car = null
 
 
 # --- snapshot / restore ---------------------------------------------------------------------------------
@@ -2967,6 +3396,15 @@ func snapshot() -> Dictionary:
 		"stagger": stagger,
 		"stagger_decel": _stagger_decel,
 		"lip_ledge": lip_on_ledge,
+		"extras": {
+			"natas": _natas.duplicate(true),
+			"berting": berting,
+			"bert_time": _bert_time,
+			"bert_dir": _bert_dir,
+			"skitch_car": str(_skitch_car.get_path()) if _skitch_car != null and is_instance_valid(_skitch_car) and _skitch_car.is_inside_tree() else "",
+			"skitch_side": _skitch_side,
+			"focus": focus.active,
+		},
 		"links": {
 			"grind_trick": _grind_trick.duplicate(true),
 			"grind_charge": _grind_charge,
@@ -3088,6 +3526,15 @@ func restore(d: Dictionary) -> void:
 	lip_on_ledge = bool(d.get("lip_ledge", false))
 	_stagger_decel = float(d.get("stagger_decel", 0.0))
 	camera_anchor = d.get("camera_anchor", Vector3.ZERO)
+	var ex: Dictionary = d.get("extras", {})
+	_natas = (ex.get("natas", {}) as Dictionary).duplicate(true)
+	berting = bool(ex.get("berting", false))
+	_bert_time = float(ex.get("bert_time", 0.0))
+	_bert_dir = float(ex.get("bert_dir", 0.0))
+	var car_path: String = str(ex.get("skitch_car", ""))
+	_skitch_car = get_node_or_null(NodePath(car_path)) as Node3D if car_path != "" and is_inside_tree() else null
+	_skitch_side = float(ex.get("skitch_side", 0.0))
+	focus.active = bool(ex.get("focus", false))
 	var lk: Dictionary = d.get("links", {})
 	_grind_trick = (lk.get("grind_trick", {}) as Dictionary).duplicate(true)
 	_grind_charge = float(lk.get("grind_charge", -1.0))

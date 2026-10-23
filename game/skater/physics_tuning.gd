@@ -75,6 +75,26 @@ const FIELDS: Array = [
 	["caveman_speed", 5.0, 1.0, 10.0, 0.25, "Moves", "Caveman (ollie again in a jump on foot): rolling speed the board is caught at, at least, m/s."],
 	["acid_reach", 5.0, 1.0, 12.0, 0.25, "Moves", "Acid drop (revert in the air over a bank or quarter): farthest the transition may be below the board, m."],
 	["acid_min_drop", 0.8, 0.0, 3.0, 0.05, "Moves", "Acid drop: the transition must be at least this far below (closer, a revert press is the landing's revert), m."],
+	["natas_reach", 0.8, 0.2, 2.0, 0.05, "THUG2 extras", "Natas spin (grind in the air over a post, hydrant or bollard): farthest the post's top may be from the body sideways, m."],
+	["natas_top_max", 0.5, 0.15, 1.2, 0.05, "THUG2 extras", "Natas spin: the widest top that counts as a post (wider is a box or a ledge), m."],
+	["natas_spin_rate", 6.0, 1.0, 15.0, 0.25, "THUG2 extras", "Natas spin: turn rate on the post while a spin button is held, rad/s."],
+	["natas_pop", 5.5, 2.0, 10.0, 0.25, "THUG2 extras", "Natas spin: the pop up off the post (ollie, flip or grab), m/s."],
+	["sticker_reach", 0.7, 0.2, 2.0, 0.05, "THUG2 extras", "Sticker slap (ollie in the air beside a wall, moving along it): farthest the wall may be from the body, m."],
+	["sticker_min_speed", 3.0, 0.5, 10.0, 0.25, "THUG2 extras", "Sticker slap: slowest speed along the wall it works from, m/s."],
+	["sticker_pop", 5.0, 1.0, 10.0, 0.25, "THUG2 extras", "Sticker slap: upward pop off the wall, m/s."],
+	["sticker_push", 1.5, 0.0, 6.0, 0.25, "THUG2 extras", "Sticker slap: push straight out from the wall, m/s."],
+	["sticker_keep", 1.0, 0.5, 1.0, 0.01, "THUG2 extras", "Sticker slap: share of the speed along the wall kept (a tap, not a plant)."],
+	["bert_turn", 3.4, 0.5, 8.0, 0.1, "THUG2 extras", "Bert slide (revert while rolling on a bank or transition): turn rate of the hand-down carve, rad/s."],
+	["bert_decel", 5.0, 0.0, 20.0, 0.25, "THUG2 extras", "Bert slide: deceleration while the hand is down, m/s²."],
+	["bert_min_speed", 3.0, 0.5, 10.0, 0.25, "THUG2 extras", "Bert slide: slowest roll it starts from, m/s; it ends below half of this."],
+	["bert_time", 0.45, 0.1, 1.5, 0.05, "THUG2 extras", "Bert slide: shortest slide, s (holding the button carries on to bert_max_time)."],
+	["bert_max_time", 1.2, 0.2, 3.0, 0.05, "THUG2 extras", "Bert slide: longest slide, s."],
+	["skitch_reach", 2.2, 0.5, 5.0, 0.1, "THUG2 extras", "Skitch (grab behind a car): farthest behind its rear bumper it can be caught, m."],
+	["skitch_catch_speed", 4.0, 0.5, 15.0, 0.25, "THUG2 extras", "Skitch: most speed difference to the car it can be caught at, m/s."],
+	["skitch_gap", 0.55, 0.3, 1.5, 0.05, "THUG2 extras", "Skitch: distance held behind the rear bumper (body centre to bumper), m."],
+	["skitch_release_keep", 1.0, 0.5, 1.2, 0.01, "THUG2 extras", "Skitch: share of the car's speed kept on letting go."],
+	["focus_scale", 0.6, 0.2, 1.0, 0.05, "Focus", "Focus (full special meter, focus button): Engine.time_scale while on. Live play only; scripted runs never change the engine clock."],
+	["focus_drain", 0.125, 0.02, 1.0, 0.005, "Focus", "Focus: share of the special meter drained per real second (0.125: a full meter lasts 8 s)."],
 ]
 
 static var _shared: PhysicsTuning = null
@@ -146,6 +166,26 @@ var wallplant_pop: float
 var caveman_speed: float
 var acid_reach: float
 var acid_min_drop: float
+var natas_reach: float
+var natas_top_max: float
+var natas_spin_rate: float
+var natas_pop: float
+var sticker_reach: float
+var sticker_min_speed: float
+var sticker_pop: float
+var sticker_push: float
+var sticker_keep: float
+var bert_turn: float
+var bert_decel: float
+var bert_min_speed: float
+var bert_time: float
+var bert_max_time: float
+var skitch_reach: float
+var skitch_catch_speed: float
+var skitch_gap: float
+var skitch_release_keep: float
+var focus_scale: float
+var focus_drain: float
 
 
 func _init() -> void:

@@ -1018,6 +1018,58 @@
 			"points_per_sec": 0
 		},
 		{
+			"id": "natas_spin",
+			"name": "Natas Spin",
+			"kind": "move",
+			"button": "",
+			"dir": "",
+			"double_tap": false,
+			"points": 300,
+			"anim": "natas_spin",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 100
+		},
+		{
+			"id": "sticker_slap",
+			"name": "Sticker Slap",
+			"kind": "move",
+			"button": "",
+			"dir": "",
+			"double_tap": false,
+			"points": 200,
+			"anim": "sticker_slap",
+			"hold": false,
+			"sequence": [],
+			"points_per_sec": 0
+		},
+		{
+			"id": "bert_slide",
+			"name": "Bert Slide",
+			"kind": "move",
+			"button": "",
+			"dir": "",
+			"double_tap": false,
+			"points": 250,
+			"anim": "bert_slide",
+			"hold": false,
+			"sequence": [],
+			"points_per_sec": 0
+		},
+		{
+			"id": "skitch",
+			"name": "Skitch",
+			"kind": "move",
+			"button": "",
+			"dir": "",
+			"double_tap": false,
+			"points": 150,
+			"anim": "skitch",
+			"hold": true,
+			"sequence": [],
+			"points_per_sec": 75
+		},
+		{
 			"id": "casper",
 			"name": "Casper",
 			"kind": "flatland",
