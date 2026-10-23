@@ -9,6 +9,8 @@ minute one.
 - `game/debug/`: `FrameStamp` + `FrameCode` (F10 on-screen frame/hash code, decoded by `tools/frame_code.py`),
   `RenderToggles` (F4, F6-F9 for GPU glitch hunting), `Tuning` (template for live-tunable numbers).
 - `tests/`: `runner.gd` (unit tests in `tests/unit/test_*.gd`, `extends TestCase`), `sim/` (sim suite + example).
+- `tools/agent_stats.py` + `tools/agent_dashboard/index.html`: the agent dashboard (agents, models, token pull per
+  minute, cache hit rate, commits, CI). Set it up on day one: `docs/agent_dashboard.md`.
 - `tools/`: `run_tests.sh`, `lint.sh` (+ `lint.py`, `lint_parse.gd`), `run_sims.sh`, `check_all.sh`,
   `export_windows.sh`, `frame_code.py`. Quiet by design: failures plus one summary line.
 - `.github/`: `checks` workflow (unit, lint, sims matrix, commented bot shard block) and the `setup-godot` action.

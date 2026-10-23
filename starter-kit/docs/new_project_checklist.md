@@ -6,6 +6,8 @@ Day one (before any content):
 - [ ] Debug layer is in: `Flags`, frame stamp (F10), render toggles, `Tuning` for every feel number.
 - [ ] CI is on: push to GitHub and confirm the `checks` workflow runs unit, lint and sims green.
 - [ ] `CLAUDE.md` filled in (what the game is, layout, rules) and `docs/agent_brief.md` units and contracts written.
+- [ ] Agent dashboard is up (`docs/agent_dashboard.md`): agents, models, token pull per minute, CI. Refresh it on
+      every worker hand-back.
 - [ ] Session-start hook works in a cloud session (Godot pinned to 4.7.2, project imported).
 
 Before building systems:
