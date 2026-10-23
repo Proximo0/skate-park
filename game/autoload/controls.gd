@@ -14,9 +14,17 @@ const BUTTONS := {
 	"spin_right": [[KEY_E], [JOY_BUTTON_RIGHT_SHOULDER]],
 	"revert": [[KEY_L], []],  # plus right trigger, added below
 	"nollie": [[KEY_U], []],  # plus left trigger, added below
+	"dismount": [[KEY_C], [JOY_BUTTON_LEFT_STICK]],  # step off / on the board
 	"pause": [[KEY_ESCAPE], [JOY_BUTTON_START]],
 	"restart": [[KEY_BACKSPACE], [JOY_BUTTON_BACK]],
+	"focus": [[KEY_F], [JOY_BUTTON_RIGHT_STICK]],  # focus slow-mo with a full special meter (Skater registers it too if missing)
 	"debug_stamp": [[KEY_F10], []],
+}
+
+## Chorded actions: both buttons together (within ChordInput.WINDOW_TICKS) fire the action instead of their own.
+## Not InputMap actions: the skater reads them through ChordInput. ramp_snap = Q + E / L1 + R1 (LB + RB).
+const CHORDS := {
+	"ramp_snap": ["spin_left", "spin_right"],
 }
 
 
@@ -27,6 +35,8 @@ func _ready() -> void:
 	_add_move("move_down", [KEY_S, KEY_DOWN], JOY_AXIS_LEFT_Y, 1.0, JOY_BUTTON_DPAD_DOWN)
 	for action: String in BUTTONS:
 		_ensure(action)
+		if not InputMap.action_get_events(action).is_empty():
+			continue  # already registered (the skater adds "focus" itself when it loads first): never twice
 		for k: Key in BUTTONS[action][0]:
 			var e := InputEventKey.new()
 			e.physical_keycode = k

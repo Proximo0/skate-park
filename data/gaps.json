@@ -1,0 +1,202 @@
+{
+	"gaps": [
+		{
+			"id": "over_the_funbox",
+			"name": "Over The Funbox",
+			"points": 300,
+			"start_zone": "funbox_a",
+			"end_zone": "funbox_b",
+			"require": "AIR",
+			"max_time": 2.5
+		},
+		{
+			"id": "bowl_hop",
+			"name": "Bowl Hop",
+			"points": 400,
+			"start_zone": "bowl_rim_n",
+			"end_zone": "bowl_rim_s",
+			"require": "AIR",
+			"max_time": 3.0
+		},
+		{
+			"id": "rail_to_rail",
+			"name": "Rail To Rail",
+			"points": 250,
+			"start_zone": "rail_a_top",
+			"end_zone": "rail_b_top",
+			"require": "GRIND",
+			"max_time": 4.0
+		},
+		{
+			"id": "big_stair_set",
+			"name": "Big Stair Set",
+			"points": 500,
+			"start_zone": "stair_top",
+			"end_zone": "stair_bottom",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "hip_transfer",
+			"name": "Hip Transfer",
+			"points": 200,
+			"start_zone": "hip_n",
+			"end_zone": "hip_s",
+			"require": "",
+			"max_time": 3.0
+		},
+		{
+			"id": "ledge_to_ledge",
+			"name": "Ledge To Ledge",
+			"points": 350,
+			"start_zone": "ledge_a",
+			"end_zone": "ledge_b",
+			"require": "GRIND",
+			"max_time": 3.5
+		},
+		{
+			"id": "roof_gap",
+			"name": "Roof Gap",
+			"points": 600,
+			"start_zone": "roof_west",
+			"end_zone": "roof_east",
+			"require": "AIR",
+			"max_time": 2.5
+		},
+		{
+			"id": "manual_bridge",
+			"name": "Manual Bridge",
+			"points": 300,
+			"start_zone": "manual_pad_a",
+			"end_zone": "manual_pad_b",
+			"require": "MANUAL",
+			"max_time": 5.0
+		},
+		{
+			"id": "wall_to_wall",
+			"name": "Wall To Wall",
+			"points": 450,
+			"start_zone": "wall_west",
+			"end_zone": "wall_east",
+			"require": "WALLRIDE",
+			"max_time": 2.5
+		},
+		{
+			"id": "quarter_to_bank",
+			"name": "Quarter To Bank",
+			"points": 275,
+			"start_zone": "quarter_lip",
+			"end_zone": "bank_lip",
+			"require": "",
+			"max_time": 3.0
+		},
+		{
+			"id": "pyramid_hop",
+			"name": "Pyramid Hop",
+			"points": 350,
+			"start_zone": "pyramid_n",
+			"end_zone": "pyramid_s",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "flatbar_jump",
+			"name": "Flatbar Jump",
+			"points": 150,
+			"start_zone": "flatbar_a",
+			"end_zone": "flatbar_b",
+			"require": "",
+			"max_time": 4.0
+		},
+		{
+			"id": "mega_gap",
+			"name": "Mega Gap",
+			"points": 1500,
+			"start_zone": "mega_gap",
+			"end_zone": "mega_land",
+			"require": "AIR",
+			"max_time": 4.0
+		},
+		{
+			"id": "mega_qp_air",
+			"name": "Mega QP Air",
+			"points": 800,
+			"start_zone": "mega_runout",
+			"end_zone": "mega_qp_air",
+			"require": "",
+			"max_time": 8.0
+		},
+		{
+			"id": "dome_air",
+			"name": "Dome Air",
+			"points": 700,
+			"start_zone": "dome_rim",
+			"end_zone": "dome_air",
+			"require": "",
+			"max_time": 4.0
+		},
+		{
+			"id": "loop_de_loop",
+			"name": "Loop De Loop",
+			"points": 1200,
+			"start_zone": "loop_full",
+			"end_zone": "loop_out",
+			"require": "",
+			"max_time": 8.0
+		},
+		{
+			"id": "down_the_hill",
+			"name": "Down The Hill",
+			"points": 250,
+			"start_zone": "downhill_top",
+			"end_zone": "downhill_bottom",
+			"require": "",
+			"max_time": 8.0
+		},
+		{
+			"id": "long_ledge",
+			"name": "Long Ledge",
+			"points": 450,
+			"start_zone": "long_ledge_a",
+			"end_zone": "long_ledge_b",
+			"require": "GRIND",
+			"max_time": 8.0
+		},
+		{
+			"id": "long_rail",
+			"name": "Long Rail",
+			"points": 500,
+			"start_zone": "long_rail_a",
+			"end_zone": "long_rail_b",
+			"require": "GRIND",
+			"max_time": 8.0
+		},
+		{
+			"id": "hubba_hubba",
+			"name": "Hubba Hubba",
+			"points": 600,
+			"start_zone": "hubba_a",
+			"end_zone": "hubba_b",
+			"require": "GRIND",
+			"max_time": 6.0
+		},
+		{
+			"id": "hubba_stairs",
+			"name": "Hubba Stairs",
+			"points": 500,
+			"start_zone": "hubba_stairs_top",
+			"end_zone": "hubba_stairs_bottom",
+			"require": "AIR",
+			"max_time": 3.0
+		},
+		{
+			"id": "rail_marathon",
+			"name": "Rail Marathon",
+			"points": 700,
+			"start_zone": "rail25_a",
+			"end_zone": "rail25_b",
+			"require": "GRIND",
+			"max_time": 10.0
+		}
+	]
+}

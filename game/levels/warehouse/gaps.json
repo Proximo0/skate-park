@@ -1,0 +1,202 @@
+{
+ "gaps": [
+  {
+   "id": "pallet_gap",
+   "name": "Pallet Gap",
+   "points": 500,
+   "start_zone": "pal_a",
+   "end_zone": "pal_b",
+   "require": "AIR",
+   "max_time": 6.0
+  },
+  {
+   "id": "forklift_hop",
+   "name": "Forklift Hop",
+   "points": 600,
+   "start_zone": "fork_a",
+   "end_zone": "fork_b",
+   "require": "AIR",
+   "max_time": 6.0
+  },
+  {
+   "id": "spine_transfer",
+   "name": "Spine Transfer",
+   "points": 400,
+   "start_zone": "spine_s",
+   "end_zone": "spine_n",
+   "require": "",
+   "max_time": 6.0
+  },
+  {
+   "id": "catwalk_stairs",
+   "name": "Catwalk Stairs",
+   "points": 500,
+   "start_zone": "cw_stair_air",
+   "end_zone": "cw_stair_land",
+   "require": "AIR",
+   "max_time": 4.0
+  },
+  {
+   "id": "catwalk_marathon",
+   "name": "Catwalk Marathon",
+   "points": 1500,
+   "start_zone": "cw_rail_a",
+   "end_zone": "cw_rail_b",
+   "require": "GRIND",
+   "max_time": 20.0
+  },
+  {
+   "id": "diy_vert",
+   "name": "DIY Vert Air",
+   "points": 500,
+   "start_zone": "qp_lip",
+   "end_zone": "qp_high",
+   "require": "",
+   "max_time": 4.0
+  },
+  {
+   "id": "rack_to_rack",
+   "name": "Rack To Rack",
+   "points": 750,
+   "start_zone": "rack_a_end",
+   "end_zone": "rack_b_start",
+   "require": "GRIND",
+   "max_time": 8.0
+  },
+  {
+   "id": "truck_well_air",
+   "name": "Truck Well Air",
+   "points": 500,
+   "start_zone": "well_lip",
+   "end_zone": "well_high",
+   "require": "",
+   "max_time": 4.0
+  },
+  {
+   "id": "truck_well_gap",
+   "name": "Truck Well Hop",
+   "points": 750,
+   "start_zone": "well_w",
+   "end_zone": "well_e",
+   "require": "AIR",
+   "max_time": 5.0
+  },
+  {
+   "id": "dock_stairs",
+   "name": "Dock Stairs",
+   "points": 400,
+   "start_zone": "dock_stair_air",
+   "end_zone": "dock_stair_land",
+   "require": "AIR",
+   "max_time": 4.0
+  },
+  {
+   "id": "flatbed_to_dock",
+   "name": "Flatbed To Dock",
+   "points": 750,
+   "start_zone": "flatbed_tail",
+   "end_zone": "flatbed_dock",
+   "require": "AIR",
+   "max_time": 8.0
+  },
+  {
+   "id": "container_gap",
+   "name": "Container Gap",
+   "points": 750,
+   "start_zone": "cont_a",
+   "end_zone": "cont_b",
+   "require": "AIR",
+   "max_time": 6.0
+  },
+  {
+   "id": "container_hop",
+   "name": "Container Hop",
+   "points": 1000,
+   "start_zone": "hop_a",
+   "end_zone": "hop_b",
+   "require": "AIR",
+   "max_time": 6.0
+  },
+  {
+   "id": "container_wallride",
+   "name": "Container Wallride",
+   "points": 750,
+   "start_zone": "cwall_a",
+   "end_zone": "cwall_b",
+   "require": "WALLRIDE",
+   "max_time": 6.0
+  },
+  {
+   "id": "dock_to_flatcar",
+   "name": "Dock To Flatcar",
+   "points": 1000,
+   "start_zone": "rd_edge",
+   "end_zone": "flatcar_top",
+   "require": "AIR",
+   "max_time": 6.0
+  },
+  {
+   "id": "gondola_grind",
+   "name": "Gondola Grind",
+   "points": 750,
+   "start_zone": "gon_a",
+   "end_zone": "gon_b",
+   "require": "GRIND",
+   "max_time": 10.0
+  },
+  {
+   "id": "rail_spur",
+   "name": "Rail Spur",
+   "points": 1000,
+   "start_zone": "spur_a",
+   "end_zone": "spur_b",
+   "require": "GRIND",
+   "max_time": 12.0
+  },
+  {
+   "id": "pit_hop",
+   "name": "Pit Transfer",
+   "points": 1000,
+   "start_zone": "pit_rim_n",
+   "end_zone": "pit_rim_s",
+   "require": "",
+   "max_time": 6.0
+  },
+  {
+   "id": "pipe_dream",
+   "name": "Pipe Dream",
+   "points": 1500,
+   "start_zone": "pipe_s",
+   "end_zone": "pipe_n",
+   "require": "GRIND",
+   "max_time": 15.0
+  },
+  {
+   "id": "pipe_hop",
+   "name": "Pipe Hop",
+   "points": 750,
+   "start_zone": "pipehop_a",
+   "end_zone": "pipehop_b",
+   "require": "AIR",
+   "max_time": 5.0
+  },
+  {
+   "id": "secret_room",
+   "name": "Secret Room",
+   "points": 2000,
+   "start_zone": "secret_door",
+   "end_zone": "secret_room",
+   "require": "",
+   "max_time": 6.0
+  },
+  {
+   "id": "pallet_pad_manual",
+   "name": "Pallet Pad Manual",
+   "points": 500,
+   "start_zone": "pad_a",
+   "end_zone": "pad_b",
+   "require": "MANUAL",
+   "max_time": 8.0
+  }
+ ]
+}

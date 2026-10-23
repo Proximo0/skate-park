@@ -1,0 +1,27 @@
+{
+	"gaps": [
+		{"id": "dt_hall_ten", "name": "City Hall Ten", "points": 750, "start_zone": "hall_top", "end_zone": "hall_bottom", "require": "AIR", "max_time": 3.0},
+		{"id": "dt_hall_rail", "name": "City Hall Rail", "points": 500, "start_zone": "rail_top", "end_zone": "rail_bottom", "require": "GRIND", "max_time": 4.0},
+		{"id": "dt_hubba", "name": "Hubba Hubba", "points": 500, "start_zone": "hubba_top", "end_zone": "hubba_bottom", "require": "GRIND", "max_time": 4.0},
+		{"id": "dt_terrace_drop", "name": "Terrace Drop", "points": 300, "start_zone": "terrace_edge", "end_zone": "terrace_floor", "require": "AIR", "max_time": 3.0},
+		{"id": "dt_fountain", "name": "Fountain Clip", "points": 600, "start_zone": "fountain_e", "end_zone": "fountain_w", "require": "AIR", "max_time": 2.5},
+		{"id": "dt_pair", "name": "Pair Hop", "points": 400, "start_zone": "pair_a", "end_zone": "pair_b", "require": "AIR", "max_time": 2.5},
+		{"id": "dt_steps", "name": "Garden Steps", "points": 400, "start_zone": "step_ledge_a", "end_zone": "step_ledge_b", "require": "AIR", "max_time": 2.5},
+		{"id": "dt_prom_manual", "name": "Promenade Manual", "points": 250, "start_zone": "prom_pad_a", "end_zone": "prom_pad_b", "require": "MANUAL", "max_time": 4.0},
+		{"id": "dt_garden_manual", "name": "Garden Pad Manual", "points": 300, "start_zone": "garden_pad_a", "end_zone": "garden_pad_b", "require": "MANUAL", "max_time": 4.0},
+		{"id": "dt_station_24", "name": "Station 24", "points": 1500, "start_zone": "station_top", "end_zone": "station_bottom", "require": "AIR", "max_time": 3.0},
+		{"id": "dt_station_rail", "name": "Station Rail", "points": 800, "start_zone": "station_rail_top", "end_zone": "station_rail_bottom", "require": "GRIND", "max_time": 5.0},
+		{"id": "dt_station_cheek", "name": "Station Cheek", "points": 800, "start_zone": "station_cheek_top", "end_zone": "station_cheek_bottom", "require": "GRIND", "max_time": 5.0},
+		{"id": "dt_avenue_grind", "name": "Avenue Grind", "points": 1000, "start_zone": "line_e", "end_zone": "line_w", "require": "GRIND", "max_time": 6.0},
+		{"id": "dt_roof_to_line", "name": "Roof To Line", "points": 750, "start_zone": "roof_edge", "end_zone": "line_e", "require": "", "max_time": 6.0},
+		{"id": "dt_monorail", "name": "Monorail Transfer", "points": 1000, "start_zone": "beam_b", "end_zone": "beam_a", "require": "AIR", "max_time": 2.0},
+		{"id": "dt_line_ledge", "name": "Under The Line", "points": 300, "start_zone": "line_ledge_in", "end_zone": "line_ledge_out", "require": "GRIND", "max_time": 4.0},
+		{"id": "dt_arc", "name": "Red Arc", "points": 400, "start_zone": "arc_b", "end_zone": "arc_a", "require": "GRIND", "max_time": 3.0},
+		{"id": "dt_garage_air", "name": "Garage Air", "points": 600, "start_zone": "garage_lip", "end_zone": "garage_sky", "require": "AIR", "max_time": 2.0},
+		{"id": "dt_alley_roofs", "name": "Alley Roof Gap", "points": 800, "start_zone": "alley_roof_a", "end_zone": "alley_roof_b", "require": "AIR", "max_time": 2.0},
+		{"id": "dt_docks", "name": "Dock To Dock", "points": 400, "start_zone": "dock_w", "end_zone": "dock_e", "require": "AIR", "max_time": 2.0},
+		{"id": "dt_dumpster", "name": "Dumpster Hop", "points": 300, "start_zone": "dumpster_w", "end_zone": "dumpster_e", "require": "AIR", "max_time": 2.0},
+		{"id": "dt_fire_escape", "name": "Fire Escape", "points": 600, "start_zone": "escape_top", "end_zone": "escape_bottom", "require": "GRIND", "max_time": 4.0},
+		{"id": "dt_secret_diy", "name": "Hole In The Fence", "points": 1000, "start_zone": "diy_hole", "end_zone": "diy_spot", "require": "", "max_time": 4.0}
+	]
+}

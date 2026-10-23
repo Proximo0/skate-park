@@ -1,0 +1,409 @@
+{
+ "area_m": [
+  10.0,
+  10.0
+ ],
+ "seed": 3,
+ "points": [
+  {
+   "item": "cup",
+   "position": [
+    1.114,
+    0.0,
+    4.898
+   ],
+   "yaw_deg": 315.1,
+   "scale": 0.888
+  },
+  {
+   "item": "newspaper",
+   "position": [
+    1.406,
+    0.0,
+    -0.342
+   ],
+   "yaw_deg": 133.8,
+   "scale": 0.881
+  },
+  {
+   "item": "can_crushed_b",
+   "position": [
+    0.325,
+    0.0,
+    3.305
+   ],
+   "yaw_deg": 257.2,
+   "scale": 0.891
+  },
+  {
+   "item": "chip_bag_b",
+   "position": [
+    0.236,
+    0.0,
+    -5.0
+   ],
+   "yaw_deg": 235.7,
+   "scale": 1.052
+  },
+  {
+   "item": "paper_crumpled_a",
+   "position": [
+    -4.561,
+    0.0,
+    2.53
+   ],
+   "yaw_deg": 3.7,
+   "scale": 0.898
+  },
+  {
+   "item": "paper_crumpled_b",
+   "position": [
+    4.414,
+    0.0,
+    3.105
+   ],
+   "yaw_deg": 308.5,
+   "scale": 0.92
+  },
+  {
+   "item": "cup",
+   "position": [
+    -0.58,
+    0.0,
+    3.908
+   ],
+   "yaw_deg": 359.0,
+   "scale": 0.856
+  },
+  {
+   "item": "cup",
+   "position": [
+    1.713,
+    0.0,
+    3.239
+   ],
+   "yaw_deg": 236.7,
+   "scale": 0.868
+  },
+  {
+   "item": "napkin",
+   "position": [
+    -0.984,
+    0.0,
+    -2.459
+   ],
+   "yaw_deg": 144.9,
+   "scale": 1.143
+  },
+  {
+   "item": "can_crushed_b",
+   "position": [
+    -1.51,
+    0.0,
+    2.648
+   ],
+   "yaw_deg": 189.3,
+   "scale": 0.953
+  },
+  {
+   "item": "can_crushed_b",
+   "position": [
+    1.561,
+    0.0,
+    1.314
+   ],
+   "yaw_deg": 109.6,
+   "scale": 0.937
+  },
+  {
+   "item": "can_crushed_a",
+   "position": [
+    0.048,
+    0.0,
+    1.977
+   ],
+   "yaw_deg": 294.2,
+   "scale": 0.923
+  },
+  {
+   "item": "paper_crumpled_b",
+   "position": [
+    -2.473,
+    0.0,
+    5.0
+   ],
+   "yaw_deg": 63.9,
+   "scale": 0.909
+  },
+  {
+   "item": "paper_crumpled_b",
+   "position": [
+    3.013,
+    0.0,
+    2.329
+   ],
+   "yaw_deg": 90.5,
+   "scale": 0.936
+  },
+  {
+   "item": "cup",
+   "position": [
+    4.014,
+    0.0,
+    -4.09
+   ],
+   "yaw_deg": 48.4,
+   "scale": 0.868
+  },
+  {
+   "item": "paper_crumpled_b",
+   "position": [
+    -1.885,
+    0.0,
+    -5.0
+   ],
+   "yaw_deg": 315.8,
+   "scale": 0.972
+  },
+  {
+   "item": "can_crushed_b",
+   "position": [
+    -1.286,
+    0.0,
+    -0.138
+   ],
+   "yaw_deg": 61.9,
+   "scale": 0.876
+  },
+  {
+   "item": "can_crushed_b",
+   "position": [
+    -4.221,
+    0.0,
+    -3.124
+   ],
+   "yaw_deg": 35.0,
+   "scale": 0.92
+  },
+  {
+   "item": "paper_crumpled_a",
+   "position": [
+    -2.654,
+    0.0,
+    -3.567
+   ],
+   "yaw_deg": 343.4,
+   "scale": 1.109
+  },
+  {
+   "item": "can_crushed_a",
+   "position": [
+    -0.621,
+    0.0,
+    5.0
+   ],
+   "yaw_deg": 278.8,
+   "scale": 0.975
+  },
+  {
+   "item": "paper_crumpled_b",
+   "position": [
+    -1.899,
+    0.0,
+    3.911
+   ],
+   "yaw_deg": 221.5,
+   "scale": 0.901
+  },
+  {
+   "item": "newspaper",
+   "position": [
+    0.024,
+    0.0,
+    0.47
+   ],
+   "yaw_deg": 311.9,
+   "scale": 0.916
+  },
+  {
+   "item": "newspaper",
+   "position": [
+    2.324,
+    0.0,
+    -5.0
+   ],
+   "yaw_deg": 68.5,
+   "scale": 0.991
+  },
+  {
+   "item": "can_crushed_b",
+   "position": [
+    -3.23,
+    0.0,
+    -1.697
+   ],
+   "yaw_deg": 168.1,
+   "scale": 0.89
+  },
+  {
+   "item": "newspaper",
+   "position": [
+    -3.046,
+    0.0,
+    1.992
+   ],
+   "yaw_deg": 133.7,
+   "scale": 1.038
+  },
+  {
+   "item": "can_crushed_b",
+   "position": [
+    -3.492,
+    0.0,
+    0.419
+   ],
+   "yaw_deg": 272.9,
+   "scale": 1.039
+  },
+  {
+   "item": "chip_bag_a",
+   "position": [
+    -0.971,
+    0.0,
+    -3.877
+   ],
+   "yaw_deg": 15.3,
+   "scale": 1.09
+  },
+  {
+   "item": "napkin",
+   "position": [
+    -4.426,
+    0.0,
+    4.854
+   ],
+   "yaw_deg": 260.6,
+   "scale": 0.93
+  },
+  {
+   "item": "cup",
+   "position": [
+    0.255,
+    0.0,
+    -1.475
+   ],
+   "yaw_deg": 162.6,
+   "scale": 1.06
+  },
+  {
+   "item": "chip_bag_b",
+   "position": [
+    2.348,
+    0.0,
+    -3.572
+   ],
+   "yaw_deg": 284.0,
+   "scale": 0.938
+  },
+  {
+   "item": "paper_crumpled_b",
+   "position": [
+    -1.651,
+    0.0,
+    1.193
+   ],
+   "yaw_deg": 198.1,
+   "scale": 0.932
+  },
+  {
+   "item": "can_crushed_b",
+   "position": [
+    3.016,
+    0.0,
+    -0.875
+   ],
+   "yaw_deg": 330.2,
+   "scale": 1.076
+  },
+  {
+   "item": "newspaper",
+   "position": [
+    -3.368,
+    0.0,
+    3.64
+   ],
+   "yaw_deg": 245.0,
+   "scale": 1.071
+  },
+  {
+   "item": "chip_bag_a",
+   "position": [
+    -4.028,
+    0.0,
+    -5.0
+   ],
+   "yaw_deg": 55.8,
+   "scale": 0.982
+  },
+  {
+   "item": "newspaper",
+   "position": [
+    1.877,
+    0.0,
+    -2.098
+   ],
+   "yaw_deg": 314.4,
+   "scale": 1.025
+  },
+  {
+   "item": "can_crushed_a",
+   "position": [
+    0.684,
+    0.0,
+    -3.41
+   ],
+   "yaw_deg": 229.7,
+   "scale": 0.902
+  },
+  {
+   "item": "can_crushed_a",
+   "position": [
+    3.729,
+    0.0,
+    -2.397
+   ],
+   "yaw_deg": 206.5,
+   "scale": 0.944
+  },
+  {
+   "item": "cup",
+   "position": [
+    3.232,
+    0.0,
+    0.729
+   ],
+   "yaw_deg": 209.8,
+   "scale": 1.008
+  },
+  {
+   "item": "can_crushed_b",
+   "position": [
+    3.203,
+    0.0,
+    4.35
+   ],
+   "yaw_deg": 186.5,
+   "scale": 1.121
+  },
+  {
+   "item": "newspaper",
+   "position": [
+    -1.822,
+    0.0,
+    -1.199
+   ],
+   "yaw_deg": 351.4,
+   "scale": 1.002
+  }
+ ]
+}

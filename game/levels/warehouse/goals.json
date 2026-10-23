@@ -1,0 +1,228 @@
+{
+	"run_seconds": 120,
+	"pro": {
+		"name": "Catwalk Run",
+		"blurb": "String the catwalk, the pipes and the racks without touching down.",
+		"line": "catwalk_marathon"
+	},
+	"goals": [
+		{
+			"id": "high_score_15k",
+			"title": "High Score: 15,000",
+			"description": "Land 15,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 15000
+		},
+		{
+			"id": "pro_score_40k",
+			"title": "Pro Score: 40,000",
+			"description": "Land 40,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 40000
+		},
+		{
+			"id": "wh_pipe_dream",
+			"title": "Pipe Dream",
+			"description": "Grind the whole length of the big pipe.",
+			"type": "named_gap",
+			"gap": "pipe_dream"
+		},
+		{
+			"id": "wh_container_grab",
+			"title": "Grab the Container Hop",
+			"description": "Grab a trick over the container hop and land it.",
+			"type": "gap_trick",
+			"gap": "container_hop",
+			"trick_kind": "grab"
+		},
+		{
+			"id": "combo_6k",
+			"title": "Graveyard Shift: 6,000 Combo",
+			"description": "Land a single combo worth 6,000 points.",
+			"type": "combo",
+			"target": 6000
+		},
+		{
+			"id": "collect_skate",
+			"title": "Collect S-K-A-T-E",
+			"description": "Find S, K, A, T and E: pallet gap, catwalk, container gap, truck well, settling pit.",
+			"type": "collect",
+			"items": [
+				"S",
+				"K",
+				"A",
+				"T",
+				"E"
+			]
+		},
+		{
+			"id": "collect_cans",
+			"title": "Find the 6 Spray Cans",
+			"description": "The crew stashed six cans round the yard: flatcar, catwalk ramp, pipe run, flatbed, barriers, bank wall.",
+			"type": "collect",
+			"items": [
+				"can",
+				"can",
+				"can",
+				"can",
+				"can",
+				"can"
+			]
+		},
+		{
+			"id": "secret_tape",
+			"title": "The Lost Tape",
+			"description": "Someone bricked up a room behind the hall's east wall. Find the hole and grab the tape.",
+			"type": "collect",
+			"items": [
+				"tape"
+			]
+		},
+		{
+			"id": "gap_hunter_8",
+			"title": "Gap Hunter: 8 gaps",
+			"description": "Discover 8 gaps around the warehouse.",
+			"type": "gaps",
+			"target": 8
+		},
+		{
+			"id": "container_c",
+			"title": "Container Hop",
+			"description": "Grab the C floating over the gap between the stacked containers in the south yard.",
+			"type": "collect",
+			"items": [
+				"C"
+			]
+		},
+		{
+			"id": "forklift_f",
+			"title": "Forklift Hop",
+			"description": "Ollie the forklift and grab the F over its mast.",
+			"type": "collect",
+			"items": [
+				"F"
+			]
+		},
+		{
+			"id": "grind_5",
+			"title": "Catwalk Marathon: grind 5 seconds",
+			"description": "Hold one grind for 5 seconds (the catwalk rail is long enough).",
+			"type": "grind_time",
+			"target": 5
+		},
+		{
+			"id": "manual_4",
+			"title": "Night Shift Manual: 4 seconds",
+			"description": "Hold one manual for 4 seconds.",
+			"type": "manual_time",
+			"target": 4
+		},
+		{
+			"id": "special_1",
+			"title": "Lights Out Special",
+			"description": "Land any special trick.",
+			"type": "special",
+			"target": 1
+		},
+		{
+			"id": "wh_variety_5",
+			"title": "Trick Variety: 5 different tricks",
+			"description": "Land one combo with five different tricks in it.",
+			"type": "combo_distinct",
+			"target": 5
+		},
+		{
+			"id": "wh_gap_chain_3",
+			"title": "Gap Chain: 3 gaps in a combo",
+			"description": "Link three different gaps in one combo and land it.",
+			"type": "gap_chain",
+			"target": 3
+		},
+		{
+			"id": "wh_gap_rush",
+			"title": "Gap Rush: 3 gaps in 30 seconds",
+			"description": "Hit three different gaps inside 30 seconds.",
+			"type": "timed_gaps",
+			"target": 3,
+			"seconds": 30
+		},
+		{
+			"id": "mixtape",
+			"title": "Mixtape: find 3 hidden tapes",
+			"description": "Three skate-video cassettes are hidden on landmark spots. Ride through each one.",
+			"type": "pickup",
+			"items": [
+				"VHS",
+				"VHS",
+				"VHS"
+			]
+		},
+		{
+			"id": "warehouse_pro_bronze",
+			"title": "Pro Challenge Bronze: Catwalk Run",
+			"description": "Catwalk Run: land 3,000 points in the run, and one combo of 2,500+ points over one of its gaps.",
+			"type": "pro_challenge",
+			"tier": "bronze",
+			"score": 3000,
+			"chain": 1,
+			"combo": 2500,
+			"gaps": [
+				"catwalk_marathon",
+				"catwalk_stairs",
+				"pipe_dream",
+				"rack_to_rack"
+			]
+		},
+		{
+			"id": "warehouse_pro_silver",
+			"title": "Pro Challenge Silver: Catwalk Run",
+			"description": "Catwalk Run: land 12,000 points in the run, and one combo of 5,000+ points over 2 of its gaps, inside 100 seconds.",
+			"type": "pro_challenge",
+			"tier": "silver",
+			"score": 12000,
+			"chain": 2,
+			"combo": 5000,
+			"gaps": [
+				"catwalk_marathon",
+				"catwalk_stairs",
+				"pipe_dream",
+				"rack_to_rack"
+			],
+			"within": 100
+		},
+		{
+			"id": "warehouse_pro_gold",
+			"title": "Pro Challenge Gold: Catwalk Run",
+			"description": "Catwalk Run: land 25,000 points in the run, and one combo of 9,000+ points over 3 of its gaps, inside 80 seconds.",
+			"type": "pro_challenge",
+			"tier": "gold",
+			"score": 25000,
+			"chain": 3,
+			"combo": 9000,
+			"gaps": [
+				"catwalk_marathon",
+				"catwalk_stairs",
+				"pipe_dream",
+				"rack_to_rack"
+			],
+			"within": 80
+		}
+	],
+	"pickups": [
+		{
+			"item": "VHS",
+			"zone": "gon_b",
+			"dy": 1.2
+		},
+		{
+			"item": "VHS",
+			"zone": "pit_rim_n",
+			"dy": 1.2
+		},
+		{
+			"item": "VHS",
+			"zone": "flatcar_top",
+			"dy": 1.4
+		}
+	]
+}

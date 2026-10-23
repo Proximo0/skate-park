@@ -1,0 +1,238 @@
+{
+	"gaps": [
+		{
+			"id": "ditch_bomb",
+			"name": "Ditch Bomb",
+			"points": 750,
+			"start_zone": "ditch_head",
+			"end_zone": "ditch_spill",
+			"require": "",
+			"max_time": 25.0
+		},
+		{
+			"id": "hillcrest_bomb",
+			"name": "Hillcrest Bomb",
+			"points": 1000,
+			"start_zone": "hillcrest_top",
+			"end_zone": "hillcrest_bottom",
+			"require": "",
+			"max_time": 40.0
+		},
+		{
+			"id": "canyon_bomb",
+			"name": "Canyon Bomb",
+			"points": 1000,
+			"start_zone": "canyon_top",
+			"end_zone": "canyon_bottom",
+			"require": "",
+			"max_time": 30.0
+		},
+		{
+			"id": "fence_hop_ab",
+			"name": "Backyard Fence Hop",
+			"points": 300,
+			"start_zone": "fence_ab_w",
+			"end_zone": "fence_ab_e",
+			"require": "AIR",
+			"max_time": 1.5
+		},
+		{
+			"id": "fence_hop_ba",
+			"name": "Back Over The Fence",
+			"points": 300,
+			"start_zone": "fence_ab_e",
+			"end_zone": "fence_ab_w",
+			"require": "AIR",
+			"max_time": 1.5
+		},
+		{
+			"id": "fence_hop_bc",
+			"name": "Neighbour's Fence",
+			"points": 300,
+			"start_zone": "fence_bc_w",
+			"end_zone": "fence_bc_e",
+			"require": "AIR",
+			"max_time": 1.5
+		},
+		{
+			"id": "fence_hop_cb",
+			"name": "Neighbour's Fence (Back)",
+			"points": 300,
+			"start_zone": "fence_bc_e",
+			"end_zone": "fence_bc_w",
+			"require": "AIR",
+			"max_time": 1.5
+		},
+		{
+			"id": "pool_to_pool",
+			"name": "Pool To Pool",
+			"points": 400,
+			"start_zone": "pool_a_e",
+			"end_zone": "fence_ab_e",
+			"require": "",
+			"max_time": 3.0
+		},
+		{
+			"id": "next_door_pool",
+			"name": "Next Door Pool",
+			"points": 400,
+			"start_zone": "pool_b_e",
+			"end_zone": "fence_bc_e",
+			"require": "",
+			"max_time": 3.0
+		},
+		{
+			"id": "pool_to_ditch",
+			"name": "Backyard To Ditch",
+			"points": 500,
+			"start_zone": "pool_c_e",
+			"end_zone": "ditch_lip_w",
+			"require": "",
+			"max_time": 5.0
+		},
+		{
+			"id": "ditch_transfer",
+			"name": "Ditch Transfer",
+			"points": 400,
+			"start_zone": "ditch_lip_w",
+			"end_zone": "ditch_lip_e",
+			"require": "AIR",
+			"max_time": 2.5
+		},
+		{
+			"id": "ditch_transfer_back",
+			"name": "Ditch Transfer (Back)",
+			"points": 400,
+			"start_zone": "ditch_lip_e",
+			"end_zone": "ditch_lip_w",
+			"require": "AIR",
+			"max_time": 2.5
+		},
+		{
+			"id": "spillway_air",
+			"name": "Spillway Air",
+			"points": 800,
+			"start_zone": "ditch_spill",
+			"end_zone": "park_qp",
+			"require": "",
+			"max_time": 4.0
+		},
+		{
+			"id": "driveway_launch",
+			"name": "Driveway Launch",
+			"points": 350,
+			"start_zone": "drive_lip_0",
+			"end_zone": "drive_land_0",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "colonial_kicker",
+			"name": "Colonial Kicker",
+			"points": 350,
+			"start_zone": "drive_lip_1",
+			"end_zone": "drive_land_1",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "terrace_ledge",
+			"name": "Terrace Ledge",
+			"points": 600,
+			"start_zone": "wall_w",
+			"end_zone": "wall_e",
+			"require": "GRIND",
+			"max_time": 12.0
+		},
+		{
+			"id": "terrace_ledge_back",
+			"name": "Terrace Ledge (Back)",
+			"points": 600,
+			"start_zone": "wall_e",
+			"end_zone": "wall_w",
+			"require": "GRIND",
+			"max_time": 12.0
+		},
+		{
+			"id": "million_dollar_view",
+			"name": "Million Dollar View",
+			"points": 750,
+			"start_zone": "overlook_w",
+			"end_zone": "overlook_e",
+			"require": "GRIND",
+			"max_time": 15.0
+		},
+		{
+			"id": "million_dollar_view_back",
+			"name": "Million Dollar View (Back)",
+			"points": 750,
+			"start_zone": "overlook_e",
+			"end_zone": "overlook_w",
+			"require": "GRIND",
+			"max_time": 15.0
+		},
+		{
+			"id": "over_the_funbox",
+			"name": "Over The Funbox",
+			"points": 250,
+			"start_zone": "park_box_a",
+			"end_zone": "park_box_b",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "over_the_funbox_back",
+			"name": "Over The Funbox (Back)",
+			"points": 250,
+			"start_zone": "park_box_b",
+			"end_zone": "park_box_a",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "park_rail",
+			"name": "Valley Park Rail",
+			"points": 200,
+			"start_zone": "park_rail_a",
+			"end_zone": "park_rail_b",
+			"require": "GRIND",
+			"max_time": 2.5
+		},
+		{
+			"id": "manual_pad",
+			"name": "Park Manual Pad",
+			"points": 150,
+			"start_zone": "park_pad_a",
+			"end_zone": "park_pad_b",
+			"require": "MANUAL",
+			"max_time": 3.0
+		},
+		{
+			"id": "pyramid_hop",
+			"name": "Pyramid Hop",
+			"points": 250,
+			"start_zone": "park_pyr_n",
+			"end_zone": "park_pyr_s",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "pyramid_hop_back",
+			"name": "Pyramid Hop (Back)",
+			"points": 250,
+			"start_zone": "park_pyr_s",
+			"end_zone": "park_pyr_n",
+			"require": "AIR",
+			"max_time": 2.0
+		},
+		{
+			"id": "secret_garden",
+			"name": "Secret Garden",
+			"points": 1000,
+			"start_zone": "secret_hop",
+			"end_zone": "secret_in",
+			"require": "",
+			"max_time": 3.0
+		}
+	]
+}

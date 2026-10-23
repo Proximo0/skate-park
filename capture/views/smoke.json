@@ -1,0 +1,20 @@
+{
+	"views": [
+		{
+			"name": "smoke_front",
+			"scene": "res://game/main.tscn",
+			"camera": {"pos": [0, 4, 10], "look_at": [0, 0, 0], "fov": 70},
+			"settle_frames": 10,
+			"measure_frames": 60,
+			"hide_hud": false
+		},
+		{
+			"name": "smoke_high",
+			"scene": "res://game/main.tscn",
+			"camera": {"pos": [12, 9, 12], "look_at": [0, 0, 0], "fov": 60},
+			"settle_frames": 10,
+			"measure_frames": 60,
+			"hide_hud": false
+		}
+	]
+}

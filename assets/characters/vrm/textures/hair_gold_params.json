@@ -1,0 +1,76 @@
+{
+ "hair_main": {
+  "_Color": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "_ShadeColor": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "_EmissionColor": [
+   1,
+   1,
+   1,
+   1
+  ]
+ },
+ "hair_main2": {
+  "_Color": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "_ShadeColor": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "_EmissionColor": [
+   1,
+   1,
+   1,
+   1
+  ]
+ },
+ "hair_back": {
+  "_Color": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "_ShadeColor": [
+   1,
+   1,
+   1,
+   1
+  ]
+ },
+ "ribbon": {
+  "_Color": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "_ShadeColor": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "_EmissionColor": [
+   1,
+   1,
+   1,
+   1
+  ]
+ }
+}

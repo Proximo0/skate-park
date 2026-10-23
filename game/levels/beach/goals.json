@@ -1,0 +1,219 @@
+{
+	"run_seconds": 120,
+	"pro": {
+		"name": "Seawall Sprint",
+		"blurb": "Launch off the beach, drop the seawall and rail the pier.",
+		"line": "beach_launch"
+	},
+	"goals": [
+		{
+			"id": "beach_score_15k",
+			"title": "High Score: 15,000",
+			"description": "Land 15,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 15000
+		},
+		{
+			"id": "beach_score_40k",
+			"title": "Pro Score: 40,000",
+			"description": "Land 40,000 points in one 2-minute run.",
+			"type": "high_score",
+			"target": 40000
+		},
+		{
+			"id": "bch_pier_marathon",
+			"title": "Pier Rail Marathon",
+			"description": "Grind the whole pier rail without stepping off.",
+			"type": "named_gap",
+			"gap": "pier_rail_marathon"
+		},
+		{
+			"id": "bch_roof_flip",
+			"title": "Flip the Rooftop Surf",
+			"description": "Land a flip trick over the rooftop gap.",
+			"type": "gap_trick",
+			"gap": "rooftop_surf",
+			"trick_kind": "flip"
+		},
+		{
+			"id": "beach_combo_6k",
+			"title": "Sunset Combo: 6,000",
+			"description": "Land a single combo worth 6,000 points.",
+			"type": "combo",
+			"target": 6000
+		},
+		{
+			"id": "beach_skate",
+			"title": "Collect S-K-A-T-E",
+			"description": "Snake run, bowl, pier end, Beach Launch and the pier rail: find all five letters.",
+			"type": "collect",
+			"items": [
+				"S",
+				"K",
+				"A",
+				"T",
+				"E"
+			]
+		},
+		{
+			"id": "beach_pizza",
+			"title": "Five Slices",
+			"description": "Grab the five pizza slices along the lines.",
+			"type": "collect",
+			"items": [
+				"pizza",
+				"pizza",
+				"pizza",
+				"pizza",
+				"pizza"
+			]
+		},
+		{
+			"id": "beach_gaps_6",
+			"title": "Gap Hunter: 6 beach gaps",
+			"description": "Discover 6 gaps around the beachfront.",
+			"type": "gaps",
+			"target": 6
+		},
+		{
+			"id": "beach_gaps_12",
+			"title": "Beach Bum: 12 gaps",
+			"description": "Discover 12 gaps around the beachfront.",
+			"type": "gaps",
+			"target": 12
+		},
+		{
+			"id": "beach_pier_grind",
+			"title": "Pier Rat: grind 4 seconds",
+			"description": "Grind the pier railing for 4 seconds in one go.",
+			"type": "grind_time",
+			"target": 4
+		},
+		{
+			"id": "beach_manual_5",
+			"title": "Boardwalk Balance: manual 5 seconds",
+			"description": "Hold one manual for 5 seconds.",
+			"type": "manual_time",
+			"target": 5
+		},
+		{
+			"id": "beach_secret_tape",
+			"title": "Secret Tape",
+			"description": "Somebody left a tape on the rooftops. Find a way up.",
+			"type": "collect",
+			"items": [
+				"TAPE"
+			]
+		},
+		{
+			"id": "beach_special",
+			"title": "Golden Hour Special",
+			"description": "Land any special trick.",
+			"type": "special",
+			"target": 1
+		},
+		{
+			"id": "bch_variety_5",
+			"title": "Trick Variety: 5 different tricks",
+			"description": "Land one combo with five different tricks in it.",
+			"type": "combo_distinct",
+			"target": 5
+		},
+		{
+			"id": "bch_long_manual",
+			"title": "Boardwalk Cruise: 50 meter manual",
+			"description": "Hold one manual for 50 meters.",
+			"type": "manual_distance",
+			"target": 50
+		},
+		{
+			"id": "bch_grab_bag",
+			"title": "Grab Bag: 4,000 with a grab",
+			"description": "Land a 4,000 point combo that has a grab in it.",
+			"type": "combo_trick",
+			"trick_kind": "grab",
+			"target": 4000
+		},
+		{
+			"id": "mixtape",
+			"title": "Mixtape: find 3 hidden tapes",
+			"description": "Three skate-video cassettes are hidden on landmark spots. Ride through each one.",
+			"type": "pickup",
+			"items": [
+				"VHS",
+				"VHS",
+				"VHS"
+			]
+		},
+		{
+			"id": "beach_pro_bronze",
+			"title": "Pro Challenge Bronze: Seawall Sprint",
+			"description": "Seawall Sprint: land 2,500 points in the run, and one combo of 1,500+ points over one of its gaps.",
+			"type": "pro_challenge",
+			"tier": "bronze",
+			"score": 2500,
+			"chain": 1,
+			"combo": 1500,
+			"gaps": [
+				"beach_launch",
+				"seawall_drop",
+				"seawall_slide",
+				"pier_approach",
+				"pier_rail_marathon"
+			]
+		},
+		{
+			"id": "beach_pro_silver",
+			"title": "Pro Challenge Silver: Seawall Sprint",
+			"description": "Seawall Sprint: land 10,000 points in the run, and one combo of 3,500+ points over 2 of its gaps, inside 100 seconds.",
+			"type": "pro_challenge",
+			"tier": "silver",
+			"score": 10000,
+			"chain": 2,
+			"combo": 3500,
+			"gaps": [
+				"beach_launch",
+				"seawall_drop",
+				"seawall_slide",
+				"pier_approach",
+				"pier_rail_marathon"
+			],
+			"within": 100
+		},
+		{
+			"id": "beach_pro_gold",
+			"title": "Pro Challenge Gold: Seawall Sprint",
+			"description": "Seawall Sprint: land 22,000 points in the run, and one combo of 7,000+ points over 4 of its gaps, inside 80 seconds.",
+			"type": "pro_challenge",
+			"tier": "gold",
+			"score": 22000,
+			"chain": 4,
+			"combo": 7000,
+			"gaps": [
+				"beach_launch",
+				"seawall_drop",
+				"seawall_slide",
+				"pier_approach",
+				"pier_rail_marathon"
+			],
+			"within": 80
+		}
+	],
+	"pickups": [
+		{
+			"item": "VHS",
+			"zone": "launch_lip",
+			"dy": 1.3
+		},
+		{
+			"item": "VHS",
+			"zone": "pier_qp_lip",
+			"dy": 1.3
+		},
+		{
+			"item": "VHS",
+			"zone": "rock_kick",
+			"dy": 1.2
+		}
+	]
+}

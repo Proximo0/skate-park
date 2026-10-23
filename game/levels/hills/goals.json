@@ -1,0 +1,226 @@
+{
+	"run_seconds": 120,
+	"pro": {
+		"name": "Pool Row",
+		"blurb": "Hop the fences and pools down Pool Row in one clean line.",
+		"line": "pool_row"
+	},
+	"goals": [
+		{
+			"id": "hills_score_15k",
+			"title": "High Score: 15,000",
+			"description": "Land 15,000 points in one 2-minute run on the Hills.",
+			"type": "high_score",
+			"target": 15000
+		},
+		{
+			"id": "hills_score_40k",
+			"title": "Pro Score: 40,000",
+			"description": "Land 40,000 points in one run.",
+			"type": "high_score",
+			"target": 40000
+		},
+		{
+			"id": "hills_hillcrest",
+			"title": "Hillcrest Bomb",
+			"description": "Bomb the long Hillcrest hill from top to bottom.",
+			"type": "named_gap",
+			"gap": "hillcrest_bomb"
+		},
+		{
+			"id": "hills_view_flip",
+			"title": "Flip the Million Dollar View",
+			"description": "Land a flip trick in the same combo as the overlook grind.",
+			"type": "gap_trick",
+			"gap": "million_dollar_view",
+			"trick_kind": "flip"
+		},
+		{
+			"id": "hills_score_90k",
+			"title": "Sick Score: 90,000",
+			"description": "Land 90,000 points in one run.",
+			"type": "high_score",
+			"target": 90000
+		},
+		{
+			"id": "hills_combo_8k",
+			"title": "Golden Hour Combo: 8,000",
+			"description": "Land one combo worth 8,000 points.",
+			"type": "combo",
+			"target": 8000
+		},
+		{
+			"id": "hills_skate",
+			"title": "Collect S-K-A-T-E",
+			"description": "S tops Hillcrest Drive, K is over a back yard fence, A rides the ditch, T floats over the spillway quarter pipe, E waits at the bottom of Canyon Road.",
+			"type": "collect",
+			"items": [
+				"S",
+				"K",
+				"A",
+				"T",
+				"E"
+			]
+		},
+		{
+			"id": "hills_pizza",
+			"title": "Five Slices",
+			"description": "Grab the five pizza slices: two in Summit Court, one on the terrace wall, one over the funbox, one on the overlook rail.",
+			"type": "collect",
+			"items": [
+				"pizza",
+				"pizza",
+				"pizza",
+				"pizza",
+				"pizza"
+			]
+		},
+		{
+			"id": "hills_pool_hopper",
+			"title": "Pool Hopper",
+			"description": "Grab the 1, 2 and 3 coins over the three back yard pools on Pool Row.",
+			"type": "collect",
+			"items": [
+				"1",
+				"2",
+				"3"
+			]
+		},
+		{
+			"id": "hills_secret_tape",
+			"title": "Secret Tape",
+			"description": "Find the tape in a hidden back yard pool somewhere near the park.",
+			"type": "collect",
+			"items": [
+				"tape"
+			]
+		},
+		{
+			"id": "hills_gap_hunter",
+			"title": "Gap Hunter: 10 gaps",
+			"description": "Find 10 different gaps around the Hills.",
+			"type": "gaps",
+			"target": 10
+		},
+		{
+			"id": "hills_grind_5",
+			"title": "Million Dollar Grind",
+			"description": "Grind for 5 seconds in one go (the overlook rail is long).",
+			"type": "grind_time",
+			"target": 5
+		},
+		{
+			"id": "hills_manual_5",
+			"title": "Cul-de-sac Manual: 5 seconds",
+			"description": "Hold one manual for 5 seconds.",
+			"type": "manual_time",
+			"target": 5
+		},
+		{
+			"id": "hills_variety_5",
+			"title": "Trick Variety: 5 different tricks",
+			"description": "Land one combo with five different tricks in it.",
+			"type": "combo_distinct",
+			"target": 5
+		},
+		{
+			"id": "hills_gap_rush",
+			"title": "Gap Rush: 3 gaps in 30 seconds",
+			"description": "Hit three different gaps inside 30 seconds.",
+			"type": "timed_gaps",
+			"target": 3,
+			"seconds": 30
+		},
+		{
+			"id": "hills_clean_streak",
+			"title": "Smooth Roller: 5 combos, no bail",
+			"description": "Land five combos in a row without bailing.",
+			"type": "streak",
+			"target": 5
+		},
+		{
+			"id": "mixtape",
+			"title": "Mixtape: find 3 hidden tapes",
+			"description": "Three skate-video cassettes are hidden on landmark spots. Ride through each one.",
+			"type": "pickup",
+			"items": [
+				"VHS",
+				"VHS",
+				"VHS"
+			]
+		},
+		{
+			"id": "hills_pro_bronze",
+			"title": "Pro Challenge Bronze: Pool Row",
+			"description": "Pool Row: land 2,000 points in the run, and one combo of 800+ points over one of its gaps.",
+			"type": "pro_challenge",
+			"tier": "bronze",
+			"score": 2000,
+			"chain": 1,
+			"combo": 800,
+			"gaps": [
+				"fence_hop_ab",
+				"fence_hop_bc",
+				"pool_to_pool",
+				"next_door_pool",
+				"fence_hop_ba",
+				"fence_hop_cb"
+			]
+		},
+		{
+			"id": "hills_pro_silver",
+			"title": "Pro Challenge Silver: Pool Row",
+			"description": "Pool Row: land 9,000 points in the run, and one combo of 2,500+ points over 3 of its gaps, inside 100 seconds.",
+			"type": "pro_challenge",
+			"tier": "silver",
+			"score": 9000,
+			"chain": 3,
+			"combo": 2500,
+			"gaps": [
+				"fence_hop_ab",
+				"fence_hop_bc",
+				"pool_to_pool",
+				"next_door_pool",
+				"fence_hop_ba",
+				"fence_hop_cb"
+			],
+			"within": 100
+		},
+		{
+			"id": "hills_pro_gold",
+			"title": "Pro Challenge Gold: Pool Row",
+			"description": "Pool Row: land 22,000 points in the run, and one combo of 5,000+ points over 5 of its gaps, inside 80 seconds.",
+			"type": "pro_challenge",
+			"tier": "gold",
+			"score": 22000,
+			"chain": 5,
+			"combo": 5000,
+			"gaps": [
+				"fence_hop_ab",
+				"fence_hop_bc",
+				"pool_to_pool",
+				"next_door_pool",
+				"fence_hop_ba",
+				"fence_hop_cb"
+			],
+			"within": 80
+		}
+	],
+	"pickups": [
+		{
+			"item": "VHS",
+			"zone": "drive_lip_1",
+			"dy": 1.3
+		},
+		{
+			"item": "VHS",
+			"zone": "park_pad_a",
+			"dy": 1.2
+		},
+		{
+			"item": "VHS",
+			"zone": "wall_e",
+			"dy": 1.3
+		}
+	]
+}

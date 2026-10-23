@@ -1,0 +1,281 @@
+class_name PhysicsTuning
+extends RefCounted
+## Every ride-physics number the skater uses, live-editable. The skater reads these each tick (through its
+## `tune` var), so the tuning panel, replays and sims can change the feel without touching code.
+## Defaults are the shipped feel. Presets are JSON dictionaries of {field: value}; unknown keys are ignored.
+
+signal changed(field: String, value: float)
+
+## [field, default, min, max, step, group, doc]. The order here is the order the tuning panel shows.
+const FIELDS: Array = [
+	["gravity", 18.0, 5.0, 40.0, 0.5, "World", "Gravity, m/s². Real is 9.8; higher feels snappier, less floaty."],
+	["max_speed", 22.0, 8.0, 40.0, 0.5, "World", "Hard speed cap, m/s."],
+	["kill_y", -20.0, -60.0, -5.0, 1.0, "World", "Respawn below this height."],
+	["push_accel", 5.5, 1.0, 30.0, 0.25, "Push", "Speed gained per second of kick contact."],
+	["push_max", 12.0, 4.0, 25.0, 0.25, "Push", "Pushing alone tops out here, m/s."],
+	["push_plant", 0.18, 0.0, 0.6, 0.01, "Push", "Delay before the first kick lands, s."],
+	["push_cycle", 0.6, 0.2, 1.5, 0.01, "Push", "Length of one push cycle, s."],
+	["push_contact", 0.55, 0.1, 1.0, 0.01, "Push", "Share of the cycle the foot is on the ground."],
+	["brake", 6.0, 0.0, 30.0, 0.25, "Rolling", "Braking deceleration (stick back), m/s²."],
+	["roll_friction", 0.45, 0.0, 5.0, 0.05, "Rolling", "Rolling resistance, m/s² (mu about 0.025 at gravity 18: a bowl lap keeps about 0.9 of its speed, Skate-3-like carves)."],
+	["side_grip", 25.0, 1.0, 100.0, 1.0, "Rolling", "How hard the wheels stop sideways sliding, m/s²."],
+	["turn_rate", 3.2, 0.5, 8.0, 0.05, "Rolling", "Turn rate at a crawl, rad/s (kick-turn tight)."],
+	["turn_rate_fast", 1.65, 0.3, 6.0, 0.05, "Rolling", "Carving turn rate once rolling, rad/s: the radius grows with speed (v / rate) up to the grip limit."],
+	["turn_fade_speed", 1.2, 0.2, 10.0, 0.1, "Rolling", "Speed scale (m/s) over which the crawl turn rate falls to the carving rate (exp(-v / this))."],
+	["steer_lean_time", 0.1, 0.0, 0.5, 0.01, "Rolling", "Lean-in time of a carve at 8 m/s, s (a quarter of it at a crawl, more when faster): the weight moves onto the rail over a beat."],
+	["carve_grip", 18.0, 4.0, 60.0, 0.5, "Rolling", "Most sideways acceleration a carve can pull, m/s² (about 1 g here): sets how wide fast turns get."],
+	["pump_accel", 2.5, 0.0, 15.0, 0.25, "Transitions", "Pump on gentle transitions, m/s²."],
+	["pump_accel_vert", 32.0, 0.0, 50.0, 0.5, "Transitions", "Pump on steep (vert) transitions, m/s²."],
+	["pump_speed_ref", 12.0, 3.0, 30.0, 0.5, "Transitions", "Speed (m/s) at which the pump gives its full rate; slower pumps less, faster more (a pass builds on the last)."],
+	["vert_normal_y", 0.35, 0.05, 0.8, 0.01, "Transitions", "Leaving a face steeper than this, going up, is a vert launch."],
+	["edge_grip", 2.5, 0.5, 8.0, 0.1, "Transitions", "Grip on convex bends, as a multiple of gravity's hold."],
+	["overhang_radius", 3.5, 1.0, 10.0, 0.1, "Transitions", "Assumed curve radius when judging if speed holds you upside down."],
+	["fall_gravity", 1.35, 1.0, 2.5, 0.05, "Air", "Gravity multiplier on the way down from the top of a street air (Skate-3 arc: same pop height, a quicker drop). Vert air keeps plain gravity, so pump heights are unchanged."],
+	["fall_boost_max", 10.0, 0.0, 30.0, 0.5, "Air", "The extra fall gravity only acts until the fall is this fast, m/s (about a 2 m ollie's): big drops then fall at plain gravity, so slam heights barely move."],
+	["stagger_time", 0.4, 0.0, 1.5, 0.05, "Landing", "A sketchy landing staggers for this long, s: steering cut, speed scrubbed, no pushing."],
+	["stagger_steer", 0.35, 0.0, 1.0, 0.05, "Landing", "Share of the normal steering while staggering."],
+	["stagger_scrub", 0.12, 0.0, 0.5, 0.01, "Landing", "Share of the landing speed scrubbed off over the stagger (on top of a clean landing's small loss)."],
+	["ollie_min", 6.0, 2.0, 15.0, 0.1, "Air", "Pop speed of a tap ollie, m/s."],
+	["ollie_max", 8.5, 2.0, 18.0, 0.1, "Air", "Pop speed of a fully crouched ollie, m/s."],
+	["crouch_full", 0.4, 0.05, 1.5, 0.01, "Air", "Crouch time for the full ollie, s."],
+	["spin_rate", 7.5, 2.0, 20.0, 0.1, "Air", "Air spin rate, rad/s."],
+	["air_steer", 1.2, 0.0, 6.0, 0.05, "Air", "How much the stick bends the path in the air."],
+	["flip_time", 0.42, 0.1, 1.0, 0.01, "Air", "Time for one flip, s."],
+	["double_flip_time", 0.68, 0.2, 1.5, 0.01, "Air", "Time for a double flip, s."],
+	["grind_reach", 1.1, 0.3, 3.0, 0.05, "Grind", "How far a rail can be to snap on, m."],
+	["grind_min_speed", 3.0, 0.0, 10.0, 0.1, "Grind", "Slowest speed that can start a grind, m/s."],
+	["rail_gravity", 10.0, 0.0, 30.0, 0.5, "Grind", "Gravity along a sloped rail, m/s²."],
+	["rail_friction", 1.2, 0.0, 5.0, 0.05, "Grind", "Grind friction at 8 m/s, m/s² (scales with speed: about 0.15 m/s lost per metre at any pace)."],
+	["wallride_time", 1.2, 0.2, 4.0, 0.05, "Grind", "Longest wallride, s."],
+	["lip_max_time", 2.5, 0.5, 6.0, 0.1, "Grind", "Longest lip trick, s."],
+	["grind_pop_min", 7.5, 2.0, 15.0, 0.1, "Grind", "Pop speed of a tap ollie off a rail, m/s (hold ollie on the rail to crouch for more)."],
+	["grind_pop_max", 9.0, 2.0, 18.0, 0.1, "Grind", "Pop speed off a rail after a full crouch (crouch_full s held), m/s."],
+	["lip_pop", 5.0, 0.0, 10.0, 0.25, "Grind", "Flip or grab out of a lip trick: the pop up out of the stall, m/s."],
+	["walk_speed", 1.6, 0.5, 3.0, 0.05, "Walk", "Walking speed at a half-tilted stick, m/s."],
+	["run_speed", 4.0, 2.0, 8.0, 0.1, "Walk", "Running speed at a full stick, m/s."],
+	["walk_accel", 27.0, 5.0, 80.0, 1.0, "Walk", "Walking acceleration, m/s² (the default reaches run speed in about 0.15 s)."],
+	["walk_jump", 0.6, 0.2, 1.5, 0.05, "Walk", "Jump height on foot, m."],
+	["getup_time", 0.6, 0.1, 2.0, 0.05, "Bail", "Get-up time after a bail, s."],
+	["snap_reach_roll", 12.0, 3.0, 30.0, 0.5, "Ramp snap", "Q + E while rolling: farthest ramp lip it snaps you into, m."],
+	["snap_reach_air", 15.0, 3.0, 30.0, 0.5, "Ramp snap", "Q + E in the air: farthest ramp lip it snaps you into, m."],
+	["snap_drop_speed", 1.0, 0.5, 10.0, 0.25, "Ramp snap", "Slowest speed a snap drop-in starts down the wall with, m/s (gravity does the rest)."],
+	["snap_out_speed", 5.0, 1.0, 12.0, 0.25, "Ramp snap", "Rolling speed after a snap out of a ramp, m/s."],
+	["powerslide_decel", 7.0, 1.0, 20.0, 0.25, "Powerslide", "Powerslide deceleration (revert button while rolling), m/s². A little more than the foot brake."],
+	["powerslide_min_speed", 3.0, 0.5, 10.0, 0.25, "Powerslide", "Slowest roll a powerslide starts from, m/s; it ends below a third of this."],
+	["nollie_pop", 0.95, 0.5, 1.2, 0.01, "Air", "Nollie pop speed as a share of the ollie's (a real nollie is a touch lower)."],
+	["slam_impact", 24.0, 10.0, 60.0, 0.5, "Air", "Landing square into the surface faster than this (m/s) slams even upright (about a 16 m flat drop at gravity 18)."],
+	["boneless_pop", 1.08, 0.8, 1.5, 0.01, "Moves", "Boneless (up, up + ollie) pop speed over a full-crouch ollie's: the planted foot jumps the board higher."],
+	["boneless_plant", 0.12, 0.03, 0.4, 0.01, "Moves", "Boneless foot-plant time before the pop, s (front foot down, board in hand)."],
+	["no_comply_pop", 0.95, 0.6, 1.2, 0.01, "Moves", "No-comply (up + ollie) pop speed as a share of the ollie's that release would give."],
+	["no_comply_plant", 0.07, 0.0, 0.3, 0.01, "Moves", "No-comply foot-plant time before the pop, s."],
+	["plant_drag", 2.0, 0.0, 10.0, 0.25, "Moves", "Deceleration while a foot is planted on the ground for a boneless or no-comply, m/s²."],
+	["wallplant_reach", 0.7, 0.3, 2.5, 0.05, "Moves", "Wallplant (ollie in the air facing a wall): farthest the wall may be from the body, m."],
+	["wallplant_hold", 0.12, 0.03, 0.4, 0.01, "Moves", "Wallplant: time the foot stays planted on the wall, s."],
+	["wallplant_keep", 0.35, 0.0, 1.0, 0.05, "Moves", "Wallplant: share of the speed along the wall kept through the plant."],
+	["wallplant_push", 4.0, 1.0, 10.0, 0.25, "Moves", "Wallplant: push-off speed straight back out from the wall, m/s."],
+	["wallplant_pop", 6.5, 2.0, 12.0, 0.25, "Moves", "Wallplant: upward pop of the push-off, m/s."],
+	["caveman_speed", 5.0, 1.0, 10.0, 0.25, "Moves", "Caveman (ollie again in a jump on foot): rolling speed the board is caught at, at least, m/s."],
+	["acid_reach", 5.0, 1.0, 12.0, 0.25, "Moves", "Acid drop (revert in the air over a bank or quarter): farthest the transition may be below the board, m."],
+	["acid_min_drop", 0.8, 0.0, 3.0, 0.05, "Moves", "Acid drop: the transition must be at least this far below (closer, a revert press is the landing's revert), m."],
+	["natas_reach", 0.8, 0.2, 2.0, 0.05, "THUG2 extras", "Natas spin (grind in the air over a post, hydrant or bollard): farthest the post's top may be from the body sideways, m."],
+	["natas_top_max", 0.5, 0.15, 1.2, 0.05, "THUG2 extras", "Natas spin: the widest top that counts as a post (wider is a box or a ledge), m."],
+	["natas_spin_rate", 6.0, 1.0, 15.0, 0.25, "THUG2 extras", "Natas spin: turn rate on the post while a spin button is held, rad/s."],
+	["natas_pop", 5.5, 2.0, 10.0, 0.25, "THUG2 extras", "Natas spin: the pop up off the post (ollie, flip or grab), m/s."],
+	["sticker_reach", 0.7, 0.2, 2.0, 0.05, "THUG2 extras", "Sticker slap (ollie in the air beside a wall, moving along it): farthest the wall may be from the body, m."],
+	["sticker_min_speed", 3.0, 0.5, 10.0, 0.25, "THUG2 extras", "Sticker slap: slowest speed along the wall it works from, m/s."],
+	["sticker_pop", 5.0, 1.0, 10.0, 0.25, "THUG2 extras", "Sticker slap: upward pop off the wall, m/s."],
+	["sticker_push", 1.5, 0.0, 6.0, 0.25, "THUG2 extras", "Sticker slap: push straight out from the wall, m/s."],
+	["sticker_keep", 1.0, 0.5, 1.0, 0.01, "THUG2 extras", "Sticker slap: share of the speed along the wall kept (a tap, not a plant)."],
+	["bert_turn", 3.4, 0.5, 8.0, 0.1, "THUG2 extras", "Bert slide (revert while rolling on a bank or transition): turn rate of the hand-down carve, rad/s."],
+	["bert_decel", 5.0, 0.0, 20.0, 0.25, "THUG2 extras", "Bert slide: deceleration while the hand is down, m/s²."],
+	["bert_min_speed", 3.0, 0.5, 10.0, 0.25, "THUG2 extras", "Bert slide: slowest roll it starts from, m/s; it ends below half of this."],
+	["bert_time", 0.45, 0.1, 1.5, 0.05, "THUG2 extras", "Bert slide: shortest slide, s (holding the button carries on to bert_max_time)."],
+	["bert_max_time", 1.2, 0.2, 3.0, 0.05, "THUG2 extras", "Bert slide: longest slide, s."],
+	["skitch_reach", 2.2, 0.5, 5.0, 0.1, "THUG2 extras", "Skitch (grab behind a car): farthest behind its rear bumper it can be caught, m."],
+	["skitch_catch_speed", 4.0, 0.5, 15.0, 0.25, "THUG2 extras", "Skitch: most speed difference to the car it can be caught at, m/s."],
+	["skitch_gap", 0.55, 0.3, 1.5, 0.05, "THUG2 extras", "Skitch: distance held behind the rear bumper (body centre to bumper), m."],
+	["skitch_release_keep", 1.0, 0.5, 1.2, 0.01, "THUG2 extras", "Skitch: share of the car's speed kept on letting go."],
+	["focus_scale", 0.6, 0.2, 1.0, 0.05, "Focus", "Focus (full special meter, focus button): Engine.time_scale while on. Live play only; scripted runs never change the engine clock."],
+	["focus_drain", 0.125, 0.02, 1.0, 0.005, "Focus", "Focus: share of the special meter drained per real second (0.125: a full meter lasts 8 s)."],
+]
+
+static var _shared: PhysicsTuning = null
+
+var gravity: float
+var max_speed: float
+var kill_y: float
+var push_accel: float
+var push_max: float
+var push_plant: float
+var push_cycle: float
+var push_contact: float
+var brake: float
+var roll_friction: float
+var side_grip: float
+var turn_rate: float
+var turn_rate_fast: float
+var turn_fade_speed: float
+var steer_lean_time: float
+var carve_grip: float
+var pump_accel: float
+var pump_accel_vert: float
+var pump_speed_ref: float
+var vert_normal_y: float
+var edge_grip: float
+var overhang_radius: float
+var fall_gravity: float
+var fall_boost_max: float
+var stagger_time: float
+var stagger_steer: float
+var stagger_scrub: float
+var ollie_min: float
+var ollie_max: float
+var crouch_full: float
+var spin_rate: float
+var air_steer: float
+var flip_time: float
+var double_flip_time: float
+var grind_reach: float
+var grind_min_speed: float
+var rail_gravity: float
+var rail_friction: float
+var wallride_time: float
+var lip_max_time: float
+var grind_pop_min: float
+var grind_pop_max: float
+var lip_pop: float
+var walk_speed: float
+var run_speed: float
+var walk_accel: float
+var walk_jump: float
+var getup_time: float
+var snap_reach_roll: float
+var snap_reach_air: float
+var snap_drop_speed: float
+var snap_out_speed: float
+var powerslide_decel: float
+var powerslide_min_speed: float
+var nollie_pop: float
+var slam_impact: float
+var boneless_pop: float
+var boneless_plant: float
+var no_comply_pop: float
+var no_comply_plant: float
+var plant_drag: float
+var wallplant_reach: float
+var wallplant_hold: float
+var wallplant_keep: float
+var wallplant_push: float
+var wallplant_pop: float
+var caveman_speed: float
+var acid_reach: float
+var acid_min_drop: float
+var natas_reach: float
+var natas_top_max: float
+var natas_spin_rate: float
+var natas_pop: float
+var sticker_reach: float
+var sticker_min_speed: float
+var sticker_pop: float
+var sticker_push: float
+var sticker_keep: float
+var bert_turn: float
+var bert_decel: float
+var bert_min_speed: float
+var bert_time: float
+var bert_max_time: float
+var skitch_reach: float
+var skitch_catch_speed: float
+var skitch_gap: float
+var skitch_release_keep: float
+var focus_scale: float
+var focus_drain: float
+
+
+func _init() -> void:
+	reset()
+
+
+## The tuning every skater uses unless it is given its own. The tuning panel edits this one.
+static func shared() -> PhysicsTuning:
+	if _shared == null:
+		_shared = PhysicsTuning.new()
+	return _shared
+
+
+static func field_names() -> PackedStringArray:
+	var out := PackedStringArray()
+	for f: Array in FIELDS:
+		out.append(f[0])
+	return out
+
+
+static func field_info(field: String) -> Dictionary:
+	for f: Array in FIELDS:
+		if f[0] == field:
+			return {"name": f[0], "default": f[1], "min": f[2], "max": f[3], "step": f[4], "group": f[5], "doc": f[6]}
+	return {}
+
+
+func reset() -> void:
+	for f: Array in FIELDS:
+		set(f[0], float(f[1]))
+
+
+## Sets one field, clamped to its range. Returns false for an unknown field.
+func set_value(field: String, value: float) -> bool:
+	var info: Dictionary = field_info(field)
+	if info.is_empty():
+		return false
+	var v: float = clampf(value, float(info["min"]), float(info["max"]))
+	set(field, v)
+	changed.emit(field, v)
+	return true
+
+
+func to_dict() -> Dictionary:
+	var d: Dictionary = {}
+	for f: Array in FIELDS:
+		d[f[0]] = get(f[0])
+	return d
+
+
+## Applies known keys from `d` (others are ignored). Returns the number of fields applied.
+func apply_dict(d: Dictionary) -> int:
+	var n: int = 0
+	for key: Variant in d:
+		if set_value(str(key), float(d[key])):
+			n += 1
+	return n
+
+
+## Only the fields that differ from the defaults: what a preset needs to store.
+func diff_from_defaults() -> Dictionary:
+	var d: Dictionary = {}
+	for f: Array in FIELDS:
+		if not is_equal_approx(float(get(f[0])), float(f[1])):
+			d[f[0]] = get(f[0])
+	return d
+
+
+func copy_from(other: PhysicsTuning) -> void:
+	apply_dict(other.to_dict())
+
+
+func save_json(path: String) -> Error:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return FileAccess.get_open_error()
+	f.store_string(JSON.stringify(to_dict(), "\t", false))
+	return OK
+
+
+## Loads a preset file over the current values. Returns false if the file is missing or not a JSON object.
+func load_json(path: String) -> bool:
+	if not FileAccess.file_exists(path):
+		return false
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not parsed is Dictionary:
+		return false
+	apply_dict(parsed)
+	return true
